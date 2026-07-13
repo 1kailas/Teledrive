@@ -130,7 +130,7 @@ export function generateId(): string {
 /**
  * Chunk size constant (45 MB).
  */
-export const CHUNK_SIZE = 45 * 1024 * 1024;
+export const CHUNK_SIZE = 15 * 1024 * 1024;
 
 /**
  * Compute SHA-256 hash of an ArrayBuffer.

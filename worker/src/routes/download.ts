@@ -100,10 +100,14 @@ downloadRoutes.get('/:fileId/chunk/:index', async (c) => {
   }
 
   try {
-    const telegram = new TelegramService(c.env.TELEGRAM_BOT_TOKEN, c.env.TELEGRAM_CHAT_ID);
+    const { service: telegram, value: fileId } = TelegramService.fromPrefixedValue(
+      c.env.TELEGRAM_BOT_TOKEN,
+      c.env.TELEGRAM_CHAT_ID,
+      chunk.telegram_file_id
+    );
 
     // Get temporary file path from Telegram
-    const fileInfo = await telegram.getFile(chunk.telegram_file_id);
+    const fileInfo = await telegram.getFile(fileId);
     if (!fileInfo.file_path) {
       return c.json({ success: false, error: 'File path unavailable' }, 500);
     }
@@ -168,8 +172,12 @@ downloadRoutes.get('/:fileId', async (c) => {
   }
 
   try {
-    const telegram = new TelegramService(c.env.TELEGRAM_BOT_TOKEN, c.env.TELEGRAM_CHAT_ID);
-    const fileInfo = await telegram.getFile(chunk.telegram_file_id);
+    const { service: telegram, value: tgFileId } = TelegramService.fromPrefixedValue(
+      c.env.TELEGRAM_BOT_TOKEN,
+      c.env.TELEGRAM_CHAT_ID,
+      chunk.telegram_file_id
+    );
+    const fileInfo = await telegram.getFile(tgFileId);
 
     if (!fileInfo.file_path) {
       return c.json({ success: false, error: 'File path unavailable' }, 500);

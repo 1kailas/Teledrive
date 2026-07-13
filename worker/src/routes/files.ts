@@ -219,10 +219,14 @@ fileRoutes.delete('/:id/permanent', async (c) => {
     .all();
 
   // Delete from Telegram
-  const telegram = new TelegramService(c.env.TELEGRAM_BOT_TOKEN, c.env.TELEGRAM_CHAT_ID);
   for (const chunk of chunks) {
     try {
-      await telegram.deleteMessage(Number(chunk.telegram_message_id));
+      const { service: telegram, value: msgId } = TelegramService.fromPrefixedValue(
+        c.env.TELEGRAM_BOT_TOKEN,
+        c.env.TELEGRAM_CHAT_ID,
+        chunk.telegram_message_id as string
+      );
+      await telegram.deleteMessage(Number(msgId));
     } catch {
       // Best-effort — continue even if Telegram delete fails
     }

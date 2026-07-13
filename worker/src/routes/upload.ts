@@ -150,8 +150,8 @@ uploadRoutes.post('/chunk', async (c) => {
     .run();
 
   try {
-    // Forward chunk to Telegram
-    const telegram = new TelegramService(c.env.TELEGRAM_BOT_TOKEN, c.env.TELEGRAM_CHAT_ID);
+    // Forward chunk to Telegram (using bot pool)
+    const { service: telegram, botIndex } = TelegramService.fromPool(c.env.TELEGRAM_BOT_TOKEN, c.env.TELEGRAM_CHAT_ID, chunkIndex);
     const chunkData = await chunkFile.arrayBuffer();
 
     // Get original file name for context
@@ -169,8 +169,8 @@ uploadRoutes.post('/chunk', async (c) => {
       `TeleDrive | ${file?.name || fileId} | Chunk ${chunkIndex + 1}`
     );
 
-    const telegramMessageId = String(message.message_id);
-    const telegramFileId = message.document?.file_id || '';
+    const telegramMessageId = `${botIndex}:${message.message_id}`;
+    const telegramFileId = `${botIndex}:${message.document?.file_id || ''}`;
     const timestamp = now();
 
     // Update chunk record with Telegram info
@@ -379,10 +379,14 @@ uploadRoutes.delete('/cancel/:sessionId', async (c) => {
     .all();
 
   // Delete Telegram messages in background
-  const telegram = new TelegramService(c.env.TELEGRAM_BOT_TOKEN, c.env.TELEGRAM_CHAT_ID);
   for (const chunk of chunks) {
     try {
-      await telegram.deleteMessage(Number(chunk.telegram_message_id));
+      const { service: telegram, value: msgId } = TelegramService.fromPrefixedValue(
+        c.env.TELEGRAM_BOT_TOKEN,
+        c.env.TELEGRAM_CHAT_ID,
+        chunk.telegram_message_id as string
+      );
+      await telegram.deleteMessage(Number(msgId));
     } catch {
       // Best-effort deletion
     }

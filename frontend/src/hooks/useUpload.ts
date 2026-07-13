@@ -75,16 +75,25 @@ export function useUpload() {
         startedAt: Date.now(),
       });
 
-      // Step 2: Upload chunks sequentially
+      // Step 2: Upload chunks in parallel (up to 5 concurrent uploads)
+      const concurrencyLimit = 5;
+      const activeUploads = new Set<Promise<void>>();
+      let completedChunks = 0;
       let uploadedBytes = 0;
       const startTime = Date.now();
 
       for (let i = 0; i < totalChunks; i++) {
+        // Limit concurrency
+        if (activeUploads.size >= concurrencyLimit) {
+          await Promise.race(activeUploads);
+        }
+
         // Check if paused or cancelled
         const currentTask = useUploadStore.getState().uploads.find((u) => u.id === taskId);
         if (!currentTask || currentTask.status === 'cancelled') {
           return;
         }
+
         if (currentTask.status === 'paused') {
           // Wait for resume
           await new Promise<void>((resolve) => {
@@ -101,52 +110,63 @@ export function useUpload() {
         const start = i * CHUNK_SIZE;
         const end = Math.min(start + CHUNK_SIZE, file.size);
         const chunkBlob = file.slice(start, end);
+        const currentChunkIndex = i;
 
-        // Compute chunk hash
-        const chunkArrayBuffer = await chunkBlob.arrayBuffer();
-        const chunkHash = await sha256(chunkArrayBuffer);
+        const uploadPromise = (async () => {
+          // Compute chunk hash
+          const chunkArrayBuffer = await chunkBlob.arrayBuffer();
+          const chunkHash = await sha256(chunkArrayBuffer);
 
-        // Upload chunk via FormData
-        const formData = new FormData();
-        formData.append('fileId', fileId);
-        formData.append('sessionId', sessionId);
-        formData.append('chunkIndex', String(i));
-        formData.append('chunkHash', chunkHash);
-        formData.append('chunk', new Blob([chunkArrayBuffer]), `chunk_${i}`);
+          // Upload chunk via FormData
+          const formData = new FormData();
+          formData.append('fileId', fileId);
+          formData.append('sessionId', sessionId);
+          formData.append('chunkIndex', String(currentChunkIndex));
+          formData.append('chunkHash', chunkHash);
+          formData.append('chunk', new Blob([chunkArrayBuffer]), `chunk_${currentChunkIndex}`);
 
-        let retries = 0;
-        const maxRetries = 3;
-        let success = false;
+          let retries = 0;
+          const maxRetries = 3;
+          let success = false;
 
-        while (!success && retries <= maxRetries) {
-          try {
-            await api.post('/upload/chunk', formData, {
-              headers: { 'Content-Type': 'multipart/form-data' },
-              timeout: 300000, // 5 min timeout per chunk
-            });
-            success = true;
-          } catch (error) {
-            retries++;
-            if (retries > maxRetries) throw error;
-            // Wait before retry
-            await new Promise((r) => setTimeout(r, 1000 * retries));
+          while (!success && retries <= maxRetries) {
+            try {
+              await api.post('/upload/chunk', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+                timeout: 300000, // 5 min timeout per chunk
+              });
+              success = true;
+            } catch (error) {
+              retries++;
+              if (retries > maxRetries) throw error;
+              await new Promise((r) => setTimeout(r, 1000 * retries));
+            }
           }
-        }
 
-        // Update progress
-        uploadedBytes += end - start;
-        const elapsed = (Date.now() - startTime) / 1000;
-        const speed = uploadedBytes / elapsed;
-        const remaining = (file.size - uploadedBytes) / speed;
+          // Update progress
+          completedChunks++;
+          uploadedBytes += end - start;
+          const elapsed = (Date.now() - startTime) / 1000;
+          const speed = uploadedBytes / elapsed;
+          const remaining = (file.size - uploadedBytes) / speed;
 
-        updateUpload(taskId, {
-          progress: Math.round((uploadedBytes / file.size) * 100),
-          uploadedBytes,
-          completedChunks: i + 1,
-          speed,
-          eta: remaining,
+          updateUpload(taskId, {
+            progress: Math.round((uploadedBytes / file.size) * 100),
+            uploadedBytes,
+            completedChunks,
+            speed,
+            eta: remaining,
+          });
+        })();
+
+        activeUploads.add(uploadPromise);
+        uploadPromise.finally(() => {
+          activeUploads.delete(uploadPromise);
         });
       }
+
+      // Wait for all remaining chunk uploads to finish
+      await Promise.all(activeUploads);
 
       // Step 3: Complete upload
       await api.post('/upload/complete', { sessionId, fileId });

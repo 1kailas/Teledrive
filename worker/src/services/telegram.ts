@@ -31,6 +31,51 @@ export class TelegramService {
     this.chatId = chatId;
   }
 
+  /**
+   * Get the primary bot's numeric ID from a single or comma-separated list of tokens.
+   */
+  static getPrimaryBotId(botTokenConfig: string): string {
+    const primaryToken = botTokenConfig.split(',')[0].trim();
+    return primaryToken.split(':')[0];
+  }
+
+  /**
+   * Helper to get a TelegramService instance for a specific bot token index.
+   */
+  static fromPool(botTokenConfig: string, chatId: string, index: number): { service: TelegramService; botIndex: number } {
+    const tokens = botTokenConfig.split(',').map((t) => t.trim());
+    const botIndex = index % tokens.length;
+    const token = tokens[botIndex] || tokens[0];
+    return { service: new TelegramService(token, chatId), botIndex };
+  }
+
+  /**
+   * Helper to parse a prefixed DB value (e.g. "1:messageId") and return the corresponding service + actual value.
+   * If no prefix is present, it defaults to the first bot (index 0).
+   */
+  static fromPrefixedValue(
+    botTokenConfig: string,
+    chatId: string,
+    prefixedValue: string | null
+  ): { service: TelegramService; value: string } {
+    const tokens = botTokenConfig.split(',').map((t) => t.trim());
+    if (!prefixedValue) {
+      return { service: new TelegramService(tokens[0], chatId), value: '' };
+    }
+
+    const parts = prefixedValue.split(':');
+    if (parts.length > 1) {
+      const botIndex = parseInt(parts[0], 10);
+      if (!isNaN(botIndex)) {
+        const value = parts.slice(1).join(':');
+        const token = tokens[botIndex % tokens.length] || tokens[0];
+        return { service: new TelegramService(token, chatId), value };
+      }
+    }
+
+    return { service: new TelegramService(tokens[0], chatId), value: prefixedValue };
+  }
+
   /** Base URL for Bot API calls */
   private get apiUrl(): string {
     return `${TELEGRAM_API_BASE}/bot${this.botToken}`;

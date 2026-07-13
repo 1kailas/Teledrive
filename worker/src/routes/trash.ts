@@ -92,7 +92,12 @@ trashRoutes.delete('/:id', async (c) => {
     const telegram = new TelegramService(c.env.TELEGRAM_BOT_TOKEN, c.env.TELEGRAM_CHAT_ID);
     for (const chunk of chunks) {
       try {
-        await telegram.deleteMessage(Number(chunk.telegram_message_id));
+        const { service: telegram, value: msgId } = TelegramService.fromPrefixedValue(
+          c.env.TELEGRAM_BOT_TOKEN,
+          c.env.TELEGRAM_CHAT_ID,
+          chunk.telegram_message_id as string
+        );
+        await telegram.deleteMessage(Number(msgId));
       } catch {
         // Best-effort
       }
@@ -121,10 +126,14 @@ trashRoutes.delete('/:id', async (c) => {
         .bind(file.id as string)
         .all();
 
-      const telegram = new TelegramService(c.env.TELEGRAM_BOT_TOKEN, c.env.TELEGRAM_CHAT_ID);
       for (const chunk of chunks) {
         try {
-          await telegram.deleteMessage(Number(chunk.telegram_message_id));
+          const { service: telegram, value: msgId } = TelegramService.fromPrefixedValue(
+            c.env.TELEGRAM_BOT_TOKEN,
+            c.env.TELEGRAM_CHAT_ID,
+            chunk.telegram_message_id as string
+          );
+          await telegram.deleteMessage(Number(msgId));
         } catch {
           // Best-effort
         }
@@ -156,9 +165,6 @@ trashRoutes.delete('/', async (c) => {
     .bind(userId)
     .all();
 
-  // Delete all chunks from Telegram
-  const telegram = new TelegramService(c.env.TELEGRAM_BOT_TOKEN, c.env.TELEGRAM_CHAT_ID);
-
   for (const file of trashedFiles) {
     const { results: chunks } = await c.env.DB.prepare(
       'SELECT telegram_message_id FROM chunks WHERE file_id = ? AND telegram_message_id IS NOT NULL'
@@ -168,7 +174,12 @@ trashRoutes.delete('/', async (c) => {
 
     for (const chunk of chunks) {
       try {
-        await telegram.deleteMessage(Number(chunk.telegram_message_id));
+        const { service: telegram, value: msgId } = TelegramService.fromPrefixedValue(
+          c.env.TELEGRAM_BOT_TOKEN,
+          c.env.TELEGRAM_CHAT_ID,
+          chunk.telegram_message_id as string
+        );
+        await telegram.deleteMessage(Number(msgId));
       } catch {
         // Best-effort
       }

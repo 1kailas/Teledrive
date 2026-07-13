@@ -8,6 +8,7 @@
 import { Hono } from 'hono';
 import * as jose from 'jose';
 import type { AppType } from '../index.js';
+import { TelegramService } from '../services/telegram.js';
 
 export const authRoutes = new Hono<AppType>();
 
@@ -18,7 +19,7 @@ export const authRoutes = new Hono<AppType>();
  */
 authRoutes.get('/bot-info', (c) => {
   const botToken = c.env.TELEGRAM_BOT_TOKEN;
-  const botId = botToken.split(':')[0];
+  const botId = TelegramService.getPrimaryBotId(botToken);
   return c.json({ success: true, data: { botId } });
 });
 
