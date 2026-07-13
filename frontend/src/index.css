@@ -1,0 +1,467 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+
+/* ============================================
+   TeleDrive 2.0 — Design System
+   ============================================ */
+
+@theme {
+  /* Primary palette — deep indigo/violet */
+  --color-primary-50: #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-200: #c7d2fe;
+  --color-primary-300: #a5b4fc;
+  --color-primary-400: #818cf8;
+  --color-primary-500: #6366f1;
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #4338ca;
+  --color-primary-800: #3730a3;
+  --color-primary-900: #312e81;
+
+  /* Accent palette — teal/cyan */
+  --color-accent-400: #22d3ee;
+  --color-accent-500: #06b6d4;
+  --color-accent-600: #0891b2;
+
+  /* Success */
+  --color-success-400: #4ade80;
+  --color-success-500: #22c55e;
+
+  /* Warning */
+  --color-warning-400: #fbbf24;
+  --color-warning-500: #f59e0b;
+
+  /* Error */
+  --color-error-400: #f87171;
+  --color-error-500: #ef4444;
+
+  /* Surface colors — used for backgrounds */
+  --color-surface-50: #f8fafc;
+  --color-surface-100: #f1f5f9;
+  --color-surface-200: #e2e8f0;
+  --color-surface-300: #cbd5e1;
+  --color-surface-400: #94a3b8;
+  --color-surface-500: #64748b;
+  --color-surface-600: #475569;
+  --color-surface-700: #1e293b;
+  --color-surface-800: #1a1f2e;
+  --color-surface-850: #151923;
+  --color-surface-900: #0f172a;
+  --color-surface-950: #0a0e1a;
+
+  /* Font families */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  /* Shadows */
+  --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.15);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-card-hover: 0 10px 25px rgba(0, 0, 0, 0.1), 0 4px 10px rgba(0, 0, 0, 0.06);
+
+  /* Animations */
+  --animate-fade-in: fade-in 0.3s ease-out;
+  --animate-slide-up: slide-up 0.3s ease-out;
+  --animate-slide-right: slide-right 0.3s ease-out;
+  --animate-scale-in: scale-in 0.2s ease-out;
+  --animate-pulse-soft: pulse-soft 2s ease-in-out infinite;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-right {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* ============================================
+   Base Styles
+   ============================================ */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-surface-300) transparent;
+}
+
+.dark * {
+  scrollbar-color: var(--color-surface-700) transparent;
+}
+
+html {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  @apply bg-surface-50 text-slate-900 transition-colors duration-200;
+}
+
+.dark body {
+  @apply bg-surface-950 text-slate-100;
+}
+
+/* ============================================
+   Glass morphism
+   ============================================ */
+
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.dark .glass {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 16px;
+}
+
+.dark .glass-card {
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ============================================
+   Sidebar
+   ============================================ */
+
+.sidebar {
+  @apply fixed left-0 top-0 h-screen w-64 flex flex-col z-40;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-right: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.dark .sidebar {
+  background: rgba(15, 23, 42, 0.9);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sidebar-item {
+  @apply flex items-center gap-3 px-4 py-2.5 mx-2 rounded-xl text-sm font-medium
+         text-slate-600 cursor-pointer
+         transition-all duration-200 ease-out;
+}
+
+.sidebar-item:hover {
+  @apply bg-primary-50 text-primary-700;
+}
+
+.dark .sidebar-item {
+  @apply text-slate-400;
+}
+
+.dark .sidebar-item:hover {
+  @apply bg-primary-900/30 text-primary-300;
+}
+
+.sidebar-item.active {
+  @apply bg-primary-100 text-primary-700 font-semibold;
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.1);
+}
+
+.dark .sidebar-item.active {
+  @apply bg-primary-900/40 text-primary-300;
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.2);
+}
+
+/* ============================================
+   File Cards
+   ============================================ */
+
+.file-card {
+  @apply relative rounded-2xl p-4 cursor-pointer
+         transition-all duration-200 ease-out;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(226, 232, 240, 0.6);
+}
+
+.file-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.dark .file-card {
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.dark .file-card:hover {
+  background: rgba(30, 41, 59, 0.7);
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+/* ============================================
+   Upload zone
+   ============================================ */
+
+.upload-zone {
+  @apply rounded-2xl border-2 border-dashed p-8
+         flex flex-col items-center justify-center gap-4
+         transition-all duration-300 ease-out cursor-pointer;
+  border-color: rgba(148, 163, 184, 0.4);
+}
+
+.upload-zone:hover,
+.upload-zone.drag-active {
+  @apply border-primary-400 bg-primary-50/50;
+}
+
+.dark .upload-zone:hover,
+.dark .upload-zone.drag-active {
+  @apply border-primary-500 bg-primary-900/20;
+}
+
+.upload-zone.drag-active {
+  @apply scale-[1.01];
+  box-shadow: 0 0 30px rgba(99, 102, 241, 0.15);
+}
+
+/* ============================================
+   Progress bars
+   ============================================ */
+
+.progress-bar {
+  @apply h-1.5 rounded-full overflow-hidden;
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.progress-bar-fill {
+  @apply h-full rounded-full transition-all duration-300 ease-out;
+  background: linear-gradient(90deg, var(--color-primary-500), var(--color-accent-500));
+}
+
+/* ============================================
+   Context menu
+   ============================================ */
+
+.context-menu {
+  @apply fixed z-50 min-w-48 rounded-xl py-1.5 shadow-xl;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  animation: var(--animate-scale-in);
+}
+
+.dark .context-menu {
+  background: rgba(30, 41, 59, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.context-menu-item {
+  @apply flex items-center gap-3 px-4 py-2 text-sm text-slate-700
+         cursor-pointer transition-colors duration-150;
+}
+
+.context-menu-item:hover {
+  @apply bg-primary-50 text-primary-700;
+}
+
+.dark .context-menu-item {
+  @apply text-slate-300;
+}
+
+.dark .context-menu-item:hover {
+  @apply bg-primary-900/30 text-primary-300;
+}
+
+/* ============================================
+   Modal / Dialog
+   ============================================ */
+
+.modal-overlay {
+  @apply fixed inset-0 z-50 flex items-center justify-center;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  animation: var(--animate-fade-in);
+}
+
+.modal-content {
+  @apply rounded-2xl p-6 w-full max-w-md mx-4;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.15);
+  animation: var(--animate-slide-up);
+}
+
+.dark .modal-content {
+  background: rgba(26, 31, 46, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ============================================
+   Buttons
+   ============================================ */
+
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
+         rounded-xl text-sm font-semibold text-white
+         transition-all duration-200 ease-out
+         active:scale-[0.97];
+  background: linear-gradient(135deg, var(--color-primary-600), var(--color-primary-700));
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
+}
+
+.btn-primary:hover {
+  box-shadow: 0 4px 16px rgba(79, 70, 229, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
+         rounded-xl text-sm font-semibold
+         bg-surface-100 text-slate-700
+         transition-all duration-200 ease-out
+         active:scale-[0.97];
+  border: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.btn-secondary:hover {
+  @apply bg-surface-200;
+}
+
+.dark .btn-secondary {
+  @apply bg-surface-800 text-slate-300;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.dark .btn-secondary:hover {
+  @apply bg-surface-700;
+}
+
+.btn-ghost {
+  @apply inline-flex items-center justify-center gap-2 px-3 py-2
+         rounded-xl text-sm font-medium text-slate-600
+         transition-all duration-200 ease-out
+         active:scale-[0.97];
+}
+
+.btn-ghost:hover {
+  @apply bg-surface-100;
+}
+
+.dark .btn-ghost {
+  @apply text-slate-400;
+}
+
+.dark .btn-ghost:hover {
+  @apply bg-surface-800;
+}
+
+.btn-danger {
+  @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
+         rounded-xl text-sm font-semibold text-white
+         transition-all duration-200 ease-out
+         active:scale-[0.97];
+  background: linear-gradient(135deg, var(--color-error-500), #dc2626);
+}
+
+/* ============================================
+   Search bar
+   ============================================ */
+
+.search-bar {
+  @apply flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm w-full max-w-xl;
+  background: rgba(241, 245, 249, 0.8);
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  transition: all 0.2s ease-out;
+}
+
+.search-bar:focus-within {
+  @apply bg-white;
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.dark .search-bar {
+  background: rgba(30, 41, 59, 0.5);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.dark .search-bar:focus-within {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+/* ============================================
+   Stat cards
+   ============================================ */
+
+.stat-card {
+  @apply rounded-2xl p-5 transition-all duration-200;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(226, 232, 240, 0.6);
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.dark .stat-card {
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ============================================
+   Toast notifications
+   ============================================ */
+
+.toast {
+  @apply flex items-center gap-3 px-5 py-3 rounded-xl text-sm font-medium;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+  animation: var(--animate-slide-up);
+}
+
+.dark .toast {
+  background: rgba(30, 41, 59, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ============================================
+   Storage meter
+   ============================================ */
+
+.storage-meter {
+  @apply h-2 rounded-full overflow-hidden;
+  background: rgba(148, 163, 184, 0.15);
+}
+
+.storage-meter-fill {
+  @apply h-full rounded-full transition-all duration-500 ease-out;
+  background: linear-gradient(90deg, var(--color-primary-500), var(--color-accent-400));
+}

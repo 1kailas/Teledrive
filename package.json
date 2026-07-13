@@ -1,0 +1,22 @@
+{
+  "name": "teledrive",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Web-based personal cloud storage using Telegram Saved Messages",
+  "workspaces": [
+    "frontend",
+    "worker"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:worker\"",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "dev:worker": "npm run dev --workspace=worker",
+    "build": "npm run build --workspace=frontend && npm run build --workspace=worker",
+    "build:frontend": "npm run build --workspace=frontend",
+    "build:worker": "npm run build --workspace=worker",
+    "db:migrate": "npm run db:migrate:local --workspace=worker"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
