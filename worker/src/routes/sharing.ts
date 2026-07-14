@@ -9,7 +9,7 @@ import { Hono } from 'hono';
 import type { AppType } from '../index.js';
 import { generateId, now } from '../db/queries.js';
 import { TelegramService } from '../services/telegram.js';
-import type { DBFile } from '../types/index.js';
+
 
 export const sharingRoutes = new Hono<AppType>();
 
@@ -391,8 +391,8 @@ sharingRoutes.get('/public/:token/chunk/:chunkIndex', async (c) => {
     return c.json({ success: false, error: 'Share link has expired' }, 410);
   }
 
-  // Check download limit
-  if (share.max_downloads && share.download_count >= share.max_downloads) {
+  // Check download limit (only check on the first chunk to avoid blocking ongoing multi-chunk downloads)
+  if (Number(chunkIndex) === 0 && share.max_downloads && share.download_count >= share.max_downloads) {
     return c.json({ success: false, error: 'Download limit reached' }, 410);
   }
 

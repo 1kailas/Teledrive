@@ -118,7 +118,19 @@ export default function PublicShare() {
               } catch (error: any) {
                 retries++;
                 if (retries > maxRetries) {
-                  throw new Error(error.response?.data?.error || `Failed to download chunk ${currentChunkIndex}`);
+                  let errMsg = `Failed to download chunk ${currentChunkIndex}`;
+                  if (error.response?.data instanceof ArrayBuffer) {
+                    try {
+                      const decoded = new TextDecoder().decode(error.response.data);
+                      const json = JSON.parse(decoded);
+                      errMsg = json.error || errMsg;
+                    } catch {
+                      // Ignore
+                    }
+                  } else if (error.response?.data?.error) {
+                    errMsg = error.response.data.error;
+                  }
+                  throw new Error(errMsg);
                 }
                 await new Promise((r) => setTimeout(r, 1000 * retries));
               }
