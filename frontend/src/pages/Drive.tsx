@@ -16,6 +16,7 @@ import {
   Home,
   Loader2,
   Info,
+  Check,
 } from 'lucide-react';
 import api from '../services/api';
 import { useUIStore, useToastStore } from '../stores';
@@ -59,6 +60,8 @@ export default function Drive() {
     toggleFileSelection,
     toggleFolderSelection,
     clearSelection,
+    selectAll,
+    selectAllFolders,
     detailPanelOpen,
     detailPanelItem,
     setDetailPanel,
@@ -108,6 +111,32 @@ export default function Drive() {
       window.removeEventListener('teledrive:upload-complete', handleUploadComplete);
     };
   }, [fetchData, clearSelection]);
+
+  // Keyboard shortcut Ctrl+A to select all files/folders
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const isInput = activeEl && (
+        activeEl.tagName === 'INPUT' ||
+        activeEl.tagName === 'TEXTAREA' ||
+        activeEl.getAttribute('contenteditable') === 'true'
+      );
+      if (isInput) return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        if (files.length > 0 || folders.length > 0) {
+          e.preventDefault();
+          selectAll(files.map((f) => f.id));
+          selectAllFolders(folders.map((fo) => fo.id));
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [files, folders, selectAll, selectAllFolders]);
 
   // Navigate to folder
   const openFolder = useCallback((folder: TDFolder) => {
@@ -343,6 +372,19 @@ export default function Drive() {
     setDetailPanel(true, { id: item.id, type });
   }, [setDetailPanel]);
 
+  const allSelected =
+    (files.length > 0 && selectedFiles.size === files.length) &&
+    (folders.length > 0 && selectedFolders.size === folders.length);
+
+  const handleSelectAllToggle = useCallback(() => {
+    if (allSelected) {
+      clearSelection();
+    } else {
+      selectAll(files.map((f) => f.id));
+      selectAllFolders(folders.map((fo) => fo.id));
+    }
+  }, [allSelected, files, folders, selectAll, selectAllFolders, clearSelection]);
+
   return (
     <div
       className="min-h-[60vh] relative pr-0"
@@ -412,6 +454,18 @@ export default function Drive() {
             Upload Files
           </button>
           <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
+
+          {(files.length > 0 || folders.length > 0) && (
+            <button
+              onClick={handleSelectAllToggle}
+              className={`btn-secondary text-xs select-none ${
+                allSelected ? 'bg-primary-50 border-primary-200 dark:bg-primary-750/20 dark:border-primary-750 text-primary-600 dark:text-primary-350' : ''
+              }`}
+            >
+              <Check className="w-4 h-4" />
+              <span>{allSelected ? 'Deselect All' : 'Select All'}</span>
+            </button>
+          )}
         </div>
 
         {/* Loading */}

@@ -18,6 +18,7 @@ import {
   Layers,
   Info,
   CalendarRange,
+  Check,
 } from 'lucide-react';
 import api from '../services/api';
 import { useUIStore, useToastStore } from '../stores';
@@ -79,6 +80,8 @@ export default function SearchPage() {
     selectedFolders,
     toggleFileSelection,
     clearSelection,
+    selectAll,
+    selectAllFolders,
     detailPanelOpen,
     detailPanelItem,
     setDetailPanel,
@@ -86,6 +89,45 @@ export default function SearchPage() {
 
   const { downloadFile } = useDownload();
   const { addToast } = useToastStore();
+
+  const allSelected =
+    (files.length > 0 && selectedFiles.size === files.length) &&
+    (folders.length > 0 && selectedFolders.size === folders.length);
+
+  const handleSelectAllToggle = useCallback(() => {
+    if (allSelected) {
+      clearSelection();
+    } else {
+      selectAll(files.map((f) => f.id));
+      selectAllFolders(folders.map((fo) => fo.id));
+    }
+  }, [allSelected, files, folders, selectAll, selectAllFolders, clearSelection]);
+
+  // Keyboard shortcut Ctrl+A to select all files/folders
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const isInput = activeEl && (
+        activeEl.tagName === 'INPUT' ||
+        activeEl.tagName === 'TEXTAREA' ||
+        activeEl.getAttribute('contenteditable') === 'true'
+      );
+      if (isInput) return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        if (files.length > 0 || folders.length > 0) {
+          e.preventDefault();
+          selectAll(files.map((f) => f.id));
+          selectAllFolders(folders.map((fo) => fo.id));
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [files, folders, selectAll, selectAllFolders]);
 
   // Search logic
   const performSearch = useCallback(async (searchQuery: string) => {
@@ -388,6 +430,18 @@ export default function SearchPage() {
             >
               <Filter className="w-4 h-4" />
             </button>
+            {(files.length > 0 || folders.length > 0) && (
+              <button
+                type="button"
+                onClick={handleSelectAllToggle}
+                className={`btn-secondary select-none ${
+                  allSelected ? 'bg-primary-50 border-primary-200 dark:bg-primary-750/20 dark:border-primary-750 text-primary-600 dark:text-primary-350' : ''
+                }`}
+                title={allSelected ? 'Deselect All' : 'Select All'}
+              >
+                <Check className="w-4 h-4" />
+              </button>
+            )}
           </form>
 
           {/* Autocomplete Suggestions */}
