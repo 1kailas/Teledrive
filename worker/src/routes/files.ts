@@ -307,3 +307,86 @@ fileRoutes.post('/:id/duplicate', async (c) => {
     data: { fileId: newFileId, name: newName },
   });
 });
+
+/**
+ * PUT /api/files/:id/text
+ * Update a text/code file's content. Replaces the Telegram document and updates DB.
+ */
+fileRoutes.put('/:id/text', async (c) => {
+  const userId = c.get('userId');
+  const fileId = c.req.param('id');
+  const body = await c.req.json<{ content: string }>().catch(() => ({ content: '' }));
+
+  const file = await c.env.DB.prepare(
+    'SELECT * FROM files WHERE id = ? AND user_id = ?'
+  )
+    .bind(fileId, userId)
+    .first<DBFile>();
+
+  if (!file) {
+    return c.json({ success: false, error: 'File not found' }, 404);
+  }
+
+  const encoder = new TextEncoder();
+  const fileBuffer = encoder.encode(body.content);
+
+  // Clean up old Telegram messages
+  const oldChunks = await c.env.DB.prepare(
+    'SELECT telegram_message_id FROM chunks WHERE file_id = ?'
+  )
+    .bind(fileId)
+    .all<{ telegram_message_id: string | null }>();
+
+  for (const ch of oldChunks.results) {
+    if (ch.telegram_message_id) {
+      try {
+        const { service: telegram, value: msgId } = TelegramService.fromPrefixedValue(
+          c.env.TELEGRAM_BOT_TOKEN,
+          c.env.TELEGRAM_CHAT_ID,
+          ch.telegram_message_id
+        );
+        await telegram.deleteMessage(Number(msgId));
+      } catch {
+        // Ignore failure
+      }
+    }
+  }
+
+  try {
+    // Upload new content to Telegram
+    const { service: telegram, botIndex } = TelegramService.fromPool(
+      c.env.TELEGRAM_BOT_TOKEN,
+      c.env.TELEGRAM_CHAT_ID,
+      0
+    );
+
+    const message = await telegram.sendDocument(
+      fileBuffer.buffer,
+      file.name,
+      `TeleDrive | ${file.name} | Inline Edit`
+    );
+
+    const chunkId = crypto.randomUUID();
+    const telegramMessageId = `${botIndex}:${message.message_id}`;
+    const telegramFileId = `${botIndex}:${message.document?.file_id || ''}`;
+    const timestamp = now();
+
+    // Clear old chunks from DB and insert new chunk, then update file details
+    await c.env.DB.batch([
+      c.env.DB.prepare('DELETE FROM chunks WHERE file_id = ?').bind(fileId),
+      c.env.DB.prepare(
+        `INSERT INTO chunks (id, file_id, chunk_index, telegram_message_id, telegram_file_id, size, upload_status, created_at)
+         VALUES (?, ?, 0, ?, ?, ?, 'complete', ?)`
+      ).bind(chunkId, fileId, telegramMessageId, telegramFileId, fileBuffer.byteLength, timestamp),
+      c.env.DB.prepare(
+        `UPDATE files SET size = ?, chunk_count = 1, updated_at = ? WHERE id = ?`
+      ).bind(fileBuffer.byteLength, timestamp, fileId),
+    ]);
+
+    return c.json({ success: true, size: fileBuffer.byteLength });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Failed to save file';
+    return c.json({ success: false, error: msg }, 500);
+  }
+});
+

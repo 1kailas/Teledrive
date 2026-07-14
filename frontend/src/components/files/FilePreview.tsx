@@ -18,9 +18,11 @@ import {
   Loader2,
   FileText,
   Music,
+  Check,
 } from 'lucide-react';
 import api from '../../services/api';
 import { useDownload } from '../../hooks/useDownload';
+import { useToastStore } from '../../stores';
 import type { TDFile } from '../../types';
 import { formatBytes, getFileCategory } from '../../utils/helpers';
 
@@ -35,6 +37,9 @@ export default function FilePreview({ file, files = [], onClose, onNavigate }: F
   const [loading, setLoading] = useState(true);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState('');
+  const [saving, setSaving] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -53,8 +58,8 @@ export default function FilePreview({ file, files = [], onClose, onNavigate }: F
     setError(null);
     setPreviewUrl(null);
     setTextContent(null);
-    setZoom(1);
-    setRotation(0);
+    setEditContent('');
+    setIsEditing(false);
 
     // Only single-chunk files can be previewed inline
     if (file.chunk_count > 1) {
@@ -75,7 +80,9 @@ export default function FilePreview({ file, files = [], onClose, onNavigate }: F
         } else if (category === 'text' || category === 'code') {
           // Fetch text content
           const res = await api.get(`/preview/${file.id}`, { responseType: 'text' });
-          setTextContent(typeof res.data === 'string' ? res.data : JSON.stringify(res.data, null, 2));
+          const text = typeof res.data === 'string' ? res.data : JSON.stringify(res.data, null, 2);
+          setTextContent(text);
+          setEditContent(text);
         } else {
           setError('This file type cannot be previewed.');
         }
@@ -89,6 +96,58 @@ export default function FilePreview({ file, files = [], onClose, onNavigate }: F
 
     loadPreview();
   }, [file, category]);
+
+  // Save edited text content
+  const handleSave = useCallback(async () => {
+    if (!file || saving) return;
+    setSaving(true);
+    try {
+      const res = await api.put(`/files/${file.id}/text`, { content: editContent });
+      if (res.data.success) {
+        setTextContent(editContent);
+        setIsEditing(false);
+        file.size = res.data.size;
+        file.updated_at = new Date().toISOString();
+        
+        // Notify dynamic file listings to refresh
+        window.dispatchEvent(new CustomEvent('teledrive:upload-complete'));
+        
+        useToastStore.getState().addToast('success', 'File saved successfully');
+      }
+    } catch (err: any) {
+      useToastStore.getState().addToast('error', err.response?.data?.error || err.message || 'Failed to save file');
+    } finally {
+      setSaving(false);
+    }
+  }, [file, editContent, saving]);
+
+  // Tab support for editor textarea
+  const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const start = e.currentTarget.selectionStart;
+      const end = e.currentTarget.selectionEnd;
+      const value = e.currentTarget.value;
+      setEditContent(value.substring(0, start) + '  ' + value.substring(end));
+      setTimeout(() => {
+        e.currentTarget.selectionStart = e.currentTarget.selectionEnd = start + 2;
+      }, 0);
+    }
+  };
+
+  // Keyboard shortcut listener for Ctrl+S
+  useEffect(() => {
+    const handleShortcut = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        if (isEditing && !saving) {
+          e.preventDefault();
+          handleSave();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, [isEditing, saving, handleSave]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -135,6 +194,44 @@ export default function FilePreview({ file, files = [], onClose, onNavigate }: F
           </div>
 
           <div className="flex items-center gap-1">
+            {(category === 'text' || category === 'code') && !loading && !error && (
+              <>
+                {isEditing ? (
+                  <>
+                    <button
+                      onClick={handleSave}
+                      disabled={saving}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary-500 hover:bg-primary-600 disabled:bg-slate-700 text-white text-xs font-semibold cursor-pointer select-none transition-colors"
+                    >
+                      {saving ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Check className="w-3.5 h-3.5" />
+                      )}
+                      Save
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditContent(textContent || '');
+                        setIsEditing(false);
+                      }}
+                      disabled={saving}
+                      className="px-3 py-1.5 rounded-lg hover:bg-white/10 text-white text-xs font-semibold cursor-pointer select-none transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold cursor-pointer select-none transition-colors"
+                  >
+                    Edit file
+                  </button>
+                )}
+                <div className="w-px h-5 bg-white/20 mx-1" />
+              </>
+            )}
             {category === 'image' && (
               <>
                 <button onClick={() => setZoom((z) => Math.min(z + 0.25, 5))} className="p-2 rounded-lg hover:bg-white/10 text-white transition-colors">
@@ -233,10 +330,20 @@ export default function FilePreview({ file, files = [], onClose, onNavigate }: F
           )}
 
           {!loading && !error && (category === 'text' || category === 'code') && textContent !== null && (
-            <div className="w-full max-w-4xl mx-auto p-6 overflow-auto max-h-full">
-              <pre className="text-sm text-slate-300 font-mono whitespace-pre-wrap bg-black/50 rounded-xl p-6 border border-white/10">
-                {textContent}
-              </pre>
+            <div className="w-full max-w-4xl mx-auto p-6 flex flex-col h-[75vh] overflow-hidden">
+              {isEditing ? (
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  onKeyDown={handleEditorKeyDown}
+                  placeholder="Type code or text here..."
+                  className="w-full flex-1 p-6 rounded-xl bg-black/60 text-sm text-slate-200 font-mono border border-white/10 outline-none focus:border-primary-500/50 resize-none overflow-y-auto"
+                />
+              ) : (
+                <pre className="text-sm text-slate-300 font-mono whitespace-pre-wrap bg-black/50 rounded-xl p-6 border border-white/10 overflow-auto max-h-full">
+                  {textContent}
+                </pre>
+              )}
             </div>
           )}
         </div>
