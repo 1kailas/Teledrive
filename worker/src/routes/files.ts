@@ -361,7 +361,7 @@ fileRoutes.put('/:id/text', async (c) => {
     );
 
     const message = await telegram.sendDocument(
-      fileBuffer.buffer,
+      new Blob([fileBuffer]),
       file.name,
       `TeleDrive | ${file.name} | Inline Edit`
     );
