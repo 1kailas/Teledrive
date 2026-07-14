@@ -6,6 +6,7 @@
 
 import { Hono } from 'hono';
 import type { AppType } from '../index.js';
+import { cleanupAbandonedUploads } from '../utils/cleanup.js';
 
 export const statsRoutes = new Hono<AppType>();
 
@@ -104,5 +105,21 @@ statsRoutes.get('/', async (c) => {
       fileTypeDistribution: fileTypeResult.results,
       largestFolders: folderStorageResult,
     },
+  });
+});
+
+/**
+ * POST /api/stats/cleanup
+ * Manually trigger cleanup of abandoned upload sessions.
+ */
+statsRoutes.post('/cleanup', async (c) => {
+  const result = await cleanupAbandonedUploads(
+    c.env.DB,
+    c.env.TELEGRAM_BOT_TOKEN,
+    c.env.TELEGRAM_CHAT_ID
+  );
+  return c.json({
+    success: true,
+    data: result,
   });
 });

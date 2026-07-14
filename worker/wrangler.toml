@@ -21,3 +21,8 @@ FRONTEND_URL = "http://localhost:5173"
 [dev]
 port = 8787
 local_protocol = "http"
+
+# Cron triggers (Runs cleanup task daily at midnight UTC)
+[triggers]
+crons = ["0 0 * * *"]
+

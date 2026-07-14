@@ -136,4 +136,16 @@ app.onError((err, c) => {
   );
 });
 
-export default app;
+import { cleanupAbandonedUploads } from './utils/cleanup.js';
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    return app.fetch(request, env, ctx);
+  },
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(
+      cleanupAbandonedUploads(env.DB, env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID)
+        .catch((err) => console.error('Cron cleanup failed:', err))
+    );
+  }
+};
