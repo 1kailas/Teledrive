@@ -43,7 +43,7 @@ const FolderCard = memo(function FolderCard({
         onContextMenu={handleContextMenu}
         className={`flex items-center gap-4 px-4 py-3 rounded-xl cursor-pointer transition-all duration-250 group border
           ${isSelected
-            ? 'bg-primary-500/10 dark:bg-primary-500/10 border-primary-500/35 dark:border-primary-400/35 shadow-[0_0_15px_rgba(139,92,246,0.08)]'
+            ? 'bg-primary-500/10 dark:bg-primary-500/10 border-primary-500/35 dark:border-primary-400/35 shadow-[0_0_15px_rgba(26,115,232,0.08)]'
             : 'hover:bg-slate-100/70 dark:hover:bg-surface-800/40 border-transparent hover:border-surface-200/50 dark:hover:border-surface-700/50'
           }`}
       >

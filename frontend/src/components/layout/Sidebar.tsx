@@ -63,22 +63,22 @@ export default function Sidebar({ totalStorage = 0 }: SidebarProps) {
         className="sidebar"
       >
         {/* Logo */}
-        <div className="flex items-center gap-3 px-5 py-5">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-500 to-accent-600 flex items-center justify-center shadow-glow">
+        <div className="flex items-center gap-3 px-5 py-5 select-none">
+          <div className="w-10 h-10 rounded-2xl bg-primary-500 flex items-center justify-center shadow-sm">
             <Cloud className="w-5 h-5 text-white" />
           </div>
           <div>
             <h1 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
               TeleDrive
             </h1>
-            <p className="text-[10px] text-slate-400 font-medium tracking-wide uppercase">
-              Personal Cloud
+            <p className="text-[10px] text-slate-400 font-semibold tracking-wide uppercase">
+              Cloud Drive
             </p>
           </div>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 py-2 space-y-0.5 overflow-y-auto">
+        <nav className="flex-1 py-2 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const isActive =
               item.path === '/'
@@ -102,7 +102,7 @@ export default function Sidebar({ totalStorage = 0 }: SidebarProps) {
         </nav>
 
         {/* Storage meter */}
-        <div className="mx-4 mb-4 p-4 rounded-2xl bg-slate-100/80 dark:bg-surface-800/60 border border-surface-200/50 dark:border-surface-700/50">
+        <div className="mx-4 mb-4 p-4.5 rounded-2xl bg-slate-200/40 dark:bg-surface-800/30 border border-slate-200/40 dark:border-surface-750/30">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
               Storage
