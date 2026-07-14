@@ -41,14 +41,14 @@ const FolderCard = memo(function FolderCard({
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
         onContextMenu={handleContextMenu}
-        className={`flex items-center gap-4 px-4 py-3 rounded-xl cursor-pointer transition-all duration-150 group
+        className={`flex items-center gap-4 px-4 py-3 rounded-xl cursor-pointer transition-all duration-250 group border
           ${isSelected
-            ? 'bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800'
-            : 'hover:bg-surface-100 dark:hover:bg-surface-800/50 border border-transparent'
+            ? 'bg-primary-500/10 dark:bg-primary-500/10 border-primary-500/35 dark:border-primary-400/35 shadow-[0_0_15px_rgba(139,92,246,0.08)]'
+            : 'hover:bg-slate-100/70 dark:hover:bg-surface-800/40 border-transparent hover:border-surface-200/50 dark:hover:border-surface-700/50'
           }`}
       >
-        <div className="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center shrink-0">
-          <Folder className="w-6 h-6 text-primary-500 fill-primary-100 dark:fill-primary-900/50" />
+        <div className="w-10 h-10 rounded-xl bg-primary-500/10 dark:bg-primary-500/15 flex items-center justify-center shrink-0">
+          <Folder className="w-6 h-6 text-primary-500 fill-primary-200/50 dark:fill-primary-900/40" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
@@ -62,7 +62,7 @@ const FolderCard = memo(function FolderCard({
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={(e) => { e.stopPropagation(); handleContextMenu(e); }}
-            className="p-1 rounded-lg hover:bg-surface-200 dark:hover:bg-surface-700 transition-colors"
+            className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-surface-700 transition-colors"
           >
             <MoreVertical className="w-4 h-4 text-slate-400" />
           </button>
@@ -76,16 +76,16 @@ const FolderCard = memo(function FolderCard({
       layout
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      whileHover={{ y: -2 }}
+      whileHover={{ y: -3 }}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
       className={`file-card group ${
-        isSelected ? 'ring-2 ring-primary-400 dark:ring-primary-500' : ''
+        isSelected ? 'border-primary-500 dark:border-primary-400 shadow-glow' : ''
       }`}
     >
-      <div className="h-28 rounded-xl mb-3 flex items-center justify-center bg-primary-50/50 dark:bg-primary-900/20">
-        <Folder className="w-12 h-12 text-primary-500 fill-primary-100 dark:fill-primary-900/50" />
+      <div className="h-28 rounded-xl mb-3 flex items-center justify-center bg-primary-500/10 dark:bg-primary-500/15">
+        <Folder className="w-12 h-12 text-primary-500 fill-primary-200/50 dark:fill-primary-900/40" />
       </div>
       <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
         {folder.name}

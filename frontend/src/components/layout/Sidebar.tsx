@@ -64,7 +64,7 @@ export default function Sidebar({ totalStorage = 0 }: SidebarProps) {
       >
         {/* Logo */}
         <div className="flex items-center gap-3 px-5 py-5">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shadow-glow">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-500 to-accent-600 flex items-center justify-center shadow-glow">
             <Cloud className="w-5 h-5 text-white" />
           </div>
           <div>
@@ -102,7 +102,7 @@ export default function Sidebar({ totalStorage = 0 }: SidebarProps) {
         </nav>
 
         {/* Storage meter */}
-        <div className="mx-4 mb-4 p-4 rounded-xl bg-surface-100/80 dark:bg-surface-800/50">
+        <div className="mx-4 mb-4 p-4 rounded-2xl bg-slate-100/80 dark:bg-surface-800/60 border border-surface-200/50 dark:border-surface-700/50">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
               Storage

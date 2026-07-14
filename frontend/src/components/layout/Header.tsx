@@ -213,12 +213,12 @@ export default function Header({ user, onLogout, currentFolderId }: HeaderProps)
         )}
 
         {/* View toggle */}
-        <div className="hidden sm:flex items-center rounded-xl bg-surface-100 dark:bg-surface-800 p-1 gap-0.5">
+        <div className="hidden sm:flex items-center rounded-xl bg-slate-100 dark:bg-surface-800/80 p-0.5 border border-surface-200/50 dark:border-surface-700/50 gap-0.5">
           <button
             onClick={() => setViewMode('grid')}
             className={`p-1.5 rounded-lg transition-all ${
               viewMode === 'grid'
-                ? 'bg-white dark:bg-surface-700 shadow-sm text-primary-600'
+                ? 'bg-white dark:bg-surface-700 shadow-sm text-primary-600 dark:text-primary-400'
                 : 'text-slate-400 hover:text-slate-600'
             }`}
           >
@@ -228,7 +228,7 @@ export default function Header({ user, onLogout, currentFolderId }: HeaderProps)
             onClick={() => setViewMode('list')}
             className={`p-1.5 rounded-lg transition-all ${
               viewMode === 'list'
-                ? 'bg-white dark:bg-surface-700 shadow-sm text-primary-600'
+                ? 'bg-white dark:bg-surface-700 shadow-sm text-primary-600 dark:text-primary-400'
                 : 'text-slate-400 hover:text-slate-600'
             }`}
           >
@@ -255,7 +255,7 @@ export default function Header({ user, onLogout, currentFolderId }: HeaderProps)
         <div className="relative">
           <button
             onClick={() => setShowUserMenu(!showUserMenu)}
-            className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center text-white text-xs font-bold shadow-sm"
+            className="w-8.5 h-8.5 rounded-full bg-gradient-to-br from-primary-500 to-accent-600 flex items-center justify-center text-white text-xs font-bold shadow-sm select-none cursor-pointer border border-white/10"
           >
             {user?.name?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'}
           </button>

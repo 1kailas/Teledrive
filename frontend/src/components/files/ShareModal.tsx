@@ -156,15 +156,15 @@ export default function ShareModal({ file, onClose }: ShareModalProps) {
           {/* Header */}
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-xl bg-primary-500/10 dark:bg-primary-500/20 flex items-center justify-center border border-primary-500/15">
                 <Link2 className="w-5 h-5 text-primary-500" />
               </div>
               <div>
-                <h3 className="text-base font-semibold text-slate-800 dark:text-white">Share File</h3>
+                <h3 className="text-sm font-bold text-slate-800 dark:text-white">Share File</h3>
                 <p className="text-xs text-slate-400 truncate max-w-[200px]">{file.name}</p>
               </div>
             </div>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors">
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-surface-800 transition-colors">
               <X className="w-4 h-4 text-slate-400" />
             </button>
           </div>
@@ -172,17 +172,17 @@ export default function ShareModal({ file, onClose }: ShareModalProps) {
           {/* Share link display */}
           {shareToken && (
             <div className="mb-5">
-              <div className="flex items-center gap-2 p-3 rounded-xl bg-surface-50 dark:bg-surface-800/50 border border-surface-200 dark:border-surface-700">
+              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-surface-900/40 border border-surface-200 dark:border-surface-800 shadow-inner">
                 <ExternalLink className="w-4 h-4 text-slate-400 shrink-0" />
                 <input
                   type="text"
                   readOnly
                   value={shareUrl}
-                  className="flex-1 bg-transparent text-xs text-slate-600 dark:text-slate-300 outline-none font-mono"
+                  className="flex-1 bg-transparent text-xs text-slate-650 dark:text-slate-300 outline-none font-mono"
                 />
                 <button
                   onClick={copyLink}
-                  className="shrink-0 p-1.5 rounded-lg bg-primary-500 hover:bg-primary-600 text-white transition-colors"
+                  className="shrink-0 p-1.5 rounded-lg bg-primary-550 hover:bg-primary-600 text-white transition-colors cursor-pointer"
                 >
                   {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
@@ -199,18 +199,18 @@ export default function ShareModal({ file, onClose }: ShareModalProps) {
           <div className="space-y-4">
             {/* Password protection */}
             <div>
-              <label className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {usePassword ? <Lock className="w-4 h-4 text-amber-500" /> : <Unlock className="w-4 h-4 text-slate-400" />}
-                  <span className="text-sm text-slate-700 dark:text-slate-200">Password protect</span>
+              <label className="flex items-center justify-between cursor-pointer">
+                <div className="flex items-center gap-2 select-none">
+                  {usePassword ? <Lock className="w-4 h-4 text-amber-500" /> : <Unlock className="w-4 h-4 text-slate-450" />}
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Password protect</span>
                 </div>
                 <button
                   onClick={() => setUsePassword(!usePassword)}
-                  className={`w-10 h-5 rounded-full transition-colors relative ${usePassword ? 'bg-primary-500' : 'bg-surface-300 dark:bg-surface-600'}`}
+                  className={`w-10 h-5.5 rounded-full transition-colors relative cursor-pointer ${usePassword ? 'bg-primary-500' : 'bg-slate-200 dark:bg-surface-700'}`}
                 >
                   <motion.div
-                    className="w-4 h-4 rounded-full bg-white shadow-sm absolute top-0.5"
-                    animate={{ x: usePassword ? 22 : 2 }}
+                    className="w-4 h-4 rounded-full bg-white shadow-sm absolute top-0.75"
+                    animate={{ x: usePassword ? 21 : 3 }}
                     transition={{ type: 'spring', damping: 20, stiffness: 300 }}
                   />
                 </button>
@@ -223,7 +223,7 @@ export default function ShareModal({ file, onClose }: ShareModalProps) {
                   placeholder="Enter password..."
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full mt-2 px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-sm text-slate-700 dark:text-slate-200 outline-none focus:border-primary-400 transition-colors"
+                  className="w-full mt-2.5 px-4 py-3 rounded-xl border border-surface-200 dark:border-surface-800 bg-slate-50 dark:bg-surface-900/60 text-sm text-slate-750 dark:text-slate-200 outline-none focus:border-primary-500 dark:focus:border-primary-400 focus:bg-white dark:focus:bg-surface-850 transition-all duration-200"
                 />
               )}
             </div>
@@ -231,23 +231,23 @@ export default function ShareModal({ file, onClose }: ShareModalProps) {
             {/* Expiration */}
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <Calendar className="w-4 h-4 text-slate-400" />
-                <span className="text-sm text-slate-700 dark:text-slate-200">Expiration date</span>
+                <Calendar className="w-4 h-4 text-slate-450" />
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Expiration date</span>
               </div>
               <input
                 type="date"
                 value={expiresAt}
                 onChange={(e) => setExpiresAt(e.target.value)}
                 min={new Date().toISOString().split('T')[0]}
-                className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-sm text-slate-700 dark:text-slate-200 outline-none focus:border-primary-400 transition-colors"
+                className="w-full px-4 py-3 rounded-xl border border-surface-200 dark:border-surface-800 bg-slate-50 dark:bg-surface-900/60 text-sm text-slate-750 dark:text-slate-200 outline-none focus:border-primary-500 dark:focus:border-primary-400 focus:bg-white dark:focus:bg-surface-850 transition-all duration-200"
               />
             </div>
 
             {/* Download limit */}
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <Hash className="w-4 h-4 text-slate-400" />
-                <span className="text-sm text-slate-700 dark:text-slate-200">Max downloads</span>
+                <Hash className="w-4 h-4 text-slate-450" />
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Max downloads</span>
               </div>
               <input
                 type="number"
@@ -255,16 +255,16 @@ export default function ShareModal({ file, onClose }: ShareModalProps) {
                 min="1"
                 value={maxDownloads}
                 onChange={(e) => setMaxDownloads(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-sm text-slate-700 dark:text-slate-200 outline-none focus:border-primary-400 transition-colors"
+                className="w-full px-4 py-3 rounded-xl border border-surface-200 dark:border-surface-800 bg-slate-50 dark:bg-surface-900/60 text-sm text-slate-750 dark:text-slate-200 outline-none focus:border-primary-500 dark:focus:border-primary-400 focus:bg-white dark:focus:bg-surface-850 transition-all duration-200"
               />
             </div>
           </div>
 
           {/* Actions */}
-          <div className="flex items-center justify-between mt-6 pt-4 border-t border-surface-200 dark:border-surface-700">
+          <div className="flex items-center justify-between mt-6 pt-4 border-t border-surface-200 dark:border-surface-800">
             {hasExistingShare ? (
               <>
-                <button onClick={revokeShareLink} className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-600 transition-colors">
+                <button onClick={revokeShareLink} className="flex items-center gap-1.5 text-xs font-semibold text-red-500 hover:text-red-600 transition-colors cursor-pointer select-none">
                   <Trash2 className="w-3.5 h-3.5" />
                   Revoke link
                 </button>

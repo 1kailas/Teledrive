@@ -108,10 +108,10 @@ const FileCard = memo(function FileCard({
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
         onContextMenu={handleContextMenu}
-        className={`flex items-center gap-4 px-4 py-3 rounded-xl cursor-pointer transition-all duration-150 group
+        className={`flex items-center gap-4 px-4 py-3 rounded-xl cursor-pointer transition-all duration-250 group border
           ${isSelected
-            ? 'bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800'
-            : 'hover:bg-surface-100 dark:hover:bg-surface-800/50 border border-transparent'
+            ? 'bg-primary-500/10 dark:bg-primary-500/10 border-primary-500/35 dark:border-primary-400/35 shadow-[0_0_15px_rgba(139,92,246,0.08)]'
+            : 'hover:bg-slate-100/70 dark:hover:bg-surface-800/40 border-transparent hover:border-surface-200/50 dark:hover:border-surface-700/50'
           }`}
       >
         {/* Selection checkbox */}
@@ -157,7 +157,7 @@ const FileCard = memo(function FileCard({
           {onFavorite && (
             <button
               onClick={(e) => { e.stopPropagation(); onFavorite(file); }}
-              className="p-1 rounded-lg hover:bg-surface-200 dark:hover:bg-surface-700 transition-colors"
+              className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-surface-700 transition-colors"
             >
               <Star
                 className={`w-4 h-4 ${
@@ -168,7 +168,7 @@ const FileCard = memo(function FileCard({
           )}
           <button
             onClick={(e) => { e.stopPropagation(); handleContextMenu(e); }}
-            className="p-1 rounded-lg hover:bg-surface-200 dark:hover:bg-surface-700 transition-colors"
+            className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-surface-700 transition-colors"
           >
             <MoreVertical className="w-4 h-4 text-slate-400" />
           </button>
@@ -183,12 +183,12 @@ const FileCard = memo(function FileCard({
       layout
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      whileHover={{ y: -2 }}
+      whileHover={{ y: -3 }}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
       className={`file-card group ${
-        isSelected ? 'ring-2 ring-primary-400 dark:ring-primary-500' : ''
+        isSelected ? 'border-primary-500 dark:border-primary-400 shadow-glow' : ''
       }`}
     >
       {/* File thumbnail / icon area */}

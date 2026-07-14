@@ -1,42 +1,37 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
-
 /* ============================================
-   TeleDrive 2.0 — Design System
+   TeleDrive 2.0 — Design System Redesign
    ============================================ */
 
 @theme {
-  /* Primary palette — deep indigo/violet */
-  --color-primary-50: #eef2ff;
-  --color-primary-100: #e0e7ff;
-  --color-primary-200: #c7d2fe;
-  --color-primary-300: #a5b4fc;
-  --color-primary-400: #818cf8;
-  --color-primary-500: #6366f1;
-  --color-primary-600: #4f46e5;
-  --color-primary-700: #4338ca;
-  --color-primary-800: #3730a3;
-  --color-primary-900: #312e81;
+  /* Primary brand palette — Deep Amethyst / Violet */
+  --color-primary-50: #f5f3ff;
+  --color-primary-100: #ede9fe;
+  --color-primary-200: #ddd6fe;
+  --color-primary-300: #c084fc;
+  --color-primary-400: #a855f7;
+  --color-primary-500: #8b5cf6;
+  --color-primary-600: #7c3aed;
+  --color-primary-700: #6d28d9;
+  --color-primary-800: #5b21b6;
+  --color-primary-900: #4c1d95;
 
-  /* Accent palette — teal/cyan */
+  /* Accent brand palette — Ocean Teal / Electric Aqua */
   --color-accent-400: #22d3ee;
-  --color-accent-500: #06b6d4;
-  --color-accent-600: #0891b2;
+  --color-accent-500: #0ea5e9;
+  --color-accent-600: #2563eb;
 
-  /* Success */
+  /* Status alerts */
   --color-success-400: #4ade80;
   --color-success-500: #22c55e;
-
-  /* Warning */
   --color-warning-400: #fbbf24;
   --color-warning-500: #f59e0b;
-
-  /* Error */
   --color-error-400: #f87171;
   --color-error-500: #ef4444;
 
-  /* Surface colors — used for backgrounds */
+  /* Surface system — curating premium obsidian tones for dark mode */
   --color-surface-50: #f8fafc;
   --color-surface-100: #f1f5f9;
   --color-surface-200: #e2e8f0;
@@ -45,24 +40,26 @@
   --color-surface-500: #64748b;
   --color-surface-600: #475569;
   --color-surface-700: #1e293b;
-  --color-surface-800: #1a1f2e;
-  --color-surface-850: #151923;
-  --color-surface-900: #0f172a;
-  --color-surface-950: #0a0e1a;
+  
+  --color-surface-800: #0e121e;   /* Dark Mode Card Background */
+  --color-surface-850: #080a12;   /* Dark Mode Sidebar/Header */
+  --color-surface-900: #05060b;   /* Dark Mode Base Background */
+  --color-surface-950: #020305;   /* Pitch obsidian elements */
 
   /* Font families */
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
 
-  /* Shadows */
-  --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.15);
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
-  --shadow-card-hover: 0 10px 25px rgba(0, 0, 0, 0.1), 0 4px 10px rgba(0, 0, 0, 0.06);
+  /* Premium drop shadows & glowing effects */
+  --shadow-glow: 0 0 25px rgba(139, 92, 246, 0.25);
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.03), 0 2px 8px rgba(0, 0, 0, 0.02);
+  --shadow-card-hover: 0 20px 40px rgba(0, 0, 0, 0.08), 0 8px 16px rgba(139, 92, 246, 0.06);
+  --shadow-modal: 0 25px 60px rgba(0, 0, 0, 0.25);
 
-  /* Animations */
-  --animate-fade-in: fade-in 0.3s ease-out;
-  --animate-slide-up: slide-up 0.3s ease-out;
-  --animate-slide-right: slide-right 0.3s ease-out;
-  --animate-scale-in: scale-in 0.2s ease-out;
+  /* Animation times */
+  --animate-fade-in: fade-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slide-up: slide-up 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slide-right: slide-right 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-scale-in: scale-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   --animate-pulse-soft: pulse-soft 2s ease-in-out infinite;
 }
 
@@ -72,23 +69,23 @@
 }
 
 @keyframes slide-up {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes slide-right {
-  from { opacity: 0; transform: translateX(-12px); }
+  from { opacity: 0; transform: translateX(-16px); }
   to { opacity: 1; transform: translateX(0); }
 }
 
 @keyframes scale-in {
-  from { opacity: 0; transform: scale(0.95); }
+  from { opacity: 0; transform: scale(0.97); }
   to { opacity: 1; transform: scale(1); }
 }
 
 @keyframes pulse-soft {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+  50% { opacity: 0.75; }
 }
 
 /* ============================================
@@ -97,11 +94,12 @@
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-surface-300) transparent;
+  scrollbar-color: var(--color-surface-200) transparent;
+  transition: border-color 0.15s ease-out, background-color 0.15s ease-out;
 }
 
 .dark * {
-  scrollbar-color: var(--color-surface-700) transparent;
+  scrollbar-color: var(--color-surface-800) transparent;
 }
 
 html {
@@ -111,67 +109,68 @@ html {
 }
 
 body {
-  @apply bg-surface-50 text-slate-900 transition-colors duration-200;
+  @apply bg-surface-50 text-slate-800 transition-colors duration-300;
 }
 
 .dark body {
-  @apply bg-surface-950 text-slate-100;
+  @apply bg-surface-900 text-slate-100;
 }
 
 /* ============================================
-   Glass morphism
+   Glassmorphism System
    ============================================ */
 
 .glass {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
 }
 
 .dark .glass {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(8, 10, 18, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .glass-card {
-  background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 18px;
 }
 
 .dark .glass-card {
-  background: rgba(30, 41, 59, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(14, 18, 30, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 /* ============================================
-   Sidebar
+   Symmetric Sidebar
    ============================================ */
 
 .sidebar {
-  @apply fixed left-0 top-0 h-screen w-64 flex flex-col z-40;
+  @apply fixed left-0 top-0 h-screen w-64 flex flex-col z-40 p-4 border-r;
   background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-right: 1px solid rgba(226, 232, 240, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-color: rgba(226, 232, 240, 0.8);
 }
 
 .dark .sidebar {
-  background: rgba(15, 23, 42, 0.9);
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(8, 10, 18, 0.85);
+  border-color: rgba(255, 255, 255, 0.05);
 }
 
 .sidebar-item {
-  @apply flex items-center gap-3 px-4 py-2.5 mx-2 rounded-xl text-sm font-medium
-         text-slate-600 cursor-pointer
+  @apply flex items-center gap-3.5 px-4 py-3 mx-1 rounded-xl text-sm font-medium
+         text-slate-600 cursor-pointer select-none
          transition-all duration-200 ease-out;
 }
 
 .sidebar-item:hover {
-  @apply bg-primary-50 text-primary-700;
+  @apply bg-primary-50/75 text-primary-600;
+  transform: translateX(2px);
 }
 
 .dark .sidebar-item {
@@ -179,111 +178,119 @@ body {
 }
 
 .dark .sidebar-item:hover {
-  @apply bg-primary-900/30 text-primary-300;
+  @apply bg-primary-900/20 text-primary-300;
 }
 
 .sidebar-item.active {
-  @apply bg-primary-100 text-primary-700 font-semibold;
-  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.1);
+  @apply bg-primary-50 text-primary-600 font-semibold;
+  box-shadow: inset 3px 0 0 var(--color-primary-500);
 }
 
 .dark .sidebar-item.active {
-  @apply bg-primary-900/40 text-primary-300;
-  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.2);
+  @apply bg-primary-900/30 text-primary-300;
+  box-shadow: inset 3px 0 0 var(--color-primary-400);
 }
 
 /* ============================================
-   File Cards
+   Symmetric Card Designs (Files & Folders)
    ============================================ */
 
 .file-card {
-  @apply relative rounded-2xl p-4 cursor-pointer
-         transition-all duration-200 ease-out;
+  @apply relative rounded-2xl p-4.5 cursor-pointer shadow-card
+         transition-all duration-300 ease-out flex flex-col justify-between;
   background: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(226, 232, 240, 0.6);
+  border: 1px solid rgba(226, 232, 240, 0.8);
 }
 
 .file-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   box-shadow: var(--shadow-card-hover);
-  border-color: rgba(99, 102, 241, 0.3);
+  border-color: rgba(139, 92, 246, 0.35);
 }
 
 .dark .file-card {
-  background: rgba(30, 41, 59, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(14, 18, 30, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .dark .file-card:hover {
-  background: rgba(30, 41, 59, 0.7);
-  border-color: rgba(99, 102, 241, 0.3);
+  background: rgba(14, 18, 30, 0.8);
+  border-color: rgba(168, 85, 247, 0.35);
 }
 
 /* ============================================
-   Upload zone
+   Upload Zone
    ============================================ */
 
 .upload-zone {
-  @apply rounded-2xl border-2 border-dashed p-8
-         flex flex-col items-center justify-center gap-4
+  @apply rounded-2xl border-2 border-dashed p-10
+         flex flex-col items-center justify-center gap-4.5
          transition-all duration-300 ease-out cursor-pointer;
-  border-color: rgba(148, 163, 184, 0.4);
+  border-color: rgba(148, 163, 184, 0.35);
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .upload-zone:hover,
 .upload-zone.drag-active {
-  @apply border-primary-400 bg-primary-50/50;
+  @apply border-primary-500 bg-primary-50/40 text-primary-600;
+  box-shadow: var(--shadow-glow);
+}
+
+.dark .upload-zone {
+  background: rgba(14, 18, 30, 0.2);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .dark .upload-zone:hover,
 .dark .upload-zone.drag-active {
-  @apply border-primary-500 bg-primary-900/20;
-}
-
-.upload-zone.drag-active {
-  @apply scale-[1.01];
-  box-shadow: 0 0 30px rgba(99, 102, 241, 0.15);
+  @apply border-primary-400 bg-primary-900/20 text-primary-300;
+  box-shadow: 0 0 25px rgba(168, 85, 247, 0.15);
 }
 
 /* ============================================
-   Progress bars
+   Progress Elements
    ============================================ */
 
 .progress-bar {
-  @apply h-1.5 rounded-full overflow-hidden;
-  background: rgba(148, 163, 184, 0.2);
+  @apply h-2 rounded-full overflow-hidden;
+  background: rgba(148, 163, 184, 0.15);
 }
 
 .progress-bar-fill {
   @apply h-full rounded-full transition-all duration-300 ease-out;
-  background: linear-gradient(90deg, var(--color-primary-500), var(--color-accent-500));
+  background: linear-gradient(90deg, var(--color-primary-500), var(--color-accent-400));
+}
+
+.dark .progress-bar-fill {
+  background: linear-gradient(90deg, var(--color-primary-400), var(--color-accent-500));
 }
 
 /* ============================================
-   Context menu
+   Context Menu
    ============================================ */
 
 .context-menu {
-  @apply fixed z-50 min-w-48 rounded-xl py-1.5 shadow-xl;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  @apply fixed z-55 min-w-52 rounded-2xl py-2 shadow-2xl;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(226, 232, 240, 0.8);
   animation: var(--animate-scale-in);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
 }
 
 .dark .context-menu {
-  background: rgba(30, 41, 59, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(14, 18, 30, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .context-menu-item {
-  @apply flex items-center gap-3 px-4 py-2 text-sm text-slate-700
-         cursor-pointer transition-colors duration-150;
+  @apply flex items-center gap-3 px-4 py-2.5 text-xs font-medium text-slate-700
+         cursor-pointer transition-colors duration-150 rounded-lg mx-1.5;
 }
 
 .context-menu-item:hover {
-  @apply bg-primary-50 text-primary-700;
+  @apply bg-primary-50 text-primary-600;
 }
 
 .dark .context-menu-item {
@@ -295,28 +302,29 @@ body {
 }
 
 /* ============================================
-   Modal / Dialog
+   Modals & Overlays
    ============================================ */
 
 .modal-overlay {
-  @apply fixed inset-0 z-50 flex items-center justify-center;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(4px);
+  @apply fixed inset-0 z-50 flex items-center justify-center p-4;
+  background: rgba(2, 3, 5, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   animation: var(--animate-fade-in);
 }
 
 .modal-content {
-  @apply rounded-2xl p-6 w-full max-w-md mx-4;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(16px);
+  @apply rounded-3xl p-6.5 w-full max-w-md shadow-modal;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border: 1px solid rgba(226, 232, 240, 0.8);
-  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.15);
   animation: var(--animate-slide-up);
 }
 
 .dark .modal-content {
-  background: rgba(26, 31, 46, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(14, 18, 30, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 /* ============================================
@@ -324,140 +332,131 @@ body {
    ============================================ */
 
 .btn-primary {
-  @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
-         rounded-xl text-sm font-semibold text-white
+  @apply inline-flex items-center justify-center gap-2 px-5 py-3
+         rounded-xl text-sm font-semibold text-white cursor-pointer select-none
          transition-all duration-200 ease-out
-         active:scale-[0.97];
-  background: linear-gradient(135deg, var(--color-primary-600), var(--color-primary-700));
-  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
+         active:scale-[0.97] hover:scale-[1.01] hover:brightness-105;
+  background: linear-gradient(135deg, var(--color-primary-500), var(--color-primary-600));
+  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.3);
 }
 
-.btn-primary:hover {
-  box-shadow: 0 4px 16px rgba(79, 70, 229, 0.4);
-  transform: translateY(-1px);
+.dark .btn-primary {
+  background: linear-gradient(135deg, var(--color-primary-500), var(--color-primary-400));
+  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.2);
 }
 
 .btn-secondary {
-  @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
-         rounded-xl text-sm font-semibold
-         bg-surface-100 text-slate-700
+  @apply inline-flex items-center justify-center gap-2 px-5 py-3
+         rounded-xl text-sm font-semibold cursor-pointer select-none
+         bg-slate-100 text-slate-700 hover:bg-slate-200
          transition-all duration-200 ease-out
-         active:scale-[0.97];
+         active:scale-[0.97] hover:scale-[1.01];
   border: 1px solid rgba(226, 232, 240, 0.8);
 }
 
-.btn-secondary:hover {
-  @apply bg-surface-200;
-}
-
 .dark .btn-secondary {
-  @apply bg-surface-800 text-slate-300;
-  border-color: rgba(255, 255, 255, 0.08);
-}
-
-.dark .btn-secondary:hover {
-  @apply bg-surface-700;
+  @apply bg-surface-800 text-slate-300 hover:bg-surface-700;
+  border-color: rgba(255, 255, 255, 0.05);
 }
 
 .btn-ghost {
-  @apply inline-flex items-center justify-center gap-2 px-3 py-2
-         rounded-xl text-sm font-medium text-slate-600
-         transition-all duration-200 ease-out
+  @apply inline-flex items-center justify-center gap-2 px-3.5 py-2.5
+         rounded-xl text-sm font-medium text-slate-600 cursor-pointer select-none
+         transition-all duration-200 ease-out hover:bg-slate-100
          active:scale-[0.97];
-}
-
-.btn-ghost:hover {
-  @apply bg-surface-100;
 }
 
 .dark .btn-ghost {
-  @apply text-slate-400;
-}
-
-.dark .btn-ghost:hover {
-  @apply bg-surface-800;
+  @apply text-slate-400 hover:bg-surface-800;
 }
 
 .btn-danger {
-  @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
-         rounded-xl text-sm font-semibold text-white
+  @apply inline-flex items-center justify-center gap-2 px-5 py-3
+         rounded-xl text-sm font-semibold text-white cursor-pointer select-none
          transition-all duration-200 ease-out
-         active:scale-[0.97];
+         active:scale-[0.97] hover:scale-[1.01];
   background: linear-gradient(135deg, var(--color-error-500), #dc2626);
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.2);
 }
 
 /* ============================================
-   Search bar
+   Symmetric Floating Search Bar
    ============================================ */
 
 .search-bar {
-  @apply flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm w-full max-w-xl;
-  background: rgba(241, 245, 249, 0.8);
+  @apply flex items-center gap-3 px-4.5 py-3 rounded-xl text-sm w-full max-w-xl;
+  background: rgba(241, 245, 249, 0.7);
   border: 1px solid rgba(226, 232, 240, 0.6);
-  transition: all 0.2s ease-out;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .search-bar:focus-within {
   @apply bg-white;
-  border-color: rgba(99, 102, 241, 0.4);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  border-color: rgba(139, 92, 246, 0.45);
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.1);
 }
 
 .dark .search-bar {
-  background: rgba(30, 41, 59, 0.5);
-  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(14, 18, 30, 0.45);
+  border-color: rgba(255, 255, 255, 0.04);
 }
 
 .dark .search-bar:focus-within {
-  background: rgba(30, 41, 59, 0.8);
-  border-color: rgba(99, 102, 241, 0.4);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  background: rgba(14, 18, 30, 0.8);
+  border-color: rgba(168, 85, 247, 0.45);
+  box-shadow: 0 0 0 4px rgba(168, 85, 247, 0.15);
 }
 
 /* ============================================
-   Stat cards
+   Stat Cards
    ============================================ */
 
 .stat-card {
-  @apply rounded-2xl p-5 transition-all duration-200;
+  @apply rounded-2xl p-5.5 transition-all duration-300 flex flex-col justify-between shadow-card;
   background: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(226, 232, 240, 0.6);
+  border: 1px solid rgba(226, 232, 240, 0.8);
 }
 
 .stat-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-card-hover);
+  border-color: rgba(139, 92, 246, 0.2);
 }
 
 .dark .stat-card {
-  background: rgba(30, 41, 59, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(14, 18, 30, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.dark .stat-card:hover {
+  border-color: rgba(168, 85, 247, 0.2);
 }
 
 /* ============================================
-   Toast notifications
+   Toast Notifications
    ============================================ */
 
 .toast {
-  @apply flex items-center gap-3 px-5 py-3 rounded-xl text-sm font-medium;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(16px);
+  @apply flex items-center gap-3.5 px-5 py-3.5 rounded-2xl text-xs font-semibold;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(226, 232, 240, 0.8);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 15px 45px rgba(0, 0, 0, 0.1);
   animation: var(--animate-slide-up);
 }
 
 .dark .toast {
-  background: rgba(30, 41, 59, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(14, 18, 30, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 /* ============================================
-   Storage meter
+   Storage Meter
    ============================================ */
 
 .storage-meter {
-  @apply h-2 rounded-full overflow-hidden;
+  @apply h-2.5 rounded-full overflow-hidden;
   background: rgba(148, 163, 184, 0.15);
 }
 
@@ -466,11 +465,14 @@ body {
   background: linear-gradient(90deg, var(--color-primary-500), var(--color-accent-400));
 }
 
+.dark .storage-meter-fill {
+  background: linear-gradient(90deg, var(--color-primary-400), var(--color-accent-500));
+}
+
 /* ============================================
-   TeleDrive 2.0 — Extensions
+   Extensions & Animations
    ============================================ */
 
-/* Shimmer animation for lazy-loading thumbnails */
 @keyframes shimmer {
   0% {
     background-position: -200% 0;
@@ -492,13 +494,10 @@ body {
   animation: shimmer 1.5s infinite linear;
 }
 
-/* Custom transitions and scrollbars for sidebar detail panel */
 .lg\:mr-80 {
   margin-right: 20rem;
 }
 
-/* Z-indices for floating elements */
 .z-55 {
   z-index: 55;
 }
-
