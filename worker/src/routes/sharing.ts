@@ -189,25 +189,25 @@ sharingRoutes.get('/public/:token', async (c) => {
   const token = c.req.param('token');
 
   const share = await c.env.DB.prepare(
-    `SELECT sl.*, f.name as file_name, f.size as file_size, f.mime_type, f.extension
+    `SELECT sl.*, f.name as file_name, f.size as file_size, f.mime_type, f.extension, f.chunk_count
      FROM shared_links sl
      JOIN files f ON sl.file_id = f.id
      WHERE sl.token = ? AND sl.is_active = 1`
   )
     .bind(token)
-    .first();
+    .first<{ file_name: string; file_size: number; mime_type: string | null; extension: string; password_hash: string | null; expires_at: string | null; max_downloads: number | null; download_count: number; chunk_count: number }>();
 
   if (!share) {
     return c.json({ success: false, error: 'Share link not found or expired' }, 404);
   }
 
   // Check expiry
-  if (share.expires_at && new Date(share.expires_at as string) < new Date()) {
+  if (share.expires_at && new Date(share.expires_at) < new Date()) {
     return c.json({ success: false, error: 'Share link has expired' }, 410);
   }
 
   // Check download limit
-  if (share.max_downloads && (share.download_count as number) >= (share.max_downloads as number)) {
+  if (share.max_downloads && share.download_count >= share.max_downloads) {
     return c.json({ success: false, error: 'Download limit reached' }, 410);
   }
 
@@ -219,6 +219,7 @@ sharingRoutes.get('/public/:token', async (c) => {
       mimeType: share.mime_type,
       extension: share.extension,
       requiresPassword: !!share.password_hash,
+      chunkCount: share.chunk_count,
     },
   });
 });
@@ -318,3 +319,139 @@ sharingRoutes.post('/public/:token/download', async (c) => {
     return c.json({ success: false, error: message }, 500);
   }
 });
+
+/**
+ * POST /api/share/public/:token/verify
+ * Verify password for a shared file (PUBLIC).
+ */
+sharingRoutes.post('/public/:token/verify', async (c) => {
+  const token = c.req.param('token');
+  const body = await c.req.json<{ password?: string }>().catch(() => ({ password: undefined }));
+
+  const share = await c.env.DB.prepare(
+    `SELECT sl.password_hash, sl.expires_at, sl.max_downloads, sl.download_count
+     FROM shared_links sl
+     WHERE sl.token = ? AND sl.is_active = 1`
+  )
+    .bind(token)
+    .first<{ password_hash: string | null; expires_at: string | null; max_downloads: number | null; download_count: number }>();
+
+  if (!share) {
+    return c.json({ success: false, error: 'Share link not found or expired' }, 404);
+  }
+
+  // Check expiry
+  if (share.expires_at && new Date(share.expires_at) < new Date()) {
+    return c.json({ success: false, error: 'Share link has expired' }, 410);
+  }
+
+  // Check download limit
+  if (share.max_downloads && share.download_count >= share.max_downloads) {
+    return c.json({ success: false, error: 'Download limit reached' }, 410);
+  }
+
+  // Verify password if required
+  if (share.password_hash) {
+    if (!body.password) {
+      return c.json({ success: false, error: 'Password required' }, 401);
+    }
+    const inputHash = await hashPassword(body.password);
+    if (inputHash !== share.password_hash) {
+      return c.json({ success: false, error: 'Incorrect password' }, 401);
+    }
+  }
+
+  return c.json({ success: true, message: 'Password verified successfully' });
+});
+
+/**
+ * GET /api/share/public/:token/chunk/:chunkIndex
+ * Download a specific chunk of a shared file (PUBLIC).
+ */
+sharingRoutes.get('/public/:token/chunk/:chunkIndex', async (c) => {
+  const token = c.req.param('token');
+  const chunkIndex = c.req.param('chunkIndex');
+  const password = c.req.query('password') || undefined;
+
+  const share = await c.env.DB.prepare(
+    `SELECT sl.*, f.name as file_name, f.size as file_size, f.mime_type
+     FROM shared_links sl
+     JOIN files f ON sl.file_id = f.id
+     WHERE sl.token = ? AND sl.is_active = 1`
+  )
+    .bind(token)
+    .first<{ file_id: string; password_hash: string | null; expires_at: string | null; max_downloads: number | null; download_count: number; file_name: string; file_size: number; mime_type: string | null }>();
+
+  if (!share) {
+    return c.json({ success: false, error: 'Share link not found' }, 404);
+  }
+
+  // Check expiry
+  if (share.expires_at && new Date(share.expires_at) < new Date()) {
+    return c.json({ success: false, error: 'Share link has expired' }, 410);
+  }
+
+  // Check download limit
+  if (share.max_downloads && share.download_count >= share.max_downloads) {
+    return c.json({ success: false, error: 'Download limit reached' }, 410);
+  }
+
+  // Verify password
+  if (share.password_hash) {
+    if (!password) {
+      return c.json({ success: false, error: 'Password required' }, 401);
+    }
+    const inputHash = await hashPassword(password);
+    if (inputHash !== share.password_hash) {
+      return c.json({ success: false, error: 'Incorrect password' }, 401);
+    }
+  }
+
+  // Get the chunk
+  const chunk = await c.env.DB.prepare(
+    "SELECT telegram_file_id, size FROM chunks WHERE file_id = ? AND chunk_index = ? AND upload_status = 'complete'"
+  )
+    .bind(share.file_id, Number(chunkIndex))
+    .first<{ telegram_file_id: string; size: number }>();
+
+  if (!chunk || !chunk.telegram_file_id) {
+    return c.json({ success: false, error: 'Chunk not found' }, 404);
+  }
+
+  try {
+    const { service: telegram, value: tgFileId } = TelegramService.fromPrefixedValue(
+      c.env.TELEGRAM_BOT_TOKEN,
+      c.env.TELEGRAM_CHAT_ID,
+      chunk.telegram_file_id
+    );
+
+    const fileInfo = await telegram.getFile(tgFileId);
+    if (!fileInfo.file_path) {
+      return c.json({ success: false, error: 'File path unavailable' }, 500);
+    }
+
+    const telegramResponse = await telegram.downloadFile(fileInfo.file_path);
+
+    // Increment download count only on the first chunk
+    if (Number(chunkIndex) === 0) {
+      await c.env.DB.prepare(
+        'UPDATE shared_links SET download_count = download_count + 1 WHERE token = ?'
+      )
+        .bind(token)
+        .run();
+    }
+
+    return new Response(telegramResponse.body, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': String(chunk.size),
+        'Content-Disposition': `attachment; filename="chunk_${chunkIndex}"`,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Chunk download failed';
+    return c.json({ success: false, error: message }, 500);
+  }
+});
+

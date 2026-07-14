@@ -37,6 +37,7 @@ export default function PublicShare() {
     mimeType: string | null;
     extension: string;
     requiresPassword: boolean;
+    chunkCount: number;
   } | null>(null);
 
   const [password, setPassword] = useState('');
@@ -77,38 +78,101 @@ export default function PublicShare() {
     setDownloadProgress(0);
 
     try {
-      const res = await api.post(
-        `/share/public/${token}/download`,
-        { password },
-        {
-          responseType: 'blob',
-          onDownloadProgress: (progressEvent) => {
-            const total = progressEvent.total || fileInfo?.fileSize || 0;
-            if (total > 0) {
-              setDownloadProgress(Math.round((progressEvent.loaded / total) * 100));
-            }
-          },
-        }
-      );
-
-      // Parse headers to get correct filename if present
-      const contentType = res.headers['content-type'];
-      const disposition = res.headers['content-disposition'];
-      const contentTypeStr = typeof contentType === 'string' ? contentType : 'application/octet-stream';
-      const dispositionStr = typeof disposition === 'string' ? disposition : '';
-
+      let finalBlob: Blob;
+      let contentTypeStr = fileInfo?.mimeType || 'application/octet-stream';
       let filename = fileInfo?.fileName || 'download';
-      if (dispositionStr && dispositionStr.indexOf('attachment') !== -1) {
-        const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
-        const matches = filenameRegex.exec(dispositionStr);
-        if (matches != null && matches[1]) {
-          filename = decodeURIComponent(matches[1].replace(/['"]/g, ''));
+
+      if (fileInfo && fileInfo.chunkCount > 1) {
+        // Multi-chunk files: download chunks in parallel (up to 3 concurrently)
+        if (fileInfo.requiresPassword) {
+          const verifyRes = await api.post(`/share/public/${token}/verify`, { password });
+          if (!verifyRes.data.success) {
+            throw new Error(verifyRes.data.error || 'Password verification failed');
+          }
         }
+
+        const concurrencyLimit = 3;
+        const activeDownloads = new Set<Promise<void>>();
+        const chunkBlobs: Blob[] = new Array(fileInfo.chunkCount);
+        let downloadedBytes = 0;
+
+        for (let i = 0; i < fileInfo.chunkCount; i++) {
+          if (activeDownloads.size >= concurrencyLimit) {
+            await Promise.race(activeDownloads);
+          }
+
+          const currentChunkIndex = i;
+          const downloadPromise = (async () => {
+            let retries = 0;
+            const maxRetries = 3;
+            let chunkData: ArrayBuffer | null = null;
+
+            while (!chunkData && retries <= maxRetries) {
+              try {
+                const queryParams = password ? `?password=${encodeURIComponent(password)}` : '';
+                const res = await api.get(`/share/public/${token}/chunk/${currentChunkIndex}${queryParams}`, {
+                  responseType: 'arraybuffer',
+                  timeout: 300000,
+                });
+                chunkData = res.data;
+              } catch (error: any) {
+                retries++;
+                if (retries > maxRetries) {
+                  throw new Error(error.response?.data?.error || `Failed to download chunk ${currentChunkIndex}`);
+                }
+                await new Promise((r) => setTimeout(r, 1000 * retries));
+              }
+            }
+
+            if (!chunkData) throw new Error(`Failed to download chunk ${currentChunkIndex}`);
+
+            chunkBlobs[currentChunkIndex] = new Blob([chunkData]);
+            downloadedBytes += chunkData.byteLength;
+            setDownloadProgress(Math.min(100, Math.round((downloadedBytes / fileInfo.fileSize) * 100)));
+          })();
+
+          activeDownloads.add(downloadPromise);
+          downloadPromise.finally(() => {
+            activeDownloads.delete(downloadPromise);
+          });
+        }
+
+        await Promise.all(activeDownloads);
+        finalBlob = new Blob(chunkBlobs, { type: contentTypeStr });
+      } else {
+        // Single-chunk files: legacy single-request download
+        const res = await api.post(
+          `/share/public/${token}/download`,
+          { password },
+          {
+            responseType: 'blob',
+            onDownloadProgress: (progressEvent) => {
+              const total = progressEvent.total || fileInfo?.fileSize || 0;
+              if (total > 0) {
+                setDownloadProgress(Math.round((progressEvent.loaded / total) * 100));
+              }
+            },
+          }
+        );
+
+        // Parse headers to get correct filename if present
+        const contentType = res.headers['content-type'];
+        const disposition = res.headers['content-disposition'];
+        if (typeof contentType === 'string') contentTypeStr = contentType;
+        const dispositionStr = typeof disposition === 'string' ? disposition : '';
+
+        if (dispositionStr && dispositionStr.indexOf('attachment') !== -1) {
+          const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+          const matches = filenameRegex.exec(dispositionStr);
+          if (matches != null && matches[1]) {
+            filename = decodeURIComponent(matches[1].replace(/['"]/g, ''));
+          }
+        }
+        finalBlob = new Blob([res.data], { type: contentTypeStr });
       }
 
       // Trigger browser download
-      const blob = new Blob([res.data], { type: contentTypeStr });
-      const url = window.URL.createObjectURL(blob);
+      const url = window.URL.createObjectURL(finalBlob);
       const link = document.createElement('a');
       link.href = url;
       link.setAttribute('download', filename);
