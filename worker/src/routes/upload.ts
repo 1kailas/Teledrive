@@ -154,13 +154,14 @@ uploadRoutes.post('/chunk', async (c) => {
     const { service: telegram, botIndex } = TelegramService.fromPool(c.env.TELEGRAM_BOT_TOKEN, c.env.TELEGRAM_CHAT_ID, chunkIndex);
     const chunkData = await chunkFile.arrayBuffer();
 
-    // Get original file name for context
-    const file = await c.env.DB.prepare('SELECT name FROM files WHERE id = ?')
+    // Get original file name and chunk count for context
+    const file = await c.env.DB.prepare('SELECT name, chunk_count FROM files WHERE id = ?')
       .bind(fileId)
-      .first<{ name: string }>();
+      .first<{ name: string; chunk_count: number }>();
 
+    // Keep original filename for single-chunk uploads so Telegram detects format & auto-generates thumbnails
     const chunkFileName = file
-      ? `${file.name}.chunk_${chunkIndex}`
+      ? (file.chunk_count === 1 ? file.name : `${file.name}.chunk_${chunkIndex}`)
       : `chunk_${chunkIndex}`;
 
     const message = await telegram.sendDocument(
@@ -168,6 +169,17 @@ uploadRoutes.post('/chunk', async (c) => {
       chunkFileName,
       `TeleDrive | ${file?.name || fileId} | Chunk ${chunkIndex + 1}`
     );
+
+    // Save Telegram's auto-generated thumbnail if available (e.g. for videos, images, pdfs)
+    const docThumb = message.document?.thumbnail || message.document?.thumb;
+    if (docThumb && docThumb.file_id) {
+      const thumbnailMsgId = `${botIndex}:${docThumb.file_id}`;
+      await c.env.DB.prepare(
+        'UPDATE files SET thumbnail_msg_id = ? WHERE id = ?'
+      )
+        .bind(thumbnailMsgId, fileId)
+        .run();
+    }
 
     const telegramMessageId = `${botIndex}:${message.message_id}`;
     const telegramFileId = `${botIndex}:${message.document?.file_id || ''}`;
@@ -213,6 +225,7 @@ uploadRoutes.post('/chunk', async (c) => {
       .bind(fileId, chunkIndex)
       .run();
 
+    console.error('Chunk upload failed:', error);
     const message = error instanceof Error ? error.message : 'Upload failed';
     return c.json({ success: false, error: message }, 500);
   }
@@ -258,6 +271,96 @@ uploadRoutes.post('/complete', async (c) => {
   )
     .bind(timestamp, sessionId)
     .run();
+
+  // Run thumbnail auto-generation fallback in background context to avoid blocking the client
+  const runBackgroundThumbnail = async () => {
+    try {
+      const file = await c.env.DB.prepare(
+        "SELECT id, name, mime_type, chunk_count, thumbnail_msg_id FROM files WHERE id = ? AND user_id = ?"
+      )
+        .bind(fileId, userId)
+        .first<{ id: string; name: string; mime_type: string | null; chunk_count: number; thumbnail_msg_id: string | null }>();
+
+      if (!file || file.thumbnail_msg_id) {
+        return; // Already set by the chunk upload trigger or file missing
+      }
+
+      // Check format support via mime or filename extension
+      const THUMBNAIL_MIME_TYPES = [
+        'image/jpeg',
+        'image/png',
+        'image/gif',
+        'image/webp',
+        'image/bmp',
+        'image/svg+xml',
+      ];
+      const isImage = file.mime_type && THUMBNAIL_MIME_TYPES.some((t) => file.mime_type!.startsWith(t.split('/')[0] + '/'));
+      const hasImageExt = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes((file.name.split('.').pop() || '').toLowerCase());
+
+      if ((isImage || hasImageExt) && file.chunk_count === 1) {
+        // Get the first chunk to use as thumbnail source
+        const chunk = await c.env.DB.prepare(
+          "SELECT telegram_file_id FROM chunks WHERE file_id = ? AND chunk_index = 0 AND upload_status = 'complete'"
+        )
+          .bind(fileId)
+          .first<{ telegram_file_id: string }>();
+
+        if (chunk && chunk.telegram_file_id) {
+          const { service: downloadTelegram, value: tgFileId } = TelegramService.fromPrefixedValue(
+            c.env.TELEGRAM_BOT_TOKEN,
+            c.env.TELEGRAM_CHAT_ID,
+            chunk.telegram_file_id
+          );
+
+          const fileInfo = await downloadTelegram.getFile(tgFileId);
+          if (fileInfo.file_path) {
+            const downloadResponse = await downloadTelegram.downloadFile(fileInfo.file_path);
+            const imageData = await downloadResponse.arrayBuffer();
+
+            const { service: uploadTelegram, botIndex } = TelegramService.fromPool(
+              c.env.TELEGRAM_BOT_TOKEN,
+              c.env.TELEGRAM_CHAT_ID,
+              0
+            );
+
+            const photoMessage = await uploadTelegram.sendPhoto(
+              imageData,
+              `thumb_${file.name}`,
+              `TeleDrive Thumbnail | ${file.name}`
+            );
+
+            const photos = photoMessage.photo || [];
+            const bestPhoto = photos.length > 1 ? photos[1] : (photos.length > 0 ? photos[0] : null);
+            const thumbnailFileId = bestPhoto
+              ? `${botIndex}:${bestPhoto.file_id}|${photoMessage.message_id}`
+              : null;
+
+            if (thumbnailFileId) {
+              await c.env.DB.prepare(
+                'UPDATE files SET thumbnail_msg_id = ? WHERE id = ? AND user_id = ?'
+              )
+                .bind(thumbnailFileId, fileId, userId)
+                .run();
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to auto-generate thumbnail in background:', error);
+    }
+  };
+
+  if (c.env.ENVIRONMENT === 'development') {
+    setTimeout(() => {
+      runBackgroundThumbnail();
+    }, 10);
+  } else if (c.executionCtx) {
+    c.executionCtx.waitUntil(runBackgroundThumbnail());
+  } else {
+    setTimeout(() => {
+      runBackgroundThumbnail();
+    }, 10);
+  }
 
   return c.json({
     success: true,

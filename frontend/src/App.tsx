@@ -18,6 +18,9 @@ import Favorites from './pages/Favorites';
 import Recent from './pages/Recent';
 import Trash from './pages/Trash';
 import Settings from './pages/Settings';
+import Shared from './pages/Shared';
+import PublicShare from './pages/PublicShare';
+import ToastContainer from './components/ui/Toast';
 import api from './services/api';
 
 const queryClient = new QueryClient({
@@ -41,13 +44,22 @@ function AppContent() {
 
   // Fetch storage stats when authenticated
   useEffect(() => {
-    if (isAuthenticated) {
-      api.get('/stats').then((res) => {
-        if (res.data.success) {
-          setTotalStorage(res.data.data.totalStorage || 0);
-        }
-      }).catch(() => {});
-    }
+    const fetchStorage = () => {
+      if (isAuthenticated) {
+        api.get('/stats').then((res) => {
+          if (res.data.success) {
+            setTotalStorage(res.data.data.totalStorage || 0);
+          }
+        }).catch(() => {});
+      }
+    };
+
+    fetchStorage();
+
+    window.addEventListener('teledrive:upload-complete', fetchStorage);
+    return () => {
+      window.removeEventListener('teledrive:upload-complete', fetchStorage);
+    };
   }, [isAuthenticated]);
 
   // Loading state
@@ -66,17 +78,19 @@ function AppContent() {
     );
   }
 
-  // Not authenticated — show login
-  if (!isAuthenticated) {
+  // Not authenticated — show login (except for public share pages)
+  if (!isAuthenticated && !window.location.pathname.startsWith('/shared/')) {
     return <Login onLogin={login} />;
   }
 
   // Authenticated — show app
   return (
     <Routes>
+      <Route path="/shared/:token" element={<PublicShare />} />
       <Route element={<Layout user={user} onLogout={logout} totalStorage={totalStorage} />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/drive" element={<Drive />} />
+        <Route path="/shared" element={<Shared />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/favorites" element={<Favorites />} />
         <Route path="/recent" element={<Recent />} />
@@ -94,6 +108,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AppContent />
+        <ToastContainer />
       </BrowserRouter>
     </QueryClientProvider>
   );

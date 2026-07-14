@@ -22,6 +22,10 @@ import { recentRoutes } from './routes/recent.js';
 import { trashRoutes } from './routes/trash.js';
 import { statsRoutes } from './routes/stats.js';
 import { settingsRoutes } from './routes/settings.js';
+import { thumbnailRoutes } from './routes/thumbnails.js';
+import { previewRoutes } from './routes/preview.js';
+import { sharingRoutes } from './routes/sharing.js';
+import { bulkRoutes } from './routes/bulk.js';
 
 // ============================================
 // App Type with environment bindings
@@ -93,6 +97,10 @@ app.route('/api/recent', recentRoutes);
 app.route('/api/trash', trashRoutes);
 app.route('/api/stats', statsRoutes);
 app.route('/api/settings', settingsRoutes);
+app.route('/api/thumbnails', thumbnailRoutes);
+app.route('/api/preview', previewRoutes);
+app.route('/api/share', sharingRoutes);
+app.route('/api/bulk', bulkRoutes);
 
 // ============================================
 // 404 Handler

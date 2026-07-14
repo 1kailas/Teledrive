@@ -17,6 +17,7 @@ export interface TDFile {
   chunk_count: number;
   sha256_hash: string | null;
   thumbnail_msg_id: string | null;
+  description: string | null;
   is_trashed: number;
   trashed_at: string | null;
   is_favorite: number;
@@ -24,6 +25,8 @@ export interface TDFile {
   upload_status: 'pending' | 'uploading' | 'complete' | 'failed';
   created_at: string;
   updated_at: string;
+  // Search result extras
+  name_highlighted?: string;
 }
 
 export interface TDFolder {
@@ -87,6 +90,52 @@ export interface ChunkInfo {
   size: number;
   telegramFileId: string;
   sha256Hash?: string;
+}
+
+// ============================================
+// Sharing Types
+// ============================================
+
+export interface ShareLink {
+  id: string;
+  file_id: string;
+  user_id: string;
+  token: string;
+  password_hash: string | null;
+  expires_at: string | null;
+  max_downloads: number | null;
+  download_count: number;
+  is_active: number;
+  created_at: string;
+  // Joined fields
+  file_name?: string;
+  file_size?: number;
+  mime_type?: string;
+  extension?: string;
+}
+
+// ============================================
+// Preview Types
+// ============================================
+
+export interface PreviewInfo {
+  fileId: string;
+  fileName: string;
+  mimeType: string | null;
+  size: number;
+  previewType: 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'none';
+  canPreview: boolean;
+  hasThumbnail: boolean;
+}
+
+// ============================================
+// Search Types
+// ============================================
+
+export interface SearchSuggestion {
+  text: string;
+  type: 'file' | 'folder';
+  extension: string | null;
 }
 
 // ============================================
@@ -178,6 +227,20 @@ export interface ContextMenuState {
   y: number;
   item: TDFile | TDFolder | null;
   type: 'file' | 'folder' | null;
+}
+
+// ============================================
+// Toast Types
+// ============================================
+
+export type ToastType = 'success' | 'error' | 'info' | 'warning';
+
+export interface Toast {
+  id: string;
+  type: ToastType;
+  title: string;
+  message?: string;
+  duration?: number; // ms, default 4000
 }
 
 // ============================================

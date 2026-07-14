@@ -1,8 +1,9 @@
 /**
- * TeleDrive — Drive Page (File Browser)
+ * TeleDrive — Drive Page (File Browser with G-Drive features)
  *
  * Google Drive-style file browser with grid/list views, breadcrumbs,
- * drag & drop upload, context menu, and folder navigation.
+ * drag & drop upload, context menu, folder navigation, multi-select,
+ * floating selection bar, share modal, move-to modal, file preview, and details panel.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -14,14 +15,20 @@ import {
   ChevronRight,
   Home,
   Loader2,
+  Info,
 } from 'lucide-react';
 import api from '../services/api';
-import { useUIStore } from '../stores';
+import { useUIStore, useToastStore } from '../stores';
 import { useUpload } from '../hooks/useUpload';
 import { useDownload } from '../hooks/useDownload';
 import FileCard from '../components/files/FileCard';
 import FolderCard from '../components/files/FolderCard';
 import ContextMenu from '../components/files/ContextMenu';
+import FilePreview from '../components/files/FilePreview';
+import ShareModal from '../components/files/ShareModal';
+import SelectionBar from '../components/files/SelectionBar';
+import MoveToModal from '../components/files/MoveToModal';
+import DetailPanel from '../components/files/DetailPanel';
 import type { TDFile, TDFolder, Breadcrumb } from '../types';
 
 export default function Drive() {
@@ -38,9 +45,28 @@ export default function Drive() {
   const [renameModal, setRenameModal] = useState<{ item: TDFile | TDFolder; type: 'file' | 'folder' } | null>(null);
   const [renameName, setRenameName] = useState('');
 
-  const { viewMode, contextMenu, setContextMenu } = useUIStore();
+  // G Drive Feature Modals
+  const [showShareModal, setShowShareModal] = useState<TDFile | null>(null);
+  const [showMoveModal, setShowMoveModal] = useState<{ items: Array<TDFile | TDFolder> } | null>(null);
+  const [previewingFile, setPreviewingFile] = useState<TDFile | null>(null);
+
+  const {
+    viewMode,
+    contextMenu,
+    setContextMenu,
+    selectedFiles,
+    selectedFolders,
+    toggleFileSelection,
+    toggleFolderSelection,
+    clearSelection,
+    detailPanelOpen,
+    detailPanelItem,
+    setDetailPanel,
+  } = useUIStore();
+
   const { uploadFiles } = useUpload();
   const { downloadFile } = useDownload();
+  const { addToast } = useToastStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch files and folders
@@ -71,7 +97,17 @@ export default function Drive() {
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    clearSelection();
+
+    const handleUploadComplete = () => {
+      fetchData();
+    };
+
+    window.addEventListener('teledrive:upload-complete', handleUploadComplete);
+    return () => {
+      window.removeEventListener('teledrive:upload-complete', handleUploadComplete);
+    };
+  }, [fetchData, clearSelection]);
 
   // Navigate to folder
   const openFolder = useCallback((folder: TDFolder) => {
@@ -100,9 +136,9 @@ export default function Drive() {
 
   // File input handler
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = e.target.files;
-    if (selectedFiles && selectedFiles.length > 0) {
-      uploadFiles(Array.from(selectedFiles), folderId);
+    const selectedFilesList = e.target.files;
+    if (selectedFilesList && selectedFilesList.length > 0) {
+      uploadFiles(Array.from(selectedFilesList), folderId);
       useUIStore.getState().setUploadPanelOpen(true);
     }
     e.target.value = '';
@@ -121,20 +157,44 @@ export default function Drive() {
     setContextMenu({ visible: false, x: 0, y: 0, item: null, type: null });
   }, [setContextMenu]);
 
-  // Actions
+  // Download action
   const handleDownload = useCallback((file: TDFile) => {
     downloadFile(file.id);
   }, [downloadFile]);
 
+  // Check if file is previewable
+  const isPreviewable = useCallback((file: TDFile) => {
+    return file.chunk_count === 1 && (
+      file.mime_type?.startsWith('image/') ||
+      file.mime_type?.startsWith('video/') ||
+      file.mime_type?.startsWith('audio/') ||
+      file.mime_type?.startsWith('text/') ||
+      file.mime_type === 'application/pdf' ||
+      file.mime_type === 'application/json'
+    );
+  }, []);
+
+  // Double click handler
+  const handleDoubleClick = useCallback((file: TDFile) => {
+    if (isPreviewable(file)) {
+      setPreviewingFile(file);
+    } else {
+      handleDownload(file);
+    }
+  }, [isPreviewable, handleDownload]);
+
+  // Favorite toggle
   const handleFavorite = useCallback(async (file: TDFile) => {
     try {
       await api.patch(`/files/${file.id}`, { isFavorite: !file.is_favorite });
       fetchData();
+      addToast('success', file.is_favorite ? 'Removed from favorites' : 'Added to favorites');
     } catch (err) {
-      console.error('Failed to toggle favorite:', err);
+      addToast('error', 'Failed to update favorite status');
     }
-  }, [fetchData]);
+  }, [fetchData, addToast]);
 
+  // Single-item delete (soft delete/move to trash)
   const handleDelete = useCallback(async (item: TDFile | TDFolder, type: 'file' | 'folder') => {
     try {
       if (type === 'file') {
@@ -143,11 +203,13 @@ export default function Drive() {
         await api.delete(`/folders/${item.id}`);
       }
       fetchData();
+      addToast('success', `${type === 'file' ? 'File' : 'Folder'} moved to trash`);
     } catch (err) {
-      console.error('Failed to delete:', err);
+      addToast('error', 'Failed to delete item');
     }
-  }, [fetchData]);
+  }, [fetchData, addToast]);
 
+  // Rename actions
   const handleRename = useCallback((item: TDFile | TDFolder, type: 'file' | 'folder') => {
     setRenameModal({ item, type });
     setRenameName(item.name);
@@ -163,19 +225,21 @@ export default function Drive() {
       }
       setRenameModal(null);
       fetchData();
+      addToast('success', 'Item renamed successfully');
     } catch (err) {
-      console.error('Failed to rename:', err);
+      addToast('error', 'Failed to rename item');
     }
-  }, [renameModal, renameName, fetchData]);
+  }, [renameModal, renameName, fetchData, addToast]);
 
   const handleDuplicate = useCallback(async (file: TDFile) => {
     try {
       await api.post(`/files/${file.id}/duplicate`);
       fetchData();
+      addToast('success', 'File duplicated');
     } catch (err) {
-      console.error('Failed to duplicate:', err);
+      addToast('error', 'Failed to duplicate file');
     }
-  }, [fetchData]);
+  }, [fetchData, addToast]);
 
   const createFolder = useCallback(async () => {
     if (!newFolderName.trim()) return;
@@ -187,166 +251,322 @@ export default function Drive() {
       setShowNewFolderModal(false);
       setNewFolderName('');
       fetchData();
+      addToast('success', `Folder "${newFolderName}" created`);
     } catch (err) {
-      console.error('Failed to create folder:', err);
+      addToast('error', 'Failed to create folder');
     }
-  }, [newFolderName, folderId, fetchData]);
+  }, [newFolderName, folderId, fetchData, addToast]);
+
+  // Toggle selection on file click (handles range selection too)
+  const handleSelectFile = useCallback((file: TDFile, e: React.MouseEvent) => {
+    e.stopPropagation();
+    toggleFileSelection(file.id);
+  }, [toggleFileSelection]);
+
+  const handleSelectFolder = useCallback((folder: TDFolder, e: React.MouseEvent) => {
+    e.stopPropagation();
+    toggleFolderSelection(folder.id);
+  }, [toggleFolderSelection]);
+
+  // Bulk operation triggers
+  const handleBulkMove = useCallback(() => {
+    const itemsToMove: Array<TDFile | TDFolder> = [];
+    selectedFiles.forEach((id) => {
+      const f = files.find((item) => item.id === id);
+      if (f) itemsToMove.push(f);
+    });
+    selectedFolders.forEach((id) => {
+      const f = folders.find((item) => item.id === id);
+      if (f) itemsToMove.push(f);
+    });
+    if (itemsToMove.length > 0) {
+      setShowMoveModal({ items: itemsToMove });
+    }
+  }, [selectedFiles, selectedFolders, files, folders]);
+
+  const executeBulkMove = useCallback(async (targetFolderId: string | null) => {
+    if (!showMoveModal) return;
+    const fileIds = showMoveModal.items.filter((i) => 'mime_type' in i).map((i) => i.id);
+    const folderIds = showMoveModal.items.filter((i) => !('mime_type' in i)).map((i) => i.id);
+
+    try {
+      await api.post('/bulk/move', { fileIds, folderIds, targetFolderId });
+      setShowMoveModal(null);
+      clearSelection();
+      fetchData();
+      addToast('success', `Successfully moved ${fileIds.length + folderIds.length} items`);
+    } catch {
+      addToast('error', 'Failed to move items');
+    }
+  }, [showMoveModal, clearSelection, fetchData, addToast]);
+
+  const handleBulkTrash = useCallback(async () => {
+    const fileIds = Array.from(selectedFiles);
+    const folderIds = Array.from(selectedFolders);
+    try {
+      await api.post('/bulk/trash', { fileIds, folderIds });
+      clearSelection();
+      fetchData();
+      addToast('success', `Moved ${fileIds.length + folderIds.length} items to Trash`);
+    } catch {
+      addToast('error', 'Failed to trash items');
+    }
+  }, [selectedFiles, selectedFolders, fetchData, clearSelection, addToast]);
+
+  const handleBulkFavorite = useCallback(async (isFav: boolean) => {
+    const fileIds = Array.from(selectedFiles);
+    if (fileIds.length === 0) return;
+    try {
+      await api.post('/bulk/favorite', { fileIds, isFavorite: isFav });
+      clearSelection();
+      fetchData();
+      addToast('success', `Updated favorite status for ${fileIds.length} files`);
+    } catch {
+      addToast('error', 'Failed to update favorite status');
+    }
+  }, [selectedFiles, fetchData, clearSelection, addToast]);
+
+  const handleBulkDownload = useCallback(() => {
+    selectedFiles.forEach((id) => {
+      downloadFile(id);
+    });
+    clearSelection();
+  }, [selectedFiles, downloadFile, clearSelection]);
+
+  // Context Menu Share callback
+  const handleContextShare = useCallback((file: TDFile) => {
+    setShowShareModal(file);
+  }, []);
+
+  // Context Menu Details callback
+  const handleContextDetails = useCallback((item: TDFile | TDFolder, type: 'file' | 'folder') => {
+    setDetailPanel(true, { id: item.id, type });
+  }, [setDetailPanel]);
 
   return (
     <div
-      className="min-h-[60vh]"
+      className="min-h-[60vh] relative pr-0"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* Breadcrumbs */}
-      <div className="flex items-center gap-1 mb-4 flex-wrap">
-        <button
-          onClick={() => setSearchParams({})}
-          className="flex items-center gap-1 text-sm text-slate-500 hover:text-primary-600 transition-colors"
-        >
-          <Home className="w-4 h-4" />
-          <span>My Drive</span>
-        </button>
-        {breadcrumbs.map((crumb) => (
-          <div key={crumb.id} className="flex items-center gap-1">
-            <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+      {/* Main browse container with layout adjustments for detail panel */}
+      <div className={`transition-all duration-300 ${detailPanelOpen ? 'lg:mr-80' : ''}`}>
+        {/* Breadcrumbs */}
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <div className="flex items-center gap-1 flex-wrap">
             <button
-              onClick={() => setSearchParams({ folder: crumb.id })}
-              className="text-sm text-slate-500 hover:text-primary-600 transition-colors"
+              onClick={() => setSearchParams({})}
+              className="flex items-center gap-1 text-sm text-slate-500 hover:text-primary-600 transition-colors"
             >
-              {crumb.name}
+              <Home className="w-4 h-4" />
+              <span>My Drive</span>
+            </button>
+            {breadcrumbs.map((crumb) => (
+              <div key={crumb.id} className="flex items-center gap-1">
+                <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+                <button
+                  onClick={() => setSearchParams({ folder: crumb.id })}
+                  className="text-sm text-slate-500 hover:text-primary-600 transition-colors"
+                >
+                  {crumb.name}
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Show details toggler */}
+          {(files.length > 0 || folders.length > 0) && (
+            <button
+              onClick={() => {
+                if (detailPanelOpen) {
+                  setDetailPanel(false);
+                } else {
+                  if (files.length > 0) {
+                    setDetailPanel(true, { id: files[0].id, type: 'file' });
+                  } else if (folders.length > 0) {
+                    setDetailPanel(true, { id: folders[0].id, type: 'folder' });
+                  }
+                }
+              }}
+              className={`p-2 rounded-xl border transition-all ${
+                detailPanelOpen
+                  ? 'bg-primary-50 border-primary-200 dark:bg-primary-900/20 dark:border-primary-800 text-primary-500'
+                  : 'border-surface-200 dark:border-surface-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+              }`}
+              title="View details"
+            >
+              <Info className="w-4.5 h-4.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Actions bar */}
+        <div className="flex items-center gap-2 mb-4">
+          <button onClick={() => setShowNewFolderModal(true)} className="btn-secondary text-xs">
+            <FolderPlus className="w-4 h-4" />
+            New Folder
+          </button>
+          <button onClick={() => fileInputRef.current?.click()} className="btn-secondary text-xs">
+            <Upload className="w-4 h-4" />
+            Upload Files
+          </button>
+          <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
+        </div>
+
+        {/* Loading */}
+        {loading && (
+          <div className="flex items-center justify-center h-48">
+            <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!loading && folders.length === 0 && files.length === 0 && (
+          <div className={`upload-zone min-h-[300px] ${dragOver ? 'drag-active' : ''}`}>
+            <Upload className="w-12 h-12 text-slate-300" />
+            <div className="text-center">
+              <p className="text-base font-medium text-slate-600 dark:text-slate-300">
+                Drop files here or click to upload
+              </p>
+              <p className="text-sm text-slate-400 mt-1">This folder is empty</p>
+            </div>
+            <button onClick={() => fileInputRef.current?.click()} className="btn-primary mt-2">
+              <Upload className="w-4 h-4" />
+              Choose Files
             </button>
           </div>
-        ))}
-      </div>
-
-      {/* Actions bar */}
-      <div className="flex items-center gap-2 mb-4">
-        <button onClick={() => setShowNewFolderModal(true)} className="btn-secondary text-xs">
-          <FolderPlus className="w-4 h-4" />
-          New Folder
-        </button>
-        <button onClick={() => fileInputRef.current?.click()} className="btn-secondary text-xs">
-          <Upload className="w-4 h-4" />
-          Upload Files
-        </button>
-        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
-      </div>
-
-      {/* Loading */}
-      {loading && (
-        <div className="flex items-center justify-center h-48">
-          <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
-        </div>
-      )}
-
-      {/* Empty state */}
-      {!loading && folders.length === 0 && files.length === 0 && (
-        <div className={`upload-zone min-h-[300px] ${dragOver ? 'drag-active' : ''}`}>
-          <Upload className="w-12 h-12 text-slate-300" />
-          <div className="text-center">
-            <p className="text-base font-medium text-slate-600 dark:text-slate-300">
-              Drop files here or click to upload
-            </p>
-            <p className="text-sm text-slate-400 mt-1">
-              This folder is empty
-            </p>
-          </div>
-          <button onClick={() => fileInputRef.current?.click()} className="btn-primary mt-2">
-            <Upload className="w-4 h-4" />
-            Choose Files
-          </button>
-        </div>
-      )}
-
-      {/* Drag overlay */}
-      <AnimatePresence>
-        {dragOver && (folders.length > 0 || files.length > 0) && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-30 flex items-center justify-center bg-primary-500/10 backdrop-blur-sm"
-          >
-            <div className="upload-zone drag-active w-80">
-              <Upload className="w-10 h-10 text-primary-500" />
-              <p className="text-lg font-semibold text-primary-600 dark:text-primary-400">
-                Drop to upload
-              </p>
-            </div>
-          </motion.div>
         )}
-      </AnimatePresence>
 
-      {/* Content */}
-      {!loading && (folders.length > 0 || files.length > 0) && (
-        <>
-          {/* Folders */}
-          {folders.length > 0 && (
-            <div className="mb-6">
-              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-                Folders
-              </h3>
-              <div className={
-                viewMode === 'grid'
-                  ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3'
-                  : 'space-y-1'
-              }>
-                {folders.map((folder) => (
-                  <FolderCard
-                    key={folder.id}
-                    folder={folder}
-                    viewMode={viewMode}
-                    onDoubleClick={openFolder}
-                    onClick={openFolder}
-                    onContextMenu={handleFolderContextMenu}
-                  />
-                ))}
+        {/* Drag overlay */}
+        <AnimatePresence>
+          {dragOver && (folders.length > 0 || files.length > 0) && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-30 flex items-center justify-center bg-primary-500/10 backdrop-blur-sm"
+            >
+              <div className="upload-zone drag-active w-80">
+                <Upload className="w-10 h-10 text-primary-500" />
+                <p className="text-lg font-semibold text-primary-600 dark:text-primary-400">
+                  Drop to upload
+                </p>
               </div>
-            </div>
+            </motion.div>
           )}
+        </AnimatePresence>
 
-          {/* Files */}
-          {files.length > 0 && (
-            <div>
-              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-                Files
-              </h3>
-              <div className={
-                viewMode === 'grid'
-                  ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3'
-                  : 'space-y-1'
-              }>
-                {files.map((file) => (
-                  <FileCard
-                    key={file.id}
-                    file={file}
-                    viewMode={viewMode}
-                    onContextMenu={handleFileContextMenu}
-                    onFavorite={handleFavorite}
-                    onDoubleClick={handleDownload}
-                  />
-                ))}
+        {/* Content */}
+        {!loading && (folders.length > 0 || files.length > 0) && (
+          <>
+            {/* Folders */}
+            {folders.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                  Folders
+                </h3>
+                <div
+                  className={
+                    viewMode === 'grid'
+                      ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3'
+                      : 'space-y-1'
+                  }
+                >
+                  {folders.map((folder) => (
+                    <FolderCard
+                      key={folder.id}
+                      folder={folder}
+                      viewMode={viewMode}
+                      isSelected={selectedFolders.has(folder.id)}
+                      onDoubleClick={openFolder}
+                      onClick={(f, e) => {
+                        if (e.ctrlKey || e.metaKey || e.shiftKey || selectedFiles.size > 0 || selectedFolders.size > 0) {
+                          handleSelectFolder(f, e);
+                        } else {
+                          setDetailPanel(true, { id: f.id, type: 'folder' });
+                        }
+                      }}
+                      onContextMenu={handleFolderContextMenu}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-        </>
-      )}
+            )}
 
-      {/* Context menu */}
+            {/* Files */}
+            {files.length > 0 && (
+              <div>
+                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                  Files
+                </h3>
+                <div
+                  className={
+                    viewMode === 'grid'
+                      ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3'
+                      : 'space-y-1'
+                  }
+                >
+                  {files.map((file) => (
+                    <FileCard
+                      key={file.id}
+                      file={file}
+                      viewMode={viewMode}
+                      isSelected={selectedFiles.has(file.id)}
+                      selectionMode={selectedFiles.size > 0 || selectedFolders.size > 0}
+                      onContextMenu={handleFileContextMenu}
+                      onFavorite={handleFavorite}
+                      onDoubleClick={handleDoubleClick}
+                      onClick={(f) => {
+                        setDetailPanel(true, { id: f.id, type: 'file' });
+                      }}
+                      onSelect={handleSelectFile}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Floating Selection Bar */}
+      <SelectionBar
+        selectedCount={selectedFiles.size + selectedFolders.size}
+        onClear={clearSelection}
+        onMove={handleBulkMove}
+        onTrash={handleBulkTrash}
+        onDownload={handleBulkDownload}
+        onFavorite={() => handleBulkFavorite(true)}
+        onUnfavorite={() => handleBulkFavorite(false)}
+      />
+
+      {/* Right Detail Sidebar */}
+      <DetailPanel
+        isOpen={detailPanelOpen}
+        itemId={detailPanelItem?.id || null}
+        itemType={detailPanelItem?.type || null}
+        onClose={() => setDetailPanel(false)}
+      />
+
+      {/* Context Menu */}
       <ContextMenu
         state={contextMenu}
         onClose={closeContextMenu}
+        onPreview={setPreviewingFile}
         onDownload={handleDownload}
         onRename={handleRename}
+        onMove={(item) => setShowMoveModal({ items: [item] })}
         onDuplicate={handleDuplicate}
         onFavorite={handleFavorite}
+        onShare={handleContextShare}
+        onDetails={handleContextDetails}
         onDelete={handleDelete}
       />
 
-      {/* New Folder Modal */}
+      {/* Inline Modals */}
       <AnimatePresence>
+        {/* New Folder Modal */}
         {showNewFolderModal && (
           <div className="modal-overlay" onClick={() => setShowNewFolderModal(false)}>
             <motion.div
@@ -379,10 +599,8 @@ export default function Drive() {
             </motion.div>
           </div>
         )}
-      </AnimatePresence>
 
-      {/* Rename Modal */}
-      <AnimatePresence>
+        {/* Rename Modal */}
         {renameModal && (
           <div className="modal-overlay" onClick={() => setRenameModal(null)}>
             <motion.div
@@ -413,6 +631,32 @@ export default function Drive() {
               </div>
             </motion.div>
           </div>
+        )}
+
+        {/* Share Modal */}
+        {showShareModal && (
+          <ShareModal file={showShareModal} onClose={() => setShowShareModal(null)} />
+        )}
+
+        {/* Move To Folder Modal */}
+        {showMoveModal && (
+          <MoveToModal
+            title="Move items to"
+            itemCount={showMoveModal.items.length}
+            excludeFolderIds={showMoveModal.items.filter((i) => !('mime_type' in i)).map((i) => i.id)}
+            onClose={() => setShowMoveModal(null)}
+            onMove={executeBulkMove}
+          />
+        )}
+
+        {/* File Preview Overlay */}
+        {previewingFile && (
+          <FilePreview
+            file={previewingFile}
+            files={files}
+            onClose={() => setPreviewingFile(null)}
+            onNavigate={setPreviewingFile}
+          />
         )}
       </AnimatePresence>
     </div>

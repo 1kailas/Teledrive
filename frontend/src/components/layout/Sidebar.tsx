@@ -16,6 +16,7 @@ import {
   Cloud,
   ChevronLeft,
   ChevronRight,
+  Share2,
 } from 'lucide-react';
 import { useUIStore } from '../../stores';
 import { formatBytes } from '../../utils/helpers';
@@ -27,6 +28,7 @@ interface SidebarProps {
 const navItems = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { path: '/drive', icon: HardDrive, label: 'My Drive' },
+  { path: '/shared', icon: Share2, label: 'Shared' },
   { path: '/favorites', icon: Star, label: 'Favorites' },
   { path: '/recent', icon: Clock, label: 'Recent' },
   { path: '/trash', icon: Trash2, label: 'Trash' },

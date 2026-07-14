@@ -1,10 +1,4 @@
-/**
- * TeleDrive — Header Component
- *
- * Top bar with search, view toggle, upload button, and user menu.
- */
-
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search,
@@ -21,7 +15,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useUIStore, useThemeStore, useUploadStore } from '../../stores';
 import { useUpload } from '../../hooks/useUpload';
-import type { AuthUser } from '../../types';
+import type { AuthUser, SearchSuggestion } from '../../types';
+import api from '../../services/api';
 
 interface HeaderProps {
   user: AuthUser | null;
@@ -36,18 +31,63 @@ export default function Header({ user, onLogout, currentFolderId }: HeaderProps)
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
+  // Suggestions state
+  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
   const { viewMode, setViewMode, sidebarOpen, setSidebarOpen, setUploadPanelOpen } = useUIStore();
   const { theme, setTheme } = useThemeStore();
   const { uploadFiles } = useUpload();
   const uploads = useUploadStore((s) => s.uploads);
   const activeUploads = uploads.filter((u) => u.status === 'uploading' || u.status === 'queued');
 
+  // Debounced suggestion fetch
+  useEffect(() => {
+    if (searchQuery.trim().length < 2) {
+      setSuggestions([]);
+      return;
+    }
+
+    const fetchSuggestions = async () => {
+      try {
+        const res = await api.get('/search/suggest', { params: { q: searchQuery.trim() } });
+        if (res.data.success) {
+          setSuggestions(res.data.data || []);
+        }
+      } catch {
+        // Ignore
+      }
+    };
+
+    const delay = setTimeout(fetchSuggestions, 200);
+    return () => clearTimeout(delay);
+  }, [searchQuery]);
+
+  // Click outside listener for suggestions
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
   const handleSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault();
+    setShowSuggestions(false);
     if (searchQuery.trim()) {
       navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
     }
   }, [searchQuery, navigate]);
+
+  const handleSuggestionClick = useCallback((text: string) => {
+    setSearchQuery(text);
+    setShowSuggestions(false);
+    navigate(`/search?q=${encodeURIComponent(text)}`);
+  }, [navigate]);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -73,16 +113,50 @@ export default function Header({ user, onLogout, currentFolderId }: HeaderProps)
           <Menu className="w-5 h-5" />
         </button>
 
-        <form onSubmit={handleSearch} className="search-bar max-w-lg">
-          <Search className="w-4 h-4 text-slate-400 shrink-0" />
-          <input
-            type="text"
-            placeholder="Search files and folders..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 bg-transparent outline-none text-sm text-slate-700 dark:text-slate-200 placeholder:text-slate-400"
-          />
-        </form>
+        <div className="relative flex-1 max-w-lg" ref={searchContainerRef}>
+          <form onSubmit={handleSearch} className="search-bar w-full">
+            <Search className="w-4 h-4 text-slate-400 shrink-0" />
+            <input
+              type="text"
+              placeholder="Search files and folders..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setShowSuggestions(true);
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              className="flex-1 bg-transparent outline-none text-sm text-slate-700 dark:text-slate-200 placeholder:text-slate-400"
+            />
+          </form>
+
+          {/* Autocomplete Dropdown */}
+          <AnimatePresence>
+            {showSuggestions && suggestions.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="absolute left-0 right-0 top-12 z-55 rounded-2xl bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-800 shadow-xl overflow-hidden py-1.5"
+              >
+                {suggestions.map((suggestion, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleSuggestionClick(suggestion.text)}
+                    className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-350 hover:bg-surface-50 dark:hover:bg-surface-800 flex items-center gap-2"
+                  >
+                    <Search className="w-3.5 h-3.5 text-slate-400" />
+                    <span>{suggestion.text}</span>
+                    {suggestion.type === 'folder' && (
+                      <span className="text-[10px] bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400 px-1.5 py-0.5 rounded-full ml-auto">
+                        Folder
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
 
       {/* Right: Actions */}

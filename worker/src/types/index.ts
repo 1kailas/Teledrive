@@ -221,6 +221,15 @@ export interface TelegramResponse<T = unknown> {
 export interface TelegramMessage {
   message_id: number;
   document?: TelegramDocument;
+  photo?: TelegramPhotoSize[];
+}
+
+export interface TelegramPhotoSize {
+  file_id: string;
+  file_unique_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
 }
 
 export interface TelegramDocument {

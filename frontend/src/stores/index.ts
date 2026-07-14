@@ -6,7 +6,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { UploadTask, DownloadTask, ViewMode, SortConfig, ContextMenuState } from '../types';
+import type { UploadTask, DownloadTask, ViewMode, SortConfig, ContextMenuState, Toast, ToastType } from '../types';
 
 // ============================================
 // Theme Store
@@ -112,16 +112,24 @@ interface UIState {
   sort: SortConfig;
   contextMenu: ContextMenuState;
   selectedFiles: Set<string>;
+  selectedFolders: Set<string>;
   sidebarOpen: boolean;
   uploadPanelOpen: boolean;
+  detailPanelOpen: boolean;
+  detailPanelItem: { id: string; type: 'file' | 'folder' } | null;
+  previewFile: string | null;
   setViewMode: (mode: ViewMode) => void;
   setSort: (sort: SortConfig) => void;
   setContextMenu: (menu: ContextMenuState) => void;
   toggleFileSelection: (id: string) => void;
+  toggleFolderSelection: (id: string) => void;
   clearSelection: () => void;
   selectAll: (ids: string[]) => void;
+  selectAllFolders: (ids: string[]) => void;
   setSidebarOpen: (open: boolean) => void;
   setUploadPanelOpen: (open: boolean) => void;
+  setDetailPanel: (open: boolean, item?: { id: string; type: 'file' | 'folder' } | null) => void;
+  setPreviewFile: (fileId: string | null) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -131,8 +139,12 @@ export const useUIStore = create<UIState>()(
       sort: { field: 'name', order: 'asc' } as SortConfig,
       contextMenu: { visible: false, x: 0, y: 0, item: null, type: null },
       selectedFiles: new Set<string>(),
+      selectedFolders: new Set<string>(),
       sidebarOpen: true,
       uploadPanelOpen: false,
+      detailPanelOpen: false,
+      detailPanelItem: null,
+      previewFile: null,
 
       setViewMode: (mode) => set({ viewMode: mode }),
       setSort: (sort) => set({ sort }),
@@ -144,10 +156,20 @@ export const useUIStore = create<UIState>()(
           else next.add(id);
           return { selectedFiles: next };
         }),
-      clearSelection: () => set({ selectedFiles: new Set() }),
+      toggleFolderSelection: (id) =>
+        set((state) => {
+          const next = new Set(state.selectedFolders);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          return { selectedFolders: next };
+        }),
+      clearSelection: () => set({ selectedFiles: new Set(), selectedFolders: new Set() }),
       selectAll: (ids) => set({ selectedFiles: new Set(ids) }),
+      selectAllFolders: (ids) => set({ selectedFolders: new Set(ids) }),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       setUploadPanelOpen: (open) => set({ uploadPanelOpen: open }),
+      setDetailPanel: (open, item) => set({ detailPanelOpen: open, detailPanelItem: item || null }),
+      setPreviewFile: (fileId) => set({ previewFile: fileId }),
     }),
     {
       name: 'teledrive-ui',
@@ -159,3 +181,37 @@ export const useUIStore = create<UIState>()(
     }
   )
 );
+
+// ============================================
+// Toast Store
+// ============================================
+
+interface ToastState {
+  toasts: Toast[];
+  addToast: (type: ToastType, title: string, message?: string, duration?: number) => void;
+  removeToast: (id: string) => void;
+  clearToasts: () => void;
+}
+
+export const useToastStore = create<ToastState>((set) => ({
+  toasts: [],
+  addToast: (type, title, message, duration = 4000) => {
+    const id = crypto.randomUUID();
+    const toast: Toast = { id, type, title, message, duration };
+    set((state) => ({ toasts: [...state.toasts, toast] }));
+
+    // Auto-remove after duration
+    if (duration > 0) {
+      setTimeout(() => {
+        set((state) => ({
+          toasts: state.toasts.filter((t) => t.id !== id),
+        }));
+      }, duration);
+    }
+  },
+  removeToast: (id) =>
+    set((state) => ({
+      toasts: state.toasts.filter((t) => t.id !== id),
+    })),
+  clearToasts: () => set({ toasts: [] }),
+}));

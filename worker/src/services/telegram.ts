@@ -12,6 +12,7 @@ import type {
   TelegramResponse,
   TelegramMessage,
   TelegramFile,
+  TelegramPhotoSize,
 } from '../types/index.js';
 
 const TELEGRAM_API_BASE = 'https://api.telegram.org';
@@ -177,6 +178,68 @@ export class TelegramService {
     }
 
     return response;
+  }
+
+  /**
+   * Send a photo to Saved Messages (used for thumbnails).
+   * Telegram auto-compresses the image, making it perfect for previews.
+   *
+   * @param photoData - The image content as ArrayBuffer or Blob
+   * @param fileName - File name for the photo
+   * @param caption - Optional caption
+   * @returns The Telegram message containing the photo
+   */
+  async sendPhoto(
+    photoData: ArrayBuffer | Blob,
+    fileName: string,
+    caption?: string
+  ): Promise<TelegramMessage> {
+    const formData = new FormData();
+    formData.append('chat_id', this.chatId);
+
+    const blob =
+      photoData instanceof Blob ? photoData : new Blob([photoData]);
+    formData.append('photo', blob, fileName);
+
+    if (caption) {
+      formData.append('caption', caption);
+    }
+
+    formData.append('disable_notification', 'true');
+
+    return this.callWithRetry<TelegramMessage>(async () => {
+      const response = await fetch(`${this.apiUrl}/sendPhoto`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result: TelegramResponse<TelegramMessage> =
+        await response.json();
+
+      if (!result.ok || !result.result) {
+        throw new TelegramApiError(
+          result.description || 'Failed to send photo',
+          result.error_code || response.status
+        );
+      }
+
+      return result.result;
+    });
+  }
+
+  /**
+   * Get the URL for a photo thumbnail from Telegram.
+   * Returns the smallest photo size for fast loading.
+   *
+   * @param photoMessage - The Telegram message containing the photo
+   * @returns Download URL for the thumbnail
+   */
+  async getPhotoUrl(fileId: string): Promise<string> {
+    const fileInfo = await this.getFile(fileId);
+    if (!fileInfo.file_path) {
+      throw new TelegramApiError('File path unavailable', 404);
+    }
+    return `${this.fileUrl}/${fileInfo.file_path}`;
   }
 
   /**

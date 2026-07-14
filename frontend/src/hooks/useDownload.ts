@@ -46,50 +46,71 @@ export function useDownload() {
 
       addDownload(task);
 
-      // Download all chunks
-      const chunkBlobs: Blob[] = [];
+      // Download all chunks in parallel (up to 4 concurrent downloads)
+      const concurrencyLimit = 4;
+      const activeDownloads = new Set<Promise<void>>();
+      const chunkBlobs: Blob[] = new Array(info.chunkCount);
       let downloadedBytes = 0;
+      let completedChunks = 0;
       const startTime = Date.now();
 
       for (let i = 0; i < info.chunkCount; i++) {
+        // Limit concurrency
+        if (activeDownloads.size >= concurrencyLimit) {
+          await Promise.race(activeDownloads);
+        }
+
         const currentTask = useDownloadStore.getState().downloads.find((d) => d.id === taskId);
         if (!currentTask || currentTask.status === 'failed') return;
 
-        let retries = 0;
-        const maxRetries = 3;
-        let chunkData: ArrayBuffer | null = null;
+        const currentChunkIndex = i;
 
-        while (!chunkData && retries <= maxRetries) {
-          try {
-            const res = await api.get(`/download/${fileId}/chunk/${i}`, {
-              responseType: 'arraybuffer',
-              timeout: 300000,
-            });
-            chunkData = res.data;
-          } catch (error) {
-            retries++;
-            if (retries > maxRetries) throw error;
-            await new Promise((r) => setTimeout(r, 1000 * retries));
+        const downloadPromise = (async () => {
+          let retries = 0;
+          const maxRetries = 3;
+          let chunkData: ArrayBuffer | null = null;
+
+          while (!chunkData && retries <= maxRetries) {
+            try {
+              const res = await api.get(`/download/${fileId}/chunk/${currentChunkIndex}`, {
+                responseType: 'arraybuffer',
+                timeout: 300000,
+              });
+              chunkData = res.data;
+            } catch (error) {
+              retries++;
+              if (retries > maxRetries) throw error;
+              await new Promise((r) => setTimeout(r, 1000 * retries));
+            }
           }
-        }
 
-        if (!chunkData) throw new Error(`Failed to download chunk ${i}`);
+          if (!chunkData) throw new Error(`Failed to download chunk ${currentChunkIndex}`);
 
-        chunkBlobs.push(new Blob([chunkData]));
-        downloadedBytes += chunkData.byteLength;
+          chunkBlobs[currentChunkIndex] = new Blob([chunkData]);
+          downloadedBytes += chunkData.byteLength;
+          completedChunks++;
 
-        const elapsed = (Date.now() - startTime) / 1000;
-        const speed = downloadedBytes / elapsed;
-        const remaining = (info.fileSize - downloadedBytes) / speed;
+          const elapsed = (Date.now() - startTime) / 1000;
+          const speed = downloadedBytes / elapsed;
+          const remaining = (info.fileSize - downloadedBytes) / speed;
 
-        updateDownload(taskId, {
-          progress: Math.round((downloadedBytes / info.fileSize) * 100),
-          downloadedBytes,
-          completedChunks: i + 1,
-          speed,
-          eta: remaining,
+          updateDownload(taskId, {
+            progress: Math.round((downloadedBytes / info.fileSize) * 100),
+            downloadedBytes,
+            completedChunks,
+            speed,
+            eta: remaining,
+          });
+        })();
+
+        activeDownloads.add(downloadPromise);
+        downloadPromise.finally(() => {
+          activeDownloads.delete(downloadPromise);
         });
       }
+
+      // Wait for all chunk downloads to finish
+      await Promise.all(activeDownloads);
 
       // Assemble chunks
       updateDownload(taskId, { status: 'assembling' });

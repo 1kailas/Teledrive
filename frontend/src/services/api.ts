@@ -31,7 +31,7 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('teledrive_token');
-      if (window.location.pathname !== '/login') {
+      if (window.location.pathname !== '/login' && !window.location.pathname.startsWith('/shared/')) {
         window.location.href = '/login';
       }
     }

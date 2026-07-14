@@ -12,7 +12,7 @@ interface FolderCardProps {
   folder: TDFolder;
   viewMode: ViewMode;
   isSelected?: boolean;
-  onClick?: (folder: TDFolder) => void;
+  onClick?: (folder: TDFolder, e: React.MouseEvent) => void;
   onDoubleClick?: (folder: TDFolder) => void;
   onContextMenu?: (e: React.MouseEvent, folder: TDFolder) => void;
 }
@@ -25,7 +25,7 @@ const FolderCard = memo(function FolderCard({
   onDoubleClick,
   onContextMenu,
 }: FolderCardProps) {
-  const handleClick = useCallback(() => onClick?.(folder), [onClick, folder]);
+  const handleClick = useCallback((e: React.MouseEvent) => onClick?.(folder, e), [onClick, folder]);
   const handleDoubleClick = useCallback(() => onDoubleClick?.(folder), [onDoubleClick, folder]);
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();

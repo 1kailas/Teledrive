@@ -18,23 +18,33 @@ export const authMiddleware = createMiddleware<AppType>(async (c, next) => {
 
   // Skip auth for public routes (auth routes handled by separate router)
   const path = c.req.path;
-  if (path === '/api/health' || path.startsWith('/api/auth')) {
+  if (path === '/api/health' || path.startsWith('/api/auth') || path.startsWith('/api/share/public/')) {
     return next();
   }
 
+  let token = '';
   const authHeader = c.req.header('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.substring(7);
+  } else {
+    // Fallback: check query parameter (e.g. for media tags or iframes)
+    const queryToken = c.req.query('token');
+    if (queryToken) {
+      token = queryToken;
+    }
+  }
+
+  if (!token) {
     return c.json(
       {
         success: false,
         error: 'Unauthorized',
-        message: 'Missing or invalid Authorization header',
+        message: 'Missing or invalid token in Authorization header or query parameter',
       },
       401
     );
   }
-
-  const token = authHeader.substring(7);
 
   try {
     const secret = new TextEncoder().encode(c.env.JWT_SECRET);
@@ -51,6 +61,31 @@ export const authMiddleware = createMiddleware<AppType>(async (c, next) => {
         },
         401
       );
+    }
+
+    // Verify user exists in database to prevent foreign key errors (e.g. after database resets)
+    const userExists = await c.env.DB.prepare('SELECT id FROM users WHERE id = ?')
+      .bind(payload.sub)
+      .first();
+
+    if (!userExists) {
+      if (payload.sub.toString() === c.env.TELEGRAM_CHAT_ID.toString()) {
+        await c.env.DB.prepare(
+          `INSERT INTO users (id, email, telegram_chat_id, created_at, updated_at)
+           VALUES (?, ?, ?, datetime('now'), datetime('now'))`
+        )
+          .bind(payload.sub, null, c.env.TELEGRAM_CHAT_ID)
+          .run();
+      } else {
+        return c.json(
+          {
+            success: false,
+            error: 'Unauthorized',
+            message: 'User record not found in database',
+          },
+          401
+        );
+      }
     }
 
     // Set user info on context for downstream handlers
