@@ -238,6 +238,8 @@ export interface TelegramDocument {
   file_name?: string;
   mime_type?: string;
   file_size?: number;
+  thumbnail?: TelegramPhotoSize;
+  thumb?: TelegramPhotoSize;
 }
 
 export interface TelegramFile {
