@@ -12,7 +12,6 @@ import type {
   TelegramResponse,
   TelegramMessage,
   TelegramFile,
-  TelegramPhotoSize,
 } from '../types/index.js';
 
 const TELEGRAM_API_BASE = 'https://api.telegram.org';
@@ -127,7 +126,8 @@ export class TelegramService {
       if (!result.ok || !result.result) {
         throw new TelegramApiError(
           result.description || 'Failed to send document',
-          result.error_code || response.status
+          result.error_code || response.status,
+          result.parameters?.retry_after
         );
       }
 
@@ -152,7 +152,8 @@ export class TelegramService {
       if (!result.ok || !result.result) {
         throw new TelegramApiError(
           result.description || 'Failed to get file',
-          result.error_code || response.status
+          result.error_code || response.status,
+          result.parameters?.retry_after
         );
       }
 
@@ -219,7 +220,8 @@ export class TelegramService {
       if (!result.ok || !result.result) {
         throw new TelegramApiError(
           result.description || 'Failed to send photo',
-          result.error_code || response.status
+          result.error_code || response.status,
+          result.parameters?.retry_after
         );
       }
 
@@ -268,7 +270,8 @@ export class TelegramService {
         }
         throw new TelegramApiError(
           result.description || 'Failed to delete message',
-          result.error_code || response.status
+          result.error_code || response.status,
+          result.parameters?.retry_after
         );
       }
 
@@ -320,6 +323,13 @@ export class TelegramService {
           throw error;
         }
 
+        // If 429 Rate Limit, sleep for the requested retry_after duration plus a 500ms safety buffer
+        if (error instanceof TelegramApiError && error.statusCode === 429 && error.retryAfter) {
+          const delay = error.retryAfter * 1000 + 500;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+
         // Exponential backoff
         const delay = BASE_RETRY_DELAY * Math.pow(2, attempt);
         await new Promise((resolve) => setTimeout(resolve, delay));
@@ -335,10 +345,12 @@ export class TelegramService {
  */
 export class TelegramApiError extends Error {
   public statusCode: number;
+  public retryAfter?: number;
 
-  constructor(message: string, statusCode: number) {
+  constructor(message: string, statusCode: number, retryAfter?: number) {
     super(message);
     this.name = 'TelegramApiError';
     this.statusCode = statusCode;
+    this.retryAfter = retryAfter;
   }
 }

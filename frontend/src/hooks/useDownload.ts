@@ -6,7 +6,7 @@
 
 import { useCallback } from 'react';
 import api from '../services/api';
-import { useDownloadStore } from '../stores';
+import { useDownloadStore, useUIStore } from '../stores';
 import { generateId } from '../utils/helpers';
 import type { DownloadTask, DownloadInfo } from '../types';
 
@@ -18,6 +18,9 @@ export function useDownload() {
    */
   const downloadFile = useCallback(async (fileId: string) => {
     const taskId = generateId();
+    
+    // Auto-open transfers panel for visual loading progress feedback
+    useUIStore.getState().setUploadPanelOpen(true);
 
     try {
       // Get download info
@@ -46,40 +49,90 @@ export function useDownload() {
 
       addDownload(task);
 
-      // Download all chunks in parallel (up to 4 concurrent downloads)
-      const concurrencyLimit = 4;
-      const activeDownloads = new Set<Promise<void>>();
+      // Download all chunks using a stable worker pool queue
+      const botCount = useUIStore.getState().botCount || 1;
+      const concurrencyLimit = Math.min(8, Math.max(3, botCount * 2));
       const chunkBlobs: Blob[] = new Array(info.chunkCount);
-      let downloadedBytes = 0;
+      const chunkProgressMap = new Map<number, number>();
       let completedChunks = 0;
       const startTime = Date.now();
 
-      for (let i = 0; i < info.chunkCount; i++) {
-        // Limit concurrency
-        if (activeDownloads.size >= concurrencyLimit) {
-          await Promise.race(activeDownloads);
-        }
+      const chunkQueue = Array.from({ length: info.chunkCount }, (_, idx) => idx);
 
-        const currentTask = useDownloadStore.getState().downloads.find((d) => d.id === taskId);
-        if (!currentTask || currentTask.status === 'failed') return;
+      const worker = async () => {
+        while (chunkQueue.length > 0) {
+          const currentTask = useDownloadStore.getState().downloads.find((d) => d.id === taskId);
+          if (!currentTask || currentTask.status === 'failed') {
+            return;
+          }
 
-        const currentChunkIndex = i;
+          const currentChunkIndex = chunkQueue.shift();
+          if (currentChunkIndex === undefined) {
+            break;
+          }
 
-        const downloadPromise = (async () => {
           let retries = 0;
           const maxRetries = 3;
           let chunkData: ArrayBuffer | null = null;
 
           while (!chunkData && retries <= maxRetries) {
+            // Check cancellation before trying/retrying
+            const taskCheck = useDownloadStore.getState().downloads.find((d) => d.id === taskId);
+            if (!taskCheck || taskCheck.status === 'failed') {
+              return;
+            }
+
             try {
               const res = await api.get(`/download/${fileId}/chunk/${currentChunkIndex}`, {
                 responseType: 'arraybuffer',
                 timeout: 300000,
+                onDownloadProgress: (progressEvent) => {
+                  const loaded = progressEvent.loaded || 0;
+                  const prevLoaded = chunkProgressMap.get(currentChunkIndex) || 0;
+                  if (loaded > prevLoaded) {
+                    chunkProgressMap.set(currentChunkIndex, loaded);
+                  }
+
+                  // Calculate aggregate progress in real-time
+                  let totalDownloadedBytes = 0;
+                  chunkProgressMap.forEach((bytes) => {
+                    totalDownloadedBytes += bytes;
+                  });
+
+                  const safeDownloadedBytes = Math.min(totalDownloadedBytes, info.fileSize);
+                  const elapsed = (Date.now() - startTime) / 1000;
+                  const speed = elapsed > 0 ? safeDownloadedBytes / elapsed : 0;
+                  const remaining = speed > 0 ? (info.fileSize - safeDownloadedBytes) / speed : 0;
+
+                  const computedProgress = Math.round((safeDownloadedBytes / info.fileSize) * 100);
+                  const currentProgress = useDownloadStore.getState().downloads.find((d) => d.id === taskId)?.progress || 0;
+
+                  updateDownload(taskId, {
+                    progress: Math.max(currentProgress, computedProgress),
+                    downloadedBytes: safeDownloadedBytes,
+                    speed,
+                    eta: remaining,
+                  });
+                }
               });
               chunkData = res.data;
-            } catch (error) {
+            } catch (error: any) {
               retries++;
-              if (retries > maxRetries) throw error;
+              if (retries > maxRetries) {
+                let errMsg = `Failed to download chunk ${currentChunkIndex}`;
+                if (error.response?.data instanceof ArrayBuffer) {
+                  try {
+                    const decoded = new TextDecoder().decode(error.response.data);
+                    const json = JSON.parse(decoded);
+                    errMsg = json.error || errMsg;
+                  } catch {
+                    // Ignore
+                  }
+                } else if (error.response?.data?.error) {
+                  errMsg = error.response.data.error;
+                }
+                throw new Error(errMsg);
+              }
               await new Promise((r) => setTimeout(r, 1000 * retries));
             }
           }
@@ -87,30 +140,36 @@ export function useDownload() {
           if (!chunkData) throw new Error(`Failed to download chunk ${currentChunkIndex}`);
 
           chunkBlobs[currentChunkIndex] = new Blob([chunkData]);
-          downloadedBytes += chunkData.byteLength;
+          
+          // Ensure finished chunk size is registered
+          chunkProgressMap.set(currentChunkIndex, chunkData.byteLength);
           completedChunks++;
 
+          let totalDownloadedBytes = 0;
+          chunkProgressMap.forEach((bytes) => {
+            totalDownloadedBytes += bytes;
+          });
+
+          const safeDownloadedBytes = Math.min(totalDownloadedBytes, info.fileSize);
           const elapsed = (Date.now() - startTime) / 1000;
-          const speed = downloadedBytes / elapsed;
-          const remaining = (info.fileSize - downloadedBytes) / speed;
+          const speed = elapsed > 0 ? safeDownloadedBytes / elapsed : 0;
+          const remaining = speed > 0 ? (info.fileSize - safeDownloadedBytes) / speed : 0;
+
+          const computedProgress = Math.round((safeDownloadedBytes / info.fileSize) * 100);
+          const currentProgress = useDownloadStore.getState().downloads.find((d) => d.id === taskId)?.progress || 0;
 
           updateDownload(taskId, {
-            progress: Math.round((downloadedBytes / info.fileSize) * 100),
-            downloadedBytes,
+            progress: Math.max(currentProgress, computedProgress),
+            downloadedBytes: safeDownloadedBytes,
             completedChunks,
             speed,
             eta: remaining,
           });
-        })();
+        }
+      };
 
-        activeDownloads.add(downloadPromise);
-        downloadPromise.finally(() => {
-          activeDownloads.delete(downloadPromise);
-        });
-      }
-
-      // Wait for all chunk downloads to finish
-      await Promise.all(activeDownloads);
+      const workers = Array.from({ length: concurrencyLimit }, () => worker());
+      await Promise.all(workers);
 
       // Assemble chunks
       updateDownload(taskId, { status: 'assembling' });

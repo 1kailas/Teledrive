@@ -12,6 +12,7 @@ import { Hono } from 'hono';
 import type { AppType } from '../index.js';
 import { generateId, now, getExtension } from '../db/queries.js';
 import { TelegramService } from '../services/telegram.js';
+import { safeBatch } from '../utils/db.js';
 
 export const uploadRoutes = new Hono<AppType>();
 
@@ -73,8 +74,8 @@ uploadRoutes.post('/init', async (c) => {
     ).bind(chunkId, fileId, chunk.index, chunk.size, timestamp);
   });
 
-  // Batch insert chunks
-  await c.env.DB.batch(chunkInserts);
+  // Batch insert chunks safely to avoid statement limits
+  await safeBatch(c.env.DB, chunkInserts);
 
   // Create upload session
   await c.env.DB.prepare(
@@ -285,16 +286,7 @@ uploadRoutes.post('/complete', async (c) => {
         return; // Already set by the chunk upload trigger or file missing
       }
 
-      // Check format support via mime or filename extension
-      const THUMBNAIL_MIME_TYPES = [
-        'image/jpeg',
-        'image/png',
-        'image/gif',
-        'image/webp',
-        'image/bmp',
-        'image/svg+xml',
-      ];
-      const isImage = file.mime_type && THUMBNAIL_MIME_TYPES.some((t) => file.mime_type!.startsWith(t.split('/')[0] + '/'));
+      const isImage = file.mime_type && file.mime_type.startsWith('image/');
       const hasImageExt = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes((file.name.split('.').pop() || '').toLowerCase());
 
       if ((isImage || hasImageExt) && file.chunk_count === 1) {

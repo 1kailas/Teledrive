@@ -236,17 +236,41 @@ body {
    ============================================ */
 
 .progress-bar {
-  @apply h-2 rounded-full overflow-hidden;
-  background: rgba(148, 163, 184, 0.15);
+  @apply h-2.5 rounded-full overflow-hidden relative shadow-inner;
+  background: rgba(148, 163, 184, 0.12);
 }
 
 .progress-bar-fill {
-  @apply h-full rounded-full transition-all duration-250 ease-out;
-  background: var(--color-primary-500);
+  @apply h-full rounded-full transition-all duration-300 ease-out relative;
+  background: linear-gradient(90deg, var(--color-primary-400) 0%, var(--color-primary-600) 100%);
+  box-shadow: 0 0 8px rgba(26, 115, 232, 0.35);
 }
 
 .dark .progress-bar-fill {
-  background: var(--color-primary-400);
+  background: linear-gradient(90deg, var(--color-primary-300) 0%, var(--color-primary-500) 100%);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+}
+
+.progress-bar-fill::after {
+  content: '';
+  @apply absolute inset-0;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.25) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: progress-shimmer 2s infinite linear;
+  background-size: 200% 100%;
+}
+
+@keyframes progress-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
 
 /* ============================================
@@ -476,4 +500,31 @@ body {
 
 .z-55 {
   z-index: 55;
+}
+
+/* Custom scrollbars for a premium, clean look */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.45);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }

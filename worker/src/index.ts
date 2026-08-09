@@ -65,12 +65,14 @@ app.use('*', async (c, next) => {
 // ============================================
 
 app.get('/api/health', (c) => {
+  const bots = (c.env.TELEGRAM_BOT_TOKEN || '').split(',').filter(Boolean);
   return c.json({
     success: true,
     data: {
       status: 'ok',
       version: '2.0.0',
       timestamp: new Date().toISOString(),
+      botCount: bots.length || 1,
     },
   });
 });
@@ -142,7 +144,7 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     return app.fetch(request, env, ctx);
   },
-  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(
       cleanupAbandonedUploads(env.DB, env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID)
         .catch((err) => console.error('Cron cleanup failed:', err))

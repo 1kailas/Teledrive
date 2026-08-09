@@ -1,4 +1,3 @@
-import type { Env } from '../types/index.js';
 import { TelegramService } from '../services/telegram.js';
 
 /**

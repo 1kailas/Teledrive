@@ -9,6 +9,7 @@
 import { Hono } from 'hono';
 import type { AppType } from '../index.js';
 import { generateId, now } from '../db/queries.js';
+import { safeBatch } from '../utils/db.js';
 
 export const folderRoutes = new Hono<AppType>();
 
@@ -213,7 +214,7 @@ folderRoutes.delete('/:id', async (c) => {
     ),
   ];
 
-  await c.env.DB.batch(statements);
+  await safeBatch(c.env.DB, statements);
 
   return c.json({ success: true });
 });

@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import type { AppType } from '../index.js';
 import { now } from '../db/queries.js';
 import { TelegramService } from '../services/telegram.js';
+import { safeBatch } from '../utils/db.js';
 
 export const trashRoutes = new Hono<AppType>();
 
@@ -215,7 +216,7 @@ trashRoutes.delete('/:id', async (c) => {
     }
 
     if (statements.length > 0) {
-      await c.env.DB.batch(statements);
+      await safeBatch(c.env.DB, statements);
     }
   }
 
@@ -319,7 +320,7 @@ trashRoutes.delete('/', async (c) => {
   statements.push(c.env.DB.prepare('DELETE FROM folders WHERE user_id = ? AND is_trashed = 1').bind(userId));
 
   if (statements.length > 0) {
-    await c.env.DB.batch(statements);
+    await safeBatch(c.env.DB, statements);
   }
 
   return c.json({ success: true });

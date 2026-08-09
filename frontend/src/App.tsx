@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuth } from './hooks/useAuth';
-import { useThemeStore } from './stores';
+import { useThemeStore, useUIStore } from './stores';
 import Layout from './components/layout/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -37,10 +37,23 @@ function AppContent() {
   const { theme, setTheme } = useThemeStore();
   const [totalStorage, setTotalStorage] = useState(0);
 
+  const { setBotCount } = useUIStore();
+
   // Apply theme on mount
   useEffect(() => {
     setTheme(theme);
   }, []);
+
+  // Fetch API health config (e.g. number of bots in pool)
+  useEffect(() => {
+    api.get('/health')
+      .then((res) => {
+        if (res.data.success && res.data.data.botCount) {
+          setBotCount(res.data.data.botCount);
+        }
+      })
+      .catch(() => {});
+  }, [setBotCount]);
 
   // Fetch storage stats when authenticated
   useEffect(() => {
@@ -57,8 +70,10 @@ function AppContent() {
     fetchStorage();
 
     window.addEventListener('teledrive:upload-complete', fetchStorage);
+    window.addEventListener('teledrive:refresh-storage', fetchStorage);
     return () => {
       window.removeEventListener('teledrive:upload-complete', fetchStorage);
+      window.removeEventListener('teledrive:refresh-storage', fetchStorage);
     };
   }, [isAuthenticated]);
 

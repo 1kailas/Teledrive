@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import api from '../services/api';
-import { useUploadStore } from '../stores';
+import { useUploadStore, useUIStore } from '../stores';
 import { generateId } from '../utils/helpers';
 import type { UploadTask } from '../types';
 
@@ -31,10 +31,18 @@ class SimpleSemaphore {
       this.activeCount--;
     }
   }
+
+  updateLimit(limit: number): void {
+    this.limit = limit;
+    while (this.activeCount < this.limit && this.tasks.length > 0) {
+      this.activeCount++;
+      const next = this.tasks.shift();
+      next?.();
+    }
+  }
 }
 
-const MAX_CONCURRENT_CHUNKS = 4;
-const globalUploadSemaphore = new SimpleSemaphore(MAX_CONCURRENT_CHUNKS);
+const globalUploadSemaphore = new SimpleSemaphore(4);
 
 /**
  * Dynamically calculate optimal chunk size based on file size.
@@ -43,8 +51,10 @@ const globalUploadSemaphore = new SimpleSemaphore(MAX_CONCURRENT_CHUNKS);
  * - Minimum size is 5 MB to prevent excessive API request overhead.
  */
 function calculateChunkSize(fileSize: number): number {
-  const maxChunkSize = 45 * 1024 * 1024; // 45 MB standard Bot API limit
-  const minChunkSize = 20 * 1024 * 1024; // 20 MB min chunk size
+  // Cap at 19.5 MB to strictly stay within Telegram Bot API's 20 MB download limit
+  const maxChunkSize = 19.5 * 1024 * 1024;
+  // Minimum chunk size of 5 MB to keep the number of requests reasonable
+  const minChunkSize = 5 * 1024 * 1024;
 
   const targetChunks = 10;
   const calculatedSize = Math.ceil(fileSize / targetChunks);
@@ -64,7 +74,8 @@ function calculateChunkSize(fileSize: number): number {
  * - Higher concurrency for fewer chunks, lower concurrency for many chunks.
  */
 function calculateConcurrency(): number {
-  return MAX_CONCURRENT_CHUNKS;
+  const botCount = useUIStore.getState().botCount || 1;
+  return Math.min(8, Math.max(3, botCount * 2));
 }
 
 export function useUpload() {
@@ -133,45 +144,53 @@ export function useUpload() {
         startedAt: Date.now(),
       });
 
-      // Step 2: Upload chunks in parallel (up to dynamic concurrency limit)
+      // Step 2: Upload chunks in parallel (using a concurrency-limited worker pool)
       const concurrencyLimit = calculateConcurrency();
-      const activeUploads = new Set<Promise<void>>();
+      globalUploadSemaphore.updateLimit(concurrencyLimit);
       const chunkProgressMap = new Map<number, number>();
       let completedChunks = 0;
       const startTime = Date.now();
 
-      for (let i = 0; i < totalChunks; i++) {
-        // Limit concurrency
-        if (activeUploads.size >= concurrencyLimit) {
-          await Promise.race(activeUploads);
-        }
+      // Create a queue of chunk indices to be processed
+      const chunkQueue = Array.from({ length: totalChunks }, (_, idx) => idx);
 
-        // Check if paused or cancelled
-        const currentTask = useUploadStore.getState().uploads.find((u) => u.id === taskId);
-        if (!currentTask || currentTask.status === 'cancelled') {
-          return;
-        }
+      const worker = async () => {
+        while (chunkQueue.length > 0) {
+          // Check if paused or cancelled
+          let currentTask = useUploadStore.getState().uploads.find((u) => u.id === taskId);
+          if (!currentTask || currentTask.status === 'cancelled') {
+            return;
+          }
 
-        if (currentTask.status === 'paused') {
-          // Wait for resume
-          await new Promise<void>((resolve) => {
-            const unsubscribe = useUploadStore.subscribe((state) => {
-              const t = state.uploads.find((u) => u.id === taskId);
-              if (t && t.status !== 'paused') {
-                unsubscribe();
-                resolve();
-              }
+          if (currentTask.status === 'paused') {
+            // Wait for resume
+            await new Promise<void>((resolve) => {
+              const unsubscribe = useUploadStore.subscribe((state) => {
+                const t = state.uploads.find((u) => u.id === taskId);
+                if (t && t.status !== 'paused') {
+                  unsubscribe();
+                  resolve();
+                }
+              });
             });
-          });
-        }
+          }
 
-        const start = i * dynamicChunkSize;
-        const end = Math.min(start + dynamicChunkSize, file.size);
-        const chunkSize = end - start;
-        const chunkBlob = file.slice(start, end);
-        const currentChunkIndex = i;
+          // Double check if cancelled after resuming
+          currentTask = useUploadStore.getState().uploads.find((u) => u.id === taskId);
+          if (!currentTask || currentTask.status === 'cancelled') {
+            return;
+          }
 
-        const uploadPromise = (async () => {
+          const currentChunkIndex = chunkQueue.shift();
+          if (currentChunkIndex === undefined) {
+            break;
+          }
+
+          const start = currentChunkIndex * dynamicChunkSize;
+          const end = Math.min(start + dynamicChunkSize, file.size);
+          const chunkSize = end - start;
+          const chunkBlob = file.slice(start, end);
+
           // Upload chunk via FormData
           const formData = new FormData();
           formData.append('fileId', fileId);
@@ -186,13 +205,26 @@ export function useUpload() {
             let success = false;
 
             while (!success && retries <= maxRetries) {
+              // Check if cancelled before trying/retrying
+              const taskCheck = useUploadStore.getState().uploads.find((u) => u.id === taskId);
+              if (!taskCheck || taskCheck.status === 'cancelled') {
+                return;
+              }
+
               try {
                 await api.post('/upload/chunk', formData, {
                   headers: { 'Content-Type': 'multipart/form-data' },
                   timeout: 300000, // 5 min timeout per chunk
                   onUploadProgress: (progressEvent) => {
                     const loaded = progressEvent.loaded || 0;
-                    chunkProgressMap.set(currentChunkIndex, loaded);
+                    // Cap the reported progress for this chunk at its known raw file size to exclude multipart boundary overhead
+                    const cappedLoaded = Math.min(loaded, chunkSize);
+                    
+                    // Enforce monotonic progress (only write if the new progress is greater than what was recorded previously)
+                    const prevLoaded = chunkProgressMap.get(currentChunkIndex) || 0;
+                    if (cappedLoaded > prevLoaded) {
+                      chunkProgressMap.set(currentChunkIndex, cappedLoaded);
+                    }
 
                     // Calculate aggregate progress in real-time
                     let totalUploadedBytes = 0;
@@ -205,8 +237,12 @@ export function useUpload() {
                     const speed = elapsed > 0 ? safeUploadedBytes / elapsed : 0;
                     const remaining = speed > 0 ? (file.size - safeUploadedBytes) / speed : 0;
 
+                    const computedProgress = Math.round((safeUploadedBytes / file.size) * 100);
+                    // Fetch the current task progress to enforce forward-only progress updates
+                    const currentProgress = useUploadStore.getState().uploads.find((u) => u.id === taskId)?.progress || 0;
+
                     updateUpload(taskId, {
-                      progress: Math.round((safeUploadedBytes / file.size) * 100),
+                      progress: Math.max(currentProgress, computedProgress),
                       uploadedBytes: safeUploadedBytes,
                       speed,
                       eta: remaining,
@@ -238,23 +274,22 @@ export function useUpload() {
           const speed = elapsed > 0 ? safeUploadedBytes / elapsed : 0;
           const remaining = speed > 0 ? (file.size - safeUploadedBytes) / speed : 0;
 
+          const computedProgress = Math.round((safeUploadedBytes / file.size) * 100);
+          const currentProgress = useUploadStore.getState().uploads.find((u) => u.id === taskId)?.progress || 0;
+
           updateUpload(taskId, {
-            progress: Math.round((safeUploadedBytes / file.size) * 100),
+            progress: Math.max(currentProgress, computedProgress),
             uploadedBytes: safeUploadedBytes,
             completedChunks,
             speed,
             eta: remaining,
           });
-        })();
+        }
+      };
 
-        activeUploads.add(uploadPromise);
-        uploadPromise.finally(() => {
-          activeUploads.delete(uploadPromise);
-        });
-      }
-
-      // Wait for all remaining chunk uploads to finish
-      await Promise.all(activeUploads);
+      // Run concurrencyLimit workers in parallel
+      const workers = Array.from({ length: concurrencyLimit }, () => worker());
+      await Promise.all(workers);
 
       // Step 3: Complete upload
       await api.post('/upload/complete', { sessionId, fileId });

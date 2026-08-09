@@ -99,6 +99,14 @@ downloadRoutes.get('/:fileId/chunk/:index', async (c) => {
     return c.json({ success: false, error: 'Chunk not found' }, 404);
   }
 
+  // Telegram Bot API does not permit bots to download files/chunks larger than 20 MB (20,971,520 bytes)
+  if (chunk.size > 20971520) {
+    return c.json({
+      success: false,
+      error: `This file was uploaded with a legacy chunk size (${(chunk.size / (1024 * 1024)).toFixed(1)}MB) exceeding Telegram's 20MB bot download limit. Please delete and re-upload this file.`
+    }, 400);
+  }
+
   try {
     const { service: telegram, value: fileId } = TelegramService.fromPrefixedValue(
       c.env.TELEGRAM_BOT_TOKEN,
@@ -157,6 +165,14 @@ downloadRoutes.get('/:fileId', async (c) => {
       success: false,
       error: 'Multi-chunk file — use /info endpoint to get chunk list',
       data: { chunkCount: file.chunk_count },
+    }, 400);
+  }
+
+  // Telegram Bot API does not permit bots to download files/chunks larger than 20 MB (20,971,520 bytes)
+  if (file.size > 20971520) {
+    return c.json({
+      success: false,
+      error: `File size (${(file.size / (1024 * 1024)).toFixed(1)}MB) exceeds Telegram's 20MB bot download limit. Please re-upload as a multi-chunk file.`
     }, 400);
   }
 
@@ -254,18 +270,24 @@ downloadRoutes.patch('/session/:sessionId', async (c) => {
     status?: string;
   }>();
 
-  const updates: string[] = [`updated_at = '${now()}'`];
+  const updates: string[] = ['updated_at = ?'];
+  const params: (string | number)[] = [now()];
+
   if (completedChunks !== undefined) {
-    updates.push(`completed_chunks = ${completedChunks}`);
+    updates.push('completed_chunks = ?');
+    params.push(completedChunks);
   }
   if (status) {
-    updates.push(`status = '${status}'`);
+    updates.push('status = ?');
+    params.push(status);
   }
+
+  params.push(sessionId, userId);
 
   await c.env.DB.prepare(
     `UPDATE download_sessions SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`
   )
-    .bind(sessionId, userId)
+    .bind(...params)
     .run();
 
   return c.json({ success: true });

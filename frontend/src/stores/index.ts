@@ -118,6 +118,7 @@ interface UIState {
   detailPanelOpen: boolean;
   detailPanelItem: { id: string; type: 'file' | 'folder' } | null;
   previewFile: string | null;
+  botCount: number;
   setViewMode: (mode: ViewMode) => void;
   setSort: (sort: SortConfig) => void;
   setContextMenu: (menu: ContextMenuState) => void;
@@ -130,6 +131,7 @@ interface UIState {
   setUploadPanelOpen: (open: boolean) => void;
   setDetailPanel: (open: boolean, item?: { id: string; type: 'file' | 'folder' } | null) => void;
   setPreviewFile: (fileId: string | null) => void;
+  setBotCount: (count: number) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -145,6 +147,7 @@ export const useUIStore = create<UIState>()(
       detailPanelOpen: false,
       detailPanelItem: null,
       previewFile: null,
+      botCount: 1,
 
       setViewMode: (mode) => set({ viewMode: mode }),
       setSort: (sort) => set({ sort }),
@@ -170,6 +173,7 @@ export const useUIStore = create<UIState>()(
       setUploadPanelOpen: (open) => set({ uploadPanelOpen: open }),
       setDetailPanel: (open, item) => set({ detailPanelOpen: open, detailPanelItem: item || null }),
       setPreviewFile: (fileId) => set({ previewFile: fileId }),
+      setBotCount: (count) => set({ botCount: count }),
     }),
     {
       name: 'teledrive-ui',

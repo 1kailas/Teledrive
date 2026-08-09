@@ -39,6 +39,7 @@ export default function Trash() {
     try {
       await api.post(`/trash/restore/${item.id}?type=${type}`);
       fetchTrash();
+      window.dispatchEvent(new CustomEvent('teledrive:refresh-storage'));
     } catch (err) {
       console.error(err);
     }
@@ -48,6 +49,7 @@ export default function Trash() {
     try {
       await api.delete(`/trash/${item.id}?type=${type}`);
       fetchTrash();
+      window.dispatchEvent(new CustomEvent('teledrive:refresh-storage'));
     } catch (err) {
       console.error(err);
     }
@@ -59,6 +61,7 @@ export default function Trash() {
       setFiles([]);
       setFolders([]);
       setShowEmptyConfirm(false);
+      window.dispatchEvent(new CustomEvent('teledrive:refresh-storage'));
     } catch (err) {
       console.error(err);
     }

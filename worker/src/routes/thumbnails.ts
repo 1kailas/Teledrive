@@ -13,22 +13,13 @@ import { now } from '../db/queries.js';
 
 export const thumbnailRoutes = new Hono<AppType>();
 
-/** MIME types that support thumbnail generation */
-const THUMBNAIL_MIME_TYPES = [
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'image/bmp',
-  'image/svg+xml',
-];
 
 /**
  * Check if a file supports thumbnail generation.
  */
 export function supportsThumbnail(mimeType: string | null): boolean {
   if (!mimeType) return false;
-  return THUMBNAIL_MIME_TYPES.some((t) => mimeType.startsWith(t.split('/')[0] + '/'));
+  return mimeType.startsWith('image/');
 }
 
 /**

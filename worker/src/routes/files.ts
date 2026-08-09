@@ -10,6 +10,7 @@ import type { AppType } from '../index.js';
 import { now } from '../db/queries.js';
 import { TelegramService } from '../services/telegram.js';
 import type { DBFile } from '../types/index.js';
+import { safeBatch } from '../utils/db.js';
 
 export const fileRoutes = new Hono<AppType>();
 
@@ -299,7 +300,7 @@ fileRoutes.post('/:id/duplicate', async (c) => {
       )
     );
 
-    await c.env.DB.batch(chunkInserts);
+    await safeBatch(c.env.DB, chunkInserts);
   }
 
   return c.json({

@@ -9,6 +9,7 @@ import { Hono } from 'hono';
 import type { AppType } from '../index.js';
 import { now } from '../db/queries.js';
 import { TelegramService } from '../services/telegram.js';
+import { safeBatch } from '../utils/db.js';
 
 export const bulkRoutes = new Hono<AppType>();
 
@@ -65,7 +66,7 @@ bulkRoutes.post('/move', async (c) => {
   }
 
   if (statements.length > 0) {
-    await c.env.DB.batch(statements);
+    await safeBatch(c.env.DB, statements);
   }
 
   return c.json({
@@ -115,7 +116,7 @@ bulkRoutes.post('/trash', async (c) => {
   }
 
   if (statements.length > 0) {
-    await c.env.DB.batch(statements);
+    await safeBatch(c.env.DB, statements);
   }
 
   return c.json({
@@ -165,7 +166,7 @@ bulkRoutes.post('/restore', async (c) => {
   }
 
   if (statements.length > 0) {
-    await c.env.DB.batch(statements);
+    await safeBatch(c.env.DB, statements);
   }
 
   return c.json({ success: true });
@@ -194,7 +195,7 @@ bulkRoutes.post('/favorite', async (c) => {
   }
 
   if (statements.length > 0) {
-    await c.env.DB.batch(statements);
+    await safeBatch(c.env.DB, statements);
   }
 
   return c.json({ success: true });

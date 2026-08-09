@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import api from '../services/api';
 import { formatBytes, getFileCategory, getExtensionColor } from '../utils/helpers';
+import { useUIStore } from '../stores';
 
 export default function PublicShare() {
   const { token } = useParams<{ token: string }>();
@@ -91,18 +92,19 @@ export default function PublicShare() {
           }
         }
 
-        const concurrencyLimit = 3;
-        const activeDownloads = new Set<Promise<void>>();
+        const botCount = useUIStore.getState().botCount || 1;
+        const concurrencyLimit = Math.min(8, Math.max(3, botCount * 2));
         const chunkBlobs: Blob[] = new Array(fileInfo.chunkCount);
-        let downloadedBytes = 0;
+        const chunkProgressMap = new Map<number, number>();
+        const chunkQueue = Array.from({ length: fileInfo.chunkCount }, (_, idx) => idx);
 
-        for (let i = 0; i < fileInfo.chunkCount; i++) {
-          if (activeDownloads.size >= concurrencyLimit) {
-            await Promise.race(activeDownloads);
-          }
+        const worker = async () => {
+          while (chunkQueue.length > 0) {
+            const currentChunkIndex = chunkQueue.shift();
+            if (currentChunkIndex === undefined) {
+              break;
+            }
 
-          const currentChunkIndex = i;
-          const downloadPromise = (async () => {
             let retries = 0;
             const maxRetries = 3;
             let chunkData: ArrayBuffer | null = null;
@@ -113,6 +115,21 @@ export default function PublicShare() {
                 const res = await api.get(`/share/public/${token}/chunk/${currentChunkIndex}${queryParams}`, {
                   responseType: 'arraybuffer',
                   timeout: 300000,
+                  onDownloadProgress: (progressEvent) => {
+                    const loaded = progressEvent.loaded || 0;
+                    const prevLoaded = chunkProgressMap.get(currentChunkIndex) || 0;
+                    if (loaded > prevLoaded) {
+                      chunkProgressMap.set(currentChunkIndex, loaded);
+                    }
+
+                    // Calculate aggregate progress in real-time
+                    let totalDownloaded = 0;
+                    chunkProgressMap.forEach((bytes) => {
+                      totalDownloaded += bytes;
+                    });
+
+                    setDownloadProgress(Math.min(99, Math.round((totalDownloaded / fileInfo.fileSize) * 100)));
+                  }
                 });
                 chunkData = res.data;
               } catch (error: any) {
@@ -139,17 +156,19 @@ export default function PublicShare() {
             if (!chunkData) throw new Error(`Failed to download chunk ${currentChunkIndex}`);
 
             chunkBlobs[currentChunkIndex] = new Blob([chunkData]);
-            downloadedBytes += chunkData.byteLength;
-            setDownloadProgress(Math.min(100, Math.round((downloadedBytes / fileInfo.fileSize) * 100)));
-          })();
+            
+            // Set final actual size upon completion
+            chunkProgressMap.set(currentChunkIndex, chunkData.byteLength);
+            let totalDownloaded = 0;
+            chunkProgressMap.forEach((bytes) => {
+              totalDownloaded += bytes;
+            });
+            setDownloadProgress(Math.min(100, Math.round((totalDownloaded / fileInfo.fileSize) * 100)));
+          }
+        };
 
-          activeDownloads.add(downloadPromise);
-          downloadPromise.finally(() => {
-            activeDownloads.delete(downloadPromise);
-          });
-        }
-
-        await Promise.all(activeDownloads);
+        const workers = Array.from({ length: concurrencyLimit }, () => worker());
+        await Promise.all(workers);
         finalBlob = new Blob(chunkBlobs, { type: contentTypeStr });
       } else {
         // Single-chunk files: legacy single-request download

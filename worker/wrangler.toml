@@ -12,7 +12,7 @@ migrations_dir = "src/db/migrations"
 
 # Environment variables (non-secret, set here or override in .dev.vars)
 [vars]
-MAX_CHUNK_SIZE = "47185920"
+MAX_CHUNK_SIZE = "20447232"
 MAX_PARALLEL_UPLOADS = "3"
 ENVIRONMENT = "development"
 FRONTEND_URL = "http://localhost:5173"

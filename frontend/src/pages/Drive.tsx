@@ -232,6 +232,7 @@ export default function Drive() {
         await api.delete(`/folders/${item.id}`);
       }
       fetchData();
+      window.dispatchEvent(new CustomEvent('teledrive:refresh-storage'));
       addToast('success', `${type === 'file' ? 'File' : 'Folder'} moved to trash`);
     } catch (err) {
       addToast('error', 'Failed to delete item');
@@ -336,6 +337,7 @@ export default function Drive() {
       await api.post('/bulk/trash', { fileIds, folderIds });
       clearSelection();
       fetchData();
+      window.dispatchEvent(new CustomEvent('teledrive:refresh-storage'));
       addToast('success', `Moved ${fileIds.length + folderIds.length} items to Trash`);
     } catch {
       addToast('error', 'Failed to trash items');

@@ -285,6 +285,14 @@ sharingRoutes.post('/public/:token/download', async (c) => {
     return c.json({ success: false, error: 'File data not found' }, 404);
   }
 
+  // Telegram Bot API does not permit bots to download files/chunks larger than 20 MB (20,971,520 bytes)
+  if ((share.file_size as number) > 20971520) {
+    return c.json({
+      success: false,
+      error: `File size (${((share.file_size as number) / (1024 * 1024)).toFixed(1)}MB) exceeds Telegram's 20MB bot download limit. Please re-upload as a multi-chunk file.`
+    }, 400);
+  }
+
   try {
     const { service: telegram, value: tgFileId } = TelegramService.fromPrefixedValue(
       c.env.TELEGRAM_BOT_TOKEN,
@@ -416,6 +424,14 @@ sharingRoutes.get('/public/:token/chunk/:chunkIndex', async (c) => {
 
   if (!chunk || !chunk.telegram_file_id) {
     return c.json({ success: false, error: 'Chunk not found' }, 404);
+  }
+
+  // Telegram Bot API does not permit bots to download files/chunks larger than 20 MB (20,971,520 bytes)
+  if (chunk.size > 20971520) {
+    return c.json({
+      success: false,
+      error: `This file was uploaded with a legacy chunk size (${(chunk.size / (1024 * 1024)).toFixed(1)}MB) exceeding Telegram's 20MB bot download limit. Please delete and re-upload this file.`
+    }, 400);
   }
 
   try {

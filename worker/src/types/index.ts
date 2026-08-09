@@ -216,6 +216,10 @@ export interface TelegramResponse<T = unknown> {
   result?: T;
   description?: string;
   error_code?: number;
+  parameters?: {
+    migrate_to_chat_id?: number;
+    retry_after?: number;
+  };
 }
 
 export interface TelegramMessage {

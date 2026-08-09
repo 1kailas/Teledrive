@@ -265,6 +265,7 @@ export default function SearchPage() {
         await api.delete(`/folders/${item.id}`);
       }
       performSearch(q);
+      window.dispatchEvent(new CustomEvent('teledrive:refresh-storage'));
       addToast('success', 'Moved item to trash');
     } catch {
       addToast('error', 'Failed to delete');
@@ -344,6 +345,7 @@ export default function SearchPage() {
       await api.post('/bulk/trash', { fileIds, folderIds });
       clearSelection();
       performSearch(q);
+      window.dispatchEvent(new CustomEvent('teledrive:refresh-storage'));
       addToast('success', `Moved selected items to trash`);
     } catch {
       addToast('error', 'Failed to trash items');
