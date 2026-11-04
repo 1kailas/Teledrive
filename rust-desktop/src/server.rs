@@ -3038,6 +3038,47 @@ fn create_store_zip_and_hash(src_path: &Path, zip_path: &Path, entry_name: &str)
                 }
             }
 
+            (Method::Post, "/api/folders/ensure-path") => {
+                let mut body = String::new();
+                let _ = request.as_reader().read_to_string(&mut body);
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
+                    let path = json.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                    let mut current_parent_id = json.get("parentId").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let segments: Vec<&str> = path.split(&['/', '\\'][..]).filter(|s| !s.trim().is_empty()).collect();
+                    if segments.is_empty() {
+                        self.send_json(request, 400, &serde_json::json!({ "error": { "message": "path required" } }));
+                    } else {
+                        let mut last_folder = None;
+                        for seg in segments {
+                            let seg_clean = seg.trim();
+                            let existing = {
+                                let state = self.db.state.read_safe();
+                                state.folders.iter()
+                                    .find(|f| f.trashed_at.is_none() && f.parent_id == current_parent_id && f.name.eq_ignore_ascii_case(seg_clean))
+                                    .cloned()
+                            };
+
+                            if let Some(folder) = existing {
+                                current_parent_id = Some(folder.id.clone());
+                                last_folder = Some(Database::to_folder_dto(&folder, 0));
+                            } else {
+                                let created = self.db.create_folder(seg_clean, current_parent_id.clone());
+                                current_parent_id = Some(created.id.clone());
+                                last_folder = Some(created);
+                            }
+                        }
+
+                        if let Some(final_folder) = last_folder {
+                            self.send_json(request, 200, &serde_json::json!({ "folder": final_folder }));
+                        } else {
+                            self.send_json(request, 400, &serde_json::json!({ "error": { "message": "Failed to create folder path" } }));
+                        }
+                    }
+                } else {
+                    self.send_json(request, 400, &serde_json::json!({ "error": { "message": "Invalid JSON" } }));
+                }
+            }
+
             (Method::Patch, p) if p.starts_with("/api/folders/") => {
                 let id = p.trim_start_matches("/api/folders/");
                 let mut body = String::new();

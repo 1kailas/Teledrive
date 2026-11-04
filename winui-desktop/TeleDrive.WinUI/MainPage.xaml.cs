@@ -2013,11 +2013,21 @@ public sealed partial class MainPage : Page
 
     private async void NewFolderBtn_Click(object sender, RoutedEventArgs e)
     {
+        var panel = new StackPanel { Spacing = 6 };
         var inputTextBox = new TextBox { Text = "New Folder", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var hint = new TextBlock
+        {
+            Text = "Tip: You can create nested folders by typing paths like 'Work/2026/Q4'",
+            FontSize = 11,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
+        };
+        panel.Children.Add(inputTextBox);
+        panel.Children.Add(hint);
+
         var dialog = new ContentDialog
         {
             Title = "Create New Folder",
-            Content = inputTextBox,
+            Content = panel,
             PrimaryButtonText = "Create",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
@@ -2385,18 +2395,19 @@ public sealed partial class MainPage : Page
         }
     }
 
-    private async Task ExecuteClipboardPasteAsync()
+    private async Task ExecuteClipboardPasteAsync(string? targetFolderId = null)
     {
         if (_clipboardFileIds.Count == 0 && _clipboardFolderIds.Count == 0)
         {
             return;
         }
 
+        var destinationFolderId = targetFolderId ?? _currentFolderId;
         var count = _clipboardFileIds.Count + _clipboardFolderIds.Count;
         bool success;
         if (_isClipboardCut)
         {
-            success = await _service.MoveItemsAsync(_clipboardFileIds, _clipboardFolderIds, _currentFolderId);
+            success = await _service.MoveItemsAsync(_clipboardFileIds, _clipboardFolderIds, destinationFolderId);
             if (success)
             {
                 if (StatusBarSelectionText != null)
@@ -2409,7 +2420,7 @@ public sealed partial class MainPage : Page
         }
         else
         {
-            success = await _service.CopyItemsAsync(_clipboardFileIds, _clipboardFolderIds, _currentFolderId);
+            success = await _service.CopyItemsAsync(_clipboardFileIds, _clipboardFolderIds, destinationFolderId);
             if (success)
             {
                 if (StatusBarSelectionText != null)
@@ -2422,6 +2433,105 @@ public sealed partial class MainPage : Page
         if (success)
         {
             await LoadContentsAsync();
+        }
+    }
+
+    private async void ContextMenu_PasteIntoFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var folder = (sender as FrameworkElement)?.DataContext as FolderModel;
+        if (folder != null && !string.IsNullOrEmpty(folder.Id))
+        {
+            await ExecuteClipboardPasteAsync(folder.Id);
+        }
+    }
+
+    private async void ContextMenu_MoveItem_Click(object sender, RoutedEventArgs e)
+    {
+        var (fileIds, folderIds) = GetSelectedOrTargetItemIds((sender as FrameworkElement)?.DataContext);
+        if (fileIds.Count == 0 && folderIds.Count == 0) return;
+
+        var folderTree = await _service.GetFolderTreeAsync();
+        var blockedIds = new HashSet<string>(folderIds, StringComparer.OrdinalIgnoreCase);
+        var childrenMap = folderTree.Where(f => !string.IsNullOrEmpty(f.ParentId))
+                                    .GroupBy(f => f.ParentId!)
+                                    .ToDictionary(g => g.Key, g => g.Select(x => x.Id).ToList(), StringComparer.OrdinalIgnoreCase);
+        void BlockSubtree(string fid)
+        {
+            if (childrenMap.TryGetValue(fid, out var children))
+            {
+                foreach (var child in children)
+                {
+                    if (blockedIds.Add(child)) BlockSubtree(child);
+                }
+            }
+        }
+        foreach (var fid in folderIds) BlockSubtree(fid);
+
+        var validFolders = folderTree.Where(f => !blockedIds.Contains(f.Id)).ToList();
+        var options = FolderPickerOption.BuildFlattenedFolderList(validFolders);
+
+        var combo = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, ItemsSource = options, SelectedIndex = 0 };
+        var pathText = new TextBlock
+        {
+            Text = $"📍 Move to: {options[0].FullPath}",
+            FontSize = 12,
+            Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"],
+            Margin = new Thickness(0, 6, 0, 0)
+        };
+        combo.SelectionChanged += (s, ev) =>
+        {
+            if (combo.SelectedItem is FolderPickerOption opt)
+            {
+                pathText.Text = $"📍 Move to: {opt.FullPath}";
+            }
+        };
+
+        var filter = new TextBox { PlaceholderText = "Search/filter folders...", Margin = new Thickness(0, 0, 0, 6), FontSize = 12 };
+        filter.TextChanged += (s, ev) =>
+        {
+            var q = filter.Text.Trim();
+            if (string.IsNullOrEmpty(q))
+            {
+                combo.ItemsSource = options;
+                combo.SelectedIndex = 0;
+            }
+            else
+            {
+                var flt = options.Where(o => o.Id == null || o.RawName.Contains(q, StringComparison.OrdinalIgnoreCase) || o.FullPath.Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+                combo.ItemsSource = flt;
+                if (flt.Count > 1) combo.SelectedIndex = 1;
+                else if (flt.Count == 1) combo.SelectedIndex = 0;
+            }
+        };
+
+        var stack = new StackPanel { Spacing = 8, MinWidth = 380 };
+        stack.Children.Add(new TextBlock { Text = $"Choose destination folder for {fileIds.Count + folderIds.Count} item(s):", FontWeight = FontWeights.SemiBold, FontSize = 13 });
+        stack.Children.Add(filter);
+        stack.Children.Add(combo);
+        stack.Children.Add(pathText);
+
+        var dialog = new ContentDialog
+        {
+            Title = "Move to Nested Folder",
+            Content = stack,
+            PrimaryButtonText = "Move Here",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = this.XamlRoot ?? App.CurrentWindow?.Content?.XamlRoot
+        };
+
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        {
+            var chosen = combo.SelectedItem as FolderPickerOption ?? options[0];
+            bool ok = await _service.MoveItemsAsync(fileIds, folderIds, chosen.Id);
+            if (ok)
+            {
+                if (StatusBarSelectionText != null)
+                {
+                    StatusBarSelectionText.Text = $"• Moved {fileIds.Count + folderIds.Count} item(s) to {chosen.RawName}";
+                }
+                await LoadContentsAsync();
+            }
         }
     }
 
@@ -2635,36 +2745,160 @@ public sealed partial class MainPage : Page
 
         rootPanel.Children.Add(destHeaderGrid);
 
+        // Filter / Search for deep nested folders
+        var filterBox = new TextBox
+        {
+            PlaceholderText = "Search or filter folders (e.g. Work, Invoices, Q4)...",
+            FontSize = 12,
+            Margin = new Thickness(0, 2, 0, 4)
+        };
+        rootPanel.Children.Add(filterBox);
+
         var destinationCombo = new ComboBox
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
             ItemsSource = options
         };
 
+        FolderPickerOption initialOption;
         if (!string.IsNullOrEmpty(_currentFolderId))
         {
             var match = options.FirstOrDefault(o => o.Id == _currentFolderId);
-            destinationCombo.SelectedItem = match ?? options[0];
+            initialOption = match ?? options[0];
         }
         else
         {
-            destinationCombo.SelectedItem = options[0];
+            initialOption = options[0];
         }
+        destinationCombo.SelectedItem = initialOption;
         rootPanel.Children.Add(destinationCombo);
 
-        // Inline New Folder Input (Initially Collapsed)
-        var inlineNewFolderPanel = new Grid { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 2, 0, 0) };
-        inlineNewFolderPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        inlineNewFolderPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        inlineNewFolderPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        // Path Breadcrumb & Subfolder Navigation Chips
+        var pathTextBlock = new TextBlock
+        {
+            Text = $"📍 Path: {initialOption.FullPath}",
+            FontSize = 12,
+            Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"],
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(2, 4, 2, 0)
+        };
+        rootPanel.Children.Add(pathTextBlock);
+
+        var subfoldersPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        var subfoldersScroll = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            HorizontalScrollMode = ScrollMode.Enabled,
+            VerticalScrollMode = ScrollMode.Disabled,
+            Content = subfoldersPanel,
+            Margin = new Thickness(0, 4, 0, 0),
+            Visibility = Visibility.Collapsed
+        };
+        rootPanel.Children.Add(subfoldersScroll);
+
+        var targetParentLabel = new TextBlock
+        {
+            Text = $"Creating inside: {initialOption.RawName}",
+            FontSize = 11,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            Margin = new Thickness(2, 0, 0, 2)
+        };
+
+        void UpdateSubfolderChipsAndPath(FolderPickerOption current)
+        {
+            pathTextBlock.Text = $"📍 Path: {current.FullPath}";
+            targetParentLabel.Text = $"Creating inside: {current.RawName}";
+            subfoldersPanel.Children.Clear();
+
+            // Up to parent button
+            if (current.Id != null)
+            {
+                var parentOpt = options.FirstOrDefault(o => o.Id == current.ParentId) ?? options[0];
+                var upBtn = new Button
+                {
+                    Content = $"⬆ Up to {parentOpt.RawName}",
+                    FontSize = 11,
+                    Padding = new Thickness(6, 2, 6, 2)
+                };
+                upBtn.Click += (s, ev) => destinationCombo.SelectedItem = parentOpt;
+                subfoldersPanel.Children.Add(upBtn);
+            }
+
+            // Subfolder chips
+            var children = options.Where(o => o.ParentId == current.Id).Take(5).ToList();
+            if (children.Count > 0)
+            {
+                subfoldersPanel.Children.Add(new TextBlock
+                {
+                    Text = "Subfolders:",
+                    FontSize = 11,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+                    Margin = new Thickness(4, 0, 0, 0)
+                });
+
+                foreach (var child in children)
+                {
+                    var childBtn = new Button
+                    {
+                        Content = $"📁 {child.RawName}",
+                        FontSize = 11,
+                        Padding = new Thickness(6, 2, 6, 2)
+                    };
+                    childBtn.Click += (s, ev) => destinationCombo.SelectedItem = child;
+                    subfoldersPanel.Children.Add(childBtn);
+                }
+            }
+
+            subfoldersScroll.Visibility = subfoldersPanel.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        destinationCombo.SelectionChanged += (s, e) =>
+        {
+            if (destinationCombo.SelectedItem is FolderPickerOption opt)
+            {
+                UpdateSubfolderChipsAndPath(opt);
+            }
+        };
+
+        filterBox.TextChanged += (s, e) =>
+        {
+            var q = filterBox.Text.Trim();
+            if (string.IsNullOrEmpty(q))
+            {
+                destinationCombo.ItemsSource = options;
+                destinationCombo.SelectedItem = initialOption;
+            }
+            else
+            {
+                var filtered = options.Where(o => o.Id == null ||
+                    o.RawName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    o.FullPath.Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+                destinationCombo.ItemsSource = filtered;
+                if (filtered.Count > 1) destinationCombo.SelectedIndex = 1;
+                else if (filtered.Count == 1) destinationCombo.SelectedIndex = 0;
+            }
+        };
+
+        UpdateSubfolderChipsAndPath(initialOption);
+
+        // Inline New Folder Input (Supports nested paths!)
+        var inlineNewFolderPanel = new StackPanel { Visibility = Visibility.Collapsed, Spacing = 4, Margin = new Thickness(0, 4, 0, 0) };
+        inlineNewFolderPanel.Children.Add(targetParentLabel);
+
+        var inlineInputGrid = new Grid();
+        inlineInputGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        inlineInputGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        inlineInputGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var newFolderNameInput = new TextBox
         {
-            PlaceholderText = "New folder name...",
+            PlaceholderText = "Folder name or nested path (e.g. Work/2026/Q4)...",
             Margin = new Thickness(0, 0, 6, 0)
         };
         Grid.SetColumn(newFolderNameInput, 0);
-        inlineNewFolderPanel.Children.Add(newFolderNameInput);
+        inlineInputGrid.Children.Add(newFolderNameInput);
 
         var createFolderBtn = new Button
         {
@@ -2673,15 +2907,16 @@ public sealed partial class MainPage : Page
             Margin = new Thickness(0, 0, 4, 0)
         };
         Grid.SetColumn(createFolderBtn, 1);
-        inlineNewFolderPanel.Children.Add(createFolderBtn);
+        inlineInputGrid.Children.Add(createFolderBtn);
 
         var cancelNewFolderBtn = new Button
         {
             Content = "Cancel"
         };
         Grid.SetColumn(cancelNewFolderBtn, 2);
-        inlineNewFolderPanel.Children.Add(cancelNewFolderBtn);
+        inlineInputGrid.Children.Add(cancelNewFolderBtn);
 
+        inlineNewFolderPanel.Children.Add(inlineInputGrid);
         rootPanel.Children.Add(inlineNewFolderPanel);
 
         newFolderToggleBtn.Click += (s, e) =>

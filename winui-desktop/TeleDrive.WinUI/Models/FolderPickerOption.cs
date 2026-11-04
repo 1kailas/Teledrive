@@ -7,8 +7,10 @@ namespace TeleDrive_WinUI.Models;
 public class FolderPickerOption
 {
     public string? Id { get; set; }
+    public string? ParentId { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public string RawName { get; set; } = string.Empty;
+    public string FullPath { get; set; } = string.Empty;
     public int Level { get; set; }
 
     public override string ToString() => DisplayName;
@@ -22,8 +24,10 @@ public class FolderPickerOption
             new FolderPickerOption
             {
                 Id = null,
+                ParentId = null,
                 DisplayName = rootName,
                 RawName = "My Drive",
+                FullPath = "My Drive",
                 Level = 0
             }
         };
@@ -60,7 +64,7 @@ public class FolderPickerOption
 
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        void Traverse(string parentId, int level)
+        void Traverse(string parentId, int level, string parentPath)
         {
             if (!childrenByParent.TryGetValue(parentId, out var children)) return;
 
@@ -69,19 +73,22 @@ public class FolderPickerOption
                 if (!visited.Add(child.Id)) continue; // avoid cycles
 
                 string indent = new string(' ', level * 4);
+                string currentPath = $"{parentPath} > {child.Name}";
                 result.Add(new FolderPickerOption
                 {
                     Id = child.Id,
+                    ParentId = string.IsNullOrEmpty(parentId) ? null : parentId,
                     DisplayName = $"{indent}📁 {child.Name}",
                     RawName = child.Name,
+                    FullPath = currentPath,
                     Level = level
                 });
 
-                Traverse(child.Id, level + 1);
+                Traverse(child.Id, level + 1, currentPath);
             }
         }
 
-        Traverse("", 1);
+        Traverse("", 1, "My Drive");
         return result;
     }
 }

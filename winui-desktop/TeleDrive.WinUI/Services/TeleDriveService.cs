@@ -740,10 +740,78 @@ public class TeleDriveService
         }
     }
 
+    public async Task<string?> EnsureFolderPathAsync(string path, string? parentId = null)
+    {
+        try
+        {
+            var segments = path.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries)
+                               .Select(s => s.Trim())
+                               .Where(s => !string.IsNullOrEmpty(s))
+                               .ToList();
+            if (segments.Count == 0) return parentId;
+
+            // 1. Try server's fast ensure-path endpoint first
+            try
+            {
+                var payload = new { path = string.Join("/", segments), parentId };
+                var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/folders/ensure-path", payload);
+                if (res.IsSuccessStatusCode)
+                {
+                    var json = await res.Content.ReadAsStringAsync();
+                    using var doc = JsonDocument.Parse(json);
+                    if (doc.RootElement.TryGetProperty("folder", out var f) && f.TryGetProperty("id", out var idElem))
+                    {
+                        return idElem.GetString();
+                    }
+                }
+            }
+            catch { }
+
+            // 2. Resilient fallback: ensure each segment step-by-step
+            string? currentParent = parentId;
+            foreach (var seg in segments)
+            {
+                var (folders, _) = await GetDriveAsync(currentParent);
+                var existing = folders.FirstOrDefault(f => f.Name.Equals(seg, StringComparison.OrdinalIgnoreCase));
+                if (existing != null)
+                {
+                    currentParent = existing.Id;
+                }
+                else
+                {
+                    var payload = new { name = seg, parentId = currentParent };
+                    var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/folders", payload);
+                    if (res.IsSuccessStatusCode)
+                    {
+                        var json = await res.Content.ReadAsStringAsync();
+                        using var doc = JsonDocument.Parse(json);
+                        if (doc.RootElement.TryGetProperty("folder", out var f) && f.TryGetProperty("id", out var idElem))
+                        {
+                            currentParent = idElem.GetString();
+                            continue;
+                        }
+                    }
+                    return currentParent;
+                }
+            }
+            return currentParent;
+        }
+        catch
+        {
+            return parentId;
+        }
+    }
+
     public async Task<string?> CreateFolderAsync(string name, string? parentId = null)
     {
         try
         {
+            if (string.IsNullOrWhiteSpace(name)) return null;
+            if (name.Contains('/') || name.Contains('\\'))
+            {
+                return await EnsureFolderPathAsync(name, parentId);
+            }
+
             var payload = new { name, parentId };
             var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/folders", payload);
             if (res.IsSuccessStatusCode)

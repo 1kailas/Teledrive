@@ -308,6 +308,16 @@
                                                                     <FontIcon Glyph="&#xE8C8;" />
                                                                 </MenuFlyoutItem.Icon>
                                                             </MenuFlyoutItem>
+                                                            <MenuFlyoutItem Text="Move to..." Click="ContextMenu_MoveItem_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE8DE;" Foreground="#38BDF8" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutItem Text="Paste into folder" Click="ContextMenu_PasteIntoFolder_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE77F;" Foreground="#38BDF8" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
                                                             <MenuFlyoutSeparator />
                                                             <MenuFlyoutItem Text="Move to Trash" Click="ContextMenu_TrashFolder_Click">
                                                                 <MenuFlyoutItem.Icon>
@@ -457,6 +467,11 @@
                                                             <MenuFlyoutItem Text="Copy (Ctrl+C)" Click="ContextMenu_CopyFile_Click">
                                                                 <MenuFlyoutItem.Icon>
                                                                     <FontIcon Glyph="&#xE8C8;" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutItem Text="Move to..." Click="ContextMenu_MoveItem_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE8DE;" Foreground="#38BDF8" />
                                                                 </MenuFlyoutItem.Icon>
                                                             </MenuFlyoutItem>
                                                             <MenuFlyoutSeparator />
@@ -631,6 +646,11 @@
                                                             <MenuFlyoutItem Text="Copy (Ctrl+C)" Click="ContextMenu_CopyFile_Click">
                                                                 <MenuFlyoutItem.Icon>
                                                                     <FontIcon Glyph="&#xE8C8;" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutItem Text="Move to..." Click="ContextMenu_MoveItem_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE8DE;" Foreground="#38BDF8" />
                                                                 </MenuFlyoutItem.Icon>
                                                             </MenuFlyoutItem>
                                                             <MenuFlyoutSeparator />
