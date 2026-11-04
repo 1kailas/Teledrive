@@ -1392,32 +1392,8 @@ public sealed partial class MainPage : Page
                 var items = await e.DataView.GetStorageItemsAsync();
                 if (items != null && items.Count > 0)
                 {
-                    var filePaths = new List<string>();
-                    var folderPaths = new List<string>();
-
-                    foreach (var item in items)
-                    {
-                        if (item is StorageFolder || Directory.Exists(item.Path))
-                        {
-                            folderPaths.Add(item.Path);
-                        }
-                        else if (item is StorageFile || File.Exists(item.Path))
-                        {
-                            filePaths.Add(item.Path);
-                        }
-                    }
-
-                    if (filePaths.Count > 0)
-                    {
-                        await UploadFilesWithConflictCheckAsync(filePaths, _currentFolderId);
-                    }
-
-                    foreach (var folderPath in folderPaths)
-                    {
-                        await UploadDirectoryWithConflictCheckAsync(folderPath, _currentFolderId);
-                    }
-
-                    await RefreshTransfersAsync();
+                    var paths = items.Select(it => it.Path).Where(p => !string.IsNullOrEmpty(p)).ToList();
+                    await HandleIncomingPathsAsync(paths);
                 }
             }
             catch (Exception ex)
@@ -2001,7 +1977,7 @@ public sealed partial class MainPage : Page
             if (files != null && files.Count > 0)
             {
                 var paths = files.Select(f => f.Path).ToList();
-                await UploadFilesWithConflictCheckAsync(paths, _currentFolderId);
+                await HandleIncomingPathsAsync(paths);
             }
         }
         catch (Exception ex)
@@ -2026,7 +2002,7 @@ public sealed partial class MainPage : Page
             var folder = await picker.PickSingleFolderAsync();
             if (folder != null && Directory.Exists(folder.Path))
             {
-                await UploadDirectoryWithConflictCheckAsync(folder.Path, _currentFolderId);
+                await HandleIncomingPathsAsync(new[] { folder.Path });
             }
         }
         catch (Exception ex)
@@ -2478,6 +2454,308 @@ public sealed partial class MainPage : Page
         await ExecuteClipboardPasteAsync();
     }
 
+    private async Task<(bool Confirmed, string? TargetFolderId, string TargetFolderName, bool NavigateToDestination)> ShowUploadDestinationDialogAsync(
+        IReadOnlyList<string> filePaths, IReadOnlyList<string> folderPaths, long totalBytes)
+    {
+        var xamlRoot = this.XamlRoot ?? App.CurrentWindow?.Content?.XamlRoot;
+        if (xamlRoot == null)
+        {
+            int retries = 0;
+            while (xamlRoot == null && retries < 10)
+            {
+                await Task.Delay(100);
+                xamlRoot = this.XamlRoot ?? App.CurrentWindow?.Content?.XamlRoot;
+                retries++;
+            }
+        }
+        if (xamlRoot == null)
+        {
+            return (true, _currentFolderId, CurrentFolderTitle?.Text ?? "My Drive", false);
+        }
+
+        var folderTree = await _service.GetFolderTreeAsync();
+        var options = FolderPickerOption.BuildFlattenedFolderList(folderTree);
+
+        var rootPanel = new StackPanel { Spacing = 14, MinWidth = 420, MaxWidth = 500 };
+
+        // 1. Summary Card
+        var summaryBorder = new Border
+        {
+            Background = (Brush)Application.Current.Resources["LayerFillColorDefaultBrush"],
+            BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(14, 12, 14, 12)
+        };
+
+        var summaryStack = new StackPanel { Spacing = 4 };
+
+        int totalCount = filePaths.Count + folderPaths.Count;
+        string itemsDescription;
+        if (filePaths.Count > 0 && folderPaths.Count > 0)
+        {
+            itemsDescription = $"{filePaths.Count} file{(filePaths.Count > 1 ? "s" : "")} and {folderPaths.Count} folder{(folderPaths.Count > 1 ? "s" : "")}";
+        }
+        else if (folderPaths.Count > 0)
+        {
+            itemsDescription = $"{folderPaths.Count} folder{(folderPaths.Count > 1 ? "s" : "")}";
+        }
+        else
+        {
+            itemsDescription = $"{filePaths.Count} file{(filePaths.Count > 1 ? "s" : "")}";
+        }
+
+        var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        titleRow.Children.Add(new FontIcon { Glyph = "\uE898", FontSize = 16, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"] });
+        titleRow.Children.Add(new TextBlock
+        {
+            Text = $"Ready to upload {itemsDescription}",
+            FontWeight = FontWeights.SemiBold,
+            FontSize = 14
+        });
+        summaryStack.Children.Add(titleRow);
+
+        summaryStack.Children.Add(new TextBlock
+        {
+            Text = $"Total size: {FileModel.FormatBytes((ulong)Math.Max(0, totalBytes))}",
+            FontSize = 12,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            Margin = new Thickness(24, 0, 0, 0)
+        });
+
+        summaryBorder.Child = summaryStack;
+        rootPanel.Children.Add(summaryBorder);
+
+        // 2. Items Preview List (Scrollable)
+        var previewList = new StackPanel { Spacing = 4 };
+        int displayedItems = 0;
+
+        foreach (var dir in folderPaths)
+        {
+            if (displayedItems >= 25) break;
+            var dirName = System.IO.Path.GetFileName(dir.TrimEnd('\\', '/'));
+            if (string.IsNullOrEmpty(dirName)) dirName = dir;
+
+            var row = new Grid { Margin = new Thickness(0, 1, 0, 1) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var icon = new FontIcon { Glyph = "\uED43", FontSize = 13, Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 234, 179, 8)), Margin = new Thickness(0, 0, 8, 0) };
+            Grid.SetColumn(icon, 0);
+            row.Children.Add(icon);
+
+            var nameText = new TextBlock { Text = dirName, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(nameText, 1);
+            row.Children.Add(nameText);
+
+            var tagText = new TextBlock { Text = "Folder", FontSize = 11, Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"], VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(tagText, 2);
+            row.Children.Add(tagText);
+
+            previewList.Children.Add(row);
+            displayedItems++;
+        }
+
+        foreach (var file in filePaths)
+        {
+            if (displayedItems >= 25) break;
+            var fileName = System.IO.Path.GetFileName(file);
+            long fSize = 0;
+            try { fSize = new FileInfo(file).Length; } catch { }
+
+            var row = new Grid { Margin = new Thickness(0, 1, 0, 1) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var icon = new FontIcon { Glyph = "\uE8B7", FontSize = 13, Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"], Margin = new Thickness(0, 0, 8, 0) };
+            Grid.SetColumn(icon, 0);
+            row.Children.Add(icon);
+
+            var nameText = new TextBlock { Text = fileName, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(nameText, 1);
+            row.Children.Add(nameText);
+
+            var sizeText = new TextBlock { Text = FileModel.FormatBytes((ulong)Math.Max(0, fSize)), FontSize = 11, Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"], VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(sizeText, 2);
+            row.Children.Add(sizeText);
+
+            previewList.Children.Add(row);
+            displayedItems++;
+        }
+
+        if (totalCount > 25)
+        {
+            previewList.Children.Add(new TextBlock
+            {
+                Text = $"+ {totalCount - 25} more item{(totalCount - 25 > 1 ? "s" : "")}...",
+                FontSize = 11,
+                FontStyle = Windows.UI.Text.FontStyle.Italic,
+                Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
+                Margin = new Thickness(22, 2, 0, 0)
+            });
+        }
+
+        var previewScroll = new ScrollViewer
+        {
+            MaxHeight = 110,
+            Background = (Brush)Application.Current.Resources["ControlFillColorDefaultBrush"],
+            BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 8, 10, 8),
+            Content = previewList
+        };
+        rootPanel.Children.Add(previewScroll);
+
+        // 3. Destination Selector Section
+        var destHeaderGrid = new Grid();
+        destHeaderGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        destHeaderGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var destLabel = new TextBlock
+        {
+            Text = "Upload Destination:",
+            FontWeight = FontWeights.SemiBold,
+            FontSize = 13,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(destLabel, 0);
+        destHeaderGrid.Children.Add(destLabel);
+
+        var newFolderToggleBtn = new Button
+        {
+            Content = "+ New Folder",
+            FontSize = 12,
+            Padding = new Thickness(8, 4, 8, 4)
+        };
+        Grid.SetColumn(newFolderToggleBtn, 1);
+        destHeaderGrid.Children.Add(newFolderToggleBtn);
+
+        rootPanel.Children.Add(destHeaderGrid);
+
+        var destinationCombo = new ComboBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            ItemsSource = options
+        };
+
+        if (!string.IsNullOrEmpty(_currentFolderId))
+        {
+            var match = options.FirstOrDefault(o => o.Id == _currentFolderId);
+            destinationCombo.SelectedItem = match ?? options[0];
+        }
+        else
+        {
+            destinationCombo.SelectedItem = options[0];
+        }
+        rootPanel.Children.Add(destinationCombo);
+
+        // Inline New Folder Input (Initially Collapsed)
+        var inlineNewFolderPanel = new Grid { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 2, 0, 0) };
+        inlineNewFolderPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        inlineNewFolderPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        inlineNewFolderPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var newFolderNameInput = new TextBox
+        {
+            PlaceholderText = "New folder name...",
+            Margin = new Thickness(0, 0, 6, 0)
+        };
+        Grid.SetColumn(newFolderNameInput, 0);
+        inlineNewFolderPanel.Children.Add(newFolderNameInput);
+
+        var createFolderBtn = new Button
+        {
+            Content = "Create",
+            Style = (Style)Application.Current.Resources["AccentButtonStyle"],
+            Margin = new Thickness(0, 0, 4, 0)
+        };
+        Grid.SetColumn(createFolderBtn, 1);
+        inlineNewFolderPanel.Children.Add(createFolderBtn);
+
+        var cancelNewFolderBtn = new Button
+        {
+            Content = "Cancel"
+        };
+        Grid.SetColumn(cancelNewFolderBtn, 2);
+        inlineNewFolderPanel.Children.Add(cancelNewFolderBtn);
+
+        rootPanel.Children.Add(inlineNewFolderPanel);
+
+        newFolderToggleBtn.Click += (s, e) =>
+        {
+            inlineNewFolderPanel.Visibility = Visibility.Visible;
+            newFolderToggleBtn.Visibility = Visibility.Collapsed;
+            newFolderNameInput.Text = "";
+            newFolderNameInput.Focus(FocusState.Programmatic);
+        };
+
+        cancelNewFolderBtn.Click += (s, e) =>
+        {
+            inlineNewFolderPanel.Visibility = Visibility.Collapsed;
+            newFolderToggleBtn.Visibility = Visibility.Visible;
+            newFolderNameInput.Text = "";
+        };
+
+        createFolderBtn.Click += async (s, e) =>
+        {
+            var name = newFolderNameInput.Text.Trim();
+            if (string.IsNullOrEmpty(name)) return;
+
+            var sel = destinationCombo.SelectedItem as FolderPickerOption;
+            string? parentId = sel?.Id;
+
+            createFolderBtn.IsEnabled = false;
+            var createdId = await _service.CreateFolderAsync(name, parentId);
+            createFolderBtn.IsEnabled = true;
+
+            if (!string.IsNullOrEmpty(createdId))
+            {
+                var refreshedTree = await _service.GetFolderTreeAsync();
+                options = FolderPickerOption.BuildFlattenedFolderList(refreshedTree);
+                destinationCombo.ItemsSource = options;
+                var createdOption = options.FirstOrDefault(o => o.Id == createdId);
+                destinationCombo.SelectedItem = createdOption ?? options[0];
+
+                inlineNewFolderPanel.Visibility = Visibility.Collapsed;
+                newFolderToggleBtn.Visibility = Visibility.Visible;
+                newFolderNameInput.Text = "";
+            }
+        };
+
+        // 4. Navigate Checkbox
+        var navigateCheck = new CheckBox
+        {
+            Content = "Open destination folder when upload starts",
+            IsChecked = true,
+            FontSize = 12,
+            Margin = new Thickness(0, 4, 0, 0)
+        };
+        rootPanel.Children.Add(navigateCheck);
+
+        // 5. Create ContentDialog
+        var dialog = new ContentDialog
+        {
+            Title = "Upload to TeleDrive",
+            Content = rootPanel,
+            PrimaryButtonText = "Upload",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = xamlRoot
+        };
+
+        var dialogResult = await dialog.ShowAsync();
+        if (dialogResult == ContentDialogResult.Primary)
+        {
+            var chosen = destinationCombo.SelectedItem as FolderPickerOption ?? options[0];
+            return (true, chosen.Id, chosen.RawName, navigateCheck.IsChecked == true);
+        }
+
+        return (false, null, "", false);
+    }
+
     public async Task HandleIncomingPathsAsync(IEnumerable<string> paths)
     {
         try
@@ -2499,14 +2777,67 @@ public sealed partial class MainPage : Page
                 }
             }
 
+            if (filePaths.Count == 0 && folderPaths.Count == 0) return;
+
+            long totalBytes = 0;
+            foreach (var f in filePaths)
+            {
+                try { totalBytes += new FileInfo(f).Length; } catch { }
+            }
+            foreach (var d in folderPaths)
+            {
+                try
+                {
+                    var di = new DirectoryInfo(d);
+                    foreach (var fi in di.EnumerateFiles("*", SearchOption.AllDirectories))
+                    {
+                        totalBytes += fi.Length;
+                    }
+                }
+                catch { }
+            }
+
+            var (confirmed, targetFolderId, targetFolderName, navigateToDest) =
+                await ShowUploadDestinationDialogAsync(filePaths, folderPaths, totalBytes);
+
+            if (!confirmed)
+            {
+                Debug.WriteLine("Upload cancelled by user at destination picker.");
+                return;
+            }
+
+            if (navigateToDest)
+            {
+                if (string.IsNullOrEmpty(targetFolderId))
+                {
+                    if (_currentFolderId != null || _currentPageTag != "drive")
+                    {
+                        _navHistory.Clear();
+                        _currentFolderId = null;
+                        _currentPageTag = "drive";
+                        CurrentFolderTitle.Text = "My Drive";
+                        if (NavView != null && DriveNavItem != null)
+                        {
+                            NavView.SelectedItem = DriveNavItem;
+                        }
+                        UpdateNavBackButton();
+                        await LoadContentsAsync();
+                    }
+                }
+                else
+                {
+                    NavigateToFolder(targetFolderId, targetFolderName);
+                }
+            }
+
             if (filePaths.Count > 0)
             {
-                await UploadFilesWithConflictCheckAsync(filePaths, _currentFolderId);
+                await UploadFilesWithConflictCheckAsync(filePaths, targetFolderId);
             }
 
             foreach (var folderPath in folderPaths)
             {
-                await UploadDirectoryWithConflictCheckAsync(folderPath, _currentFolderId);
+                await UploadDirectoryWithConflictCheckAsync(folderPath, targetFolderId);
             }
 
             await RefreshTransfersAsync();

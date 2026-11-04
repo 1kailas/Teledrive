@@ -221,6 +221,33 @@ public class TeleDriveService
         }
     }
 
+    public async Task<List<FolderModel>> GetFolderTreeAsync()
+    {
+        try
+        {
+            var json = await _http.GetStringAsync($"{BaseUrl}/api/folders/tree");
+            using var doc = JsonDocument.Parse(json);
+            var list = new List<FolderModel>();
+            if (doc.RootElement.TryGetProperty("folders", out var arr))
+            {
+                foreach (var el in arr.EnumerateArray())
+                {
+                    list.Add(new FolderModel
+                    {
+                        Id = el.GetProperty("id").GetString() ?? "",
+                        ParentId = el.TryGetProperty("parentId", out var pid) && pid.ValueKind == JsonValueKind.String ? pid.GetString() : null,
+                        Name = el.TryGetProperty("name", out var nm) ? nm.GetString() ?? "" : ""
+                    });
+                }
+            }
+            return list;
+        }
+        catch
+        {
+            return new List<FolderModel>();
+        }
+    }
+
     public async Task<FileModel?> GetFileDetailsAsync(string fileId)
     {
         try
