@@ -47,8 +47,11 @@ public sealed partial class MainPage : Page
 
     private FileModel? _selectedFileForDetails;
 
+    public static MainPage? Current { get; private set; }
+
     public MainPage()
     {
+        Current = this;
         InitializeComponent();
         FoldersGridView.ItemsSource = Folders;
         FilesGridView.ItemsSource = Files;
@@ -124,6 +127,13 @@ public sealed partial class MainPage : Page
 
         await _service.EnsureDaemonRunningAsync();
         await LoadContentsAsync();
+
+        if (App.InitialLaunchPaths.Count > 0)
+        {
+            var initial = App.InitialLaunchPaths.ToList();
+            App.InitialLaunchPaths.Clear();
+            _ = HandleIncomingPathsAsync(initial);
+        }
 
         _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
         _pollTimer.Tick += PollTimer_Tick;
@@ -1829,6 +1839,10 @@ public sealed partial class MainPage : Page
             UploadFolderBtn.Visibility = Visibility.Collapsed;
             NewFolderBtn.Visibility = Visibility.Collapsed;
             if (NavBackBtn != null) NavBackBtn.Visibility = Visibility.Collapsed;
+            if (ShellContextMenuToggle != null)
+            {
+                ShellContextMenuToggle.IsOn = ShellIntegrationService.IsShellIntegrationRegistered();
+            }
             SettingsView.Visibility = Visibility.Visible;
             return;
         }
@@ -2462,5 +2476,68 @@ public sealed partial class MainPage : Page
     private async void ContextMenu_Paste_Click(object sender, RoutedEventArgs e)
     {
         await ExecuteClipboardPasteAsync();
+    }
+
+    public async Task HandleIncomingPathsAsync(IEnumerable<string> paths)
+    {
+        try
+        {
+            var filePaths = new List<string>();
+            var folderPaths = new List<string>();
+
+            foreach (var p in paths)
+            {
+                if (string.IsNullOrWhiteSpace(p)) continue;
+                var clean = p.Trim('"', '\'', ' ');
+                if (File.Exists(clean))
+                {
+                    filePaths.Add(clean);
+                }
+                else if (Directory.Exists(clean))
+                {
+                    folderPaths.Add(clean);
+                }
+            }
+
+            if (filePaths.Count > 0)
+            {
+                await UploadFilesWithConflictCheckAsync(filePaths, _currentFolderId);
+            }
+
+            foreach (var folderPath in folderPaths)
+            {
+                await UploadDirectoryWithConflictCheckAsync(folderPath, _currentFolderId);
+            }
+
+            await RefreshTransfersAsync();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"HandleIncomingPathsAsync error: {ex.Message}");
+        }
+    }
+
+    private void ShellContextMenuToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleSwitch toggle)
+        {
+            if (toggle.IsOn)
+            {
+                ShellIntegrationService.RegisterShellIntegration();
+            }
+            else
+            {
+                ShellIntegrationService.UnregisterShellIntegration();
+            }
+        }
+    }
+
+    private void RegisterShellBtn_Click(object sender, RoutedEventArgs e)
+    {
+        ShellIntegrationService.RegisterShellIntegration();
+        if (ShellContextMenuToggle != null)
+        {
+            ShellContextMenuToggle.IsOn = true;
+        }
     }
 }

@@ -1146,6 +1146,49 @@
                                     </StackPanel>
                                 </Border>
 
+                                <!-- Windows File Explorer Integration -->
+                                <Border
+                                    Padding="18"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8">
+                                    <StackPanel Spacing="16">
+                                        <TextBlock Text="WINDOWS FILE EXPLORER INTEGRATION" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock Text="Right-Click Context Menu" FontWeight="Medium" FontSize="13" />
+                                                <TextBlock Text="Show 'Upload to TeleDrive' when right-clicking any file, folder, or directory background in File Explorer" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <ToggleSwitch Grid.Column="1" x:Name="ShellContextMenuToggle" OnContent="Enabled" OffContent="Disabled" VerticalAlignment="Center" Toggled="ShellContextMenuToggle_Toggled" />
+                                        </Grid>
+
+                                        <MenuFlyoutSeparator />
+
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock Text="Send To Menu &amp; URL Protocol" FontWeight="Medium" FontSize="13" />
+                                                <TextBlock Text="Integrate with Windows 'Send to' menu and teledrive:// browser links" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" VerticalAlignment="Center" Click="RegisterShellBtn_Click">
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                    <FontIcon Glyph="&#xE777;" FontSize="12" />
+                                                    <TextBlock Text="Register Shell Now" />
+                                                </StackPanel>
+                                            </Button>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+
                                 <!-- Storage & Local Cache -->
                                 <Border
                                     Padding="18"

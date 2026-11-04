@@ -1,3 +1,8 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 using Windows.Foundation;
@@ -10,6 +15,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using Microsoft.UI.Xaml.Shapes;
+using TeleDrive_WinUI.Services;
 
 namespace TeleDrive_WinUI;
 
@@ -20,6 +26,8 @@ public partial class App : Application
 {
     private Window? _window;
     public static Window? CurrentWindow { get; private set; }
+    private static Mutex? _singleInstanceMutex;
+    public static List<string> InitialLaunchPaths { get; } = new();
 
     /// <summary>
     /// Initializes the singleton application object.  This is the first line of authored code
@@ -27,6 +35,40 @@ public partial class App : Application
     /// </summary>
     public App()
     {
+        var rawArgs = Environment.GetCommandLineArgs();
+
+        if (rawArgs.Any(a => a.Equals("--register-shell", StringComparison.OrdinalIgnoreCase)))
+        {
+            ShellIntegrationService.RegisterShellIntegration();
+            Environment.Exit(0);
+            return;
+        }
+        if (rawArgs.Any(a => a.Equals("--unregister-shell", StringComparison.OrdinalIgnoreCase)))
+        {
+            ShellIntegrationService.UnregisterShellIntegration();
+            Environment.Exit(0);
+            return;
+        }
+
+        var incomingPaths = ShellIntegrationService.ExtractPathsFromArgs(rawArgs);
+
+        _singleInstanceMutex = new Mutex(true, ShellIntegrationService.MutexName, out bool createdNew);
+        if (!createdNew)
+        {
+            if (incomingPaths.Count > 0)
+            {
+                ShellIntegrationService.TrySendToExistingInstance(incomingPaths);
+            }
+            ShellIntegrationService.BringExistingWindowToFront();
+            Environment.Exit(0);
+            return;
+        }
+
+        if (incomingPaths.Count > 0)
+        {
+            InitialLaunchPaths.AddRange(incomingPaths);
+        }
+
         InitializeComponent();
 
         UnhandledException += (sender, e) =>
@@ -64,5 +106,18 @@ public partial class App : Application
         _window = new MainWindow();
         CurrentWindow = _window;
         _window.Activate();
+
+        // Start pipe server to receive incoming files/folders from Explorer context menu and SendTo
+        var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        ShellIntegrationService.StartPipeServer(dispatcher, (paths) =>
+        {
+            _ = MainPage.Current?.HandleIncomingPathsAsync(paths);
+        });
+
+        _window.Closed += (s, e) =>
+        {
+            ShellIntegrationService.StopPipeServer();
+            _singleInstanceMutex?.Dispose();
+        };
     }
 }

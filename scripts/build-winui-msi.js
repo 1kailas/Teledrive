@@ -191,6 +191,7 @@ const wxs = `<?xml version="1.0" encoding="UTF-8"?>
       </Directory>
 
       <Directory Id="DesktopFolder" Name="Desktop" />
+      <Directory Id="SendToFolder" Name="SendTo" />
     </Directory>
 
     <DirectoryRef Id="ApplicationProgramsFolder">
@@ -218,11 +219,50 @@ const wxs = `<?xml version="1.0" encoding="UTF-8"?>
       </Component>
     </DirectoryRef>
 
+    <DirectoryRef Id="SendToFolder">
+      <Component Id="C_SendToShortcut" Guid="*">
+        <Shortcut Id="S_SendTo"
+                  Name="TeleDrive"
+                  Description="Upload to TeleDrive Cloud Storage"
+                  Target="[INSTALLFOLDER]TeleDrive.WinUI.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="TeleDriveIcon" />
+        <RegistryValue Root="HKCU" Key="Software\\TeleDrive" Name="SendToShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="C_ShellIntegration" Guid="*">
+        <!-- File Context Menu: Right click any file -> Upload to TeleDrive -->
+        <RegistryValue Root="HKCU" Key="Software\\Classes\\*\\shell\\TeleDriveUpload" Type="string" Value="Upload to TeleDrive" KeyPath="yes" />
+        <RegistryValue Root="HKCU" Key="Software\\Classes\\*\\shell\\TeleDriveUpload" Name="Icon" Type="string" Value="&quot;[INSTALLFOLDER]TeleDrive.WinUI.exe&quot;" />
+        <RegistryValue Root="HKCU" Key="Software\\Classes\\*\\shell\\TeleDriveUpload\\command" Type="string" Value="&quot;[INSTALLFOLDER]TeleDrive.WinUI.exe&quot; --upload &quot;%1&quot;" />
+
+        <!-- Folder Context Menu: Right click any folder -> Upload to TeleDrive -->
+        <RegistryValue Root="HKCU" Key="Software\\Classes\\Directory\\shell\\TeleDriveUpload" Type="string" Value="Upload to TeleDrive" />
+        <RegistryValue Root="HKCU" Key="Software\\Classes\\Directory\\shell\\TeleDriveUpload" Name="Icon" Type="string" Value="&quot;[INSTALLFOLDER]TeleDrive.WinUI.exe&quot;" />
+        <RegistryValue Root="HKCU" Key="Software\\Classes\\Directory\\shell\\TeleDriveUpload\\command" Type="string" Value="&quot;[INSTALLFOLDER]TeleDrive.WinUI.exe&quot; --upload &quot;%1&quot;" />
+
+        <!-- Directory Background Context Menu: Right click inside a folder -> Upload to TeleDrive -->
+        <RegistryValue Root="HKCU" Key="Software\\Classes\\Directory\\Background\\shell\\TeleDriveUpload" Type="string" Value="Upload to TeleDrive" />
+        <RegistryValue Root="HKCU" Key="Software\\Classes\\Directory\\Background\\shell\\TeleDriveUpload" Name="Icon" Type="string" Value="&quot;[INSTALLFOLDER]TeleDrive.WinUI.exe&quot;" />
+        <RegistryValue Root="HKCU" Key="Software\\Classes\\Directory\\Background\\shell\\TeleDriveUpload\\command" Type="string" Value="&quot;[INSTALLFOLDER]TeleDrive.WinUI.exe&quot; --upload &quot;%V&quot;" />
+
+        <!-- URI Scheme: teledrive:// -->
+        <RegistryValue Root="HKCU" Key="Software\\Classes\\teledrive" Type="string" Value="URL:TeleDrive Protocol" />
+        <RegistryValue Root="HKCU" Key="Software\\Classes\\teledrive" Name="URL Protocol" Type="string" Value="" />
+        <RegistryValue Root="HKCU" Key="Software\\Classes\\teledrive\\DefaultIcon" Type="string" Value="&quot;[INSTALLFOLDER]TeleDrive.WinUI.exe&quot;,0" />
+        <RegistryValue Root="HKCU" Key="Software\\Classes\\teledrive\\shell\\open\\command" Type="string" Value="&quot;[INSTALLFOLDER]TeleDrive.WinUI.exe&quot; &quot;%1&quot;" />
+      </Component>
+    </DirectoryRef>
+
     ${compXml}
 
     <Feature Id="MainFeature" Title="TeleDrive Application" Level="1">
       <ComponentRef Id="C_StartMenuShortcut" />
       <ComponentRef Id="C_DesktopShortcut" />
+      <ComponentRef Id="C_SendToShortcut" />
+      <ComponentRef Id="C_ShellIntegration" />
       ${components.map((c) => `<ComponentRef Id="${c.compId}" />`).join('\n      ')}
     </Feature>
 

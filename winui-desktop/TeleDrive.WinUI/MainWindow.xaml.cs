@@ -18,6 +18,23 @@ public sealed partial class MainWindow : Window
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
     private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    private const int SW_RESTORE = 9;
+
+    public static void BringToForeground()
+    {
+        if (WindowHandle != IntPtr.Zero)
+        {
+            ShowWindow(WindowHandle, SW_RESTORE);
+            SetForegroundWindow(WindowHandle);
+        }
+    }
+
     private const int GWL_EXSTYLE = -20;
     private const long WS_EX_TOPMOST = 0x00000008L;
     private static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
