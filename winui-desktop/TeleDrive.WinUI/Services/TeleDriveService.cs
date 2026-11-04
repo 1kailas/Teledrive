@@ -774,6 +774,45 @@ public class TeleDriveService
         }
     }
 
+    public async Task<bool> MoveItemsAsync(IEnumerable<string> fileIds, IEnumerable<string> folderIds, string? targetFolderId)
+    {
+        try
+        {
+            var payload = new
+            {
+                fileIds = fileIds.ToArray(),
+                folderIds = folderIds.ToArray(),
+                targetFolderId = targetFolderId,
+                copy = false
+            };
+            var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/items/move", payload);
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> CopyItemsAsync(IEnumerable<string> fileIds, IEnumerable<string> folderIds, string? targetFolderId)
+    {
+        try
+        {
+            var payload = new
+            {
+                fileIds = fileIds.ToArray(),
+                folderIds = folderIds.ToArray(),
+                targetFolderId = targetFolderId
+            };
+            var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/items/copy", payload);
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public async Task<(List<FolderModel> Folders, List<FileModel> Files, ulong TotalSize)> GetTrashAsync()
     {
         try

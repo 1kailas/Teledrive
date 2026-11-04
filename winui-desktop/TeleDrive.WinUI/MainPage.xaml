@@ -226,6 +226,12 @@
                                         </MenuFlyoutItem.Icon>
                                     </MenuFlyoutItem>
                                     <MenuFlyoutSeparator />
+                                    <MenuFlyoutItem Text="Paste (Ctrl+V)" Click="ContextMenu_Paste_Click">
+                                        <MenuFlyoutItem.Icon>
+                                            <FontIcon Glyph="&#xE77F;" Foreground="#38BDF8" />
+                                        </MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutSeparator />
                                     <MenuFlyoutItem Text="Refresh (F5)" Click="RefreshBtn_Click">
                                         <MenuFlyoutItem.Icon>
                                             <FontIcon Glyph="&#xE72C;" />
@@ -289,6 +295,17 @@
                                                             <MenuFlyoutItem Text="Rename..." Click="ContextMenu_RenameFolder_Click">
                                                                 <MenuFlyoutItem.Icon>
                                                                     <FontIcon Glyph="&#xE8AC;" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutSeparator />
+                                                            <MenuFlyoutItem Text="Cut (Ctrl+X)" Click="ContextMenu_CutFolder_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE8C6;" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutItem Text="Copy (Ctrl+C)" Click="ContextMenu_CopyFolder_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE8C8;" />
                                                                 </MenuFlyoutItem.Icon>
                                                             </MenuFlyoutItem>
                                                             <MenuFlyoutSeparator />
@@ -429,6 +446,17 @@
                                                             <MenuFlyoutItem Text="Rename..." Click="ContextMenu_Rename_Click">
                                                                 <MenuFlyoutItem.Icon>
                                                                     <FontIcon Glyph="&#xE8AC;" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutSeparator />
+                                                            <MenuFlyoutItem Text="Cut (Ctrl+X)" Click="ContextMenu_CutFile_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE8C6;" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutItem Text="Copy (Ctrl+C)" Click="ContextMenu_CopyFile_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE8C8;" />
                                                                 </MenuFlyoutItem.Icon>
                                                             </MenuFlyoutItem>
                                                             <MenuFlyoutSeparator />
@@ -592,6 +620,17 @@
                                                             <MenuFlyoutItem Text="Rename..." Click="ContextMenu_Rename_Click">
                                                                 <MenuFlyoutItem.Icon>
                                                                     <FontIcon Glyph="&#xE8AC;" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutSeparator />
+                                                            <MenuFlyoutItem Text="Cut (Ctrl+X)" Click="ContextMenu_CutFile_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE8C6;" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutItem Text="Copy (Ctrl+C)" Click="ContextMenu_CopyFile_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE8C8;" />
                                                                 </MenuFlyoutItem.Icon>
                                                             </MenuFlyoutItem>
                                                             <MenuFlyoutSeparator />

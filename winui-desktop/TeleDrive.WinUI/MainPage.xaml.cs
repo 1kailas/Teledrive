@@ -37,6 +37,10 @@ public sealed partial class MainPage : Page
     private List<FileModel> _allFiles = new();
 
     private string? _currentFolderId = null;
+    private readonly Stack<(string? FolderId, string Title)> _navHistory = new();
+    private readonly List<string> _clipboardFileIds = new();
+    private readonly List<string> _clipboardFolderIds = new();
+    private bool _isClipboardCut = false;
     private string _currentPageTag = "drive";
     private string _transfersFilter = "all"; // "all" | "active" | "uploads" | "downloads" | "completed"
     private int _viewMode = 0; // 0 = Grid, 1 = List
@@ -222,10 +226,7 @@ public sealed partial class MainPage : Page
         NewFolderBtn.Visibility = Visibility.Visible;
         if (EmptyTrashBtn != null) EmptyTrashBtn.Visibility = Visibility.Collapsed;
 
-        if (NavBackBtn != null)
-        {
-            NavBackBtn.Visibility = !string.IsNullOrEmpty(_currentFolderId) ? Visibility.Visible : Visibility.Collapsed;
-        }
+        UpdateNavBackButton();
 
         var (folders2, files2) = await _service.GetDriveAsync(_currentFolderId);
         _allFolders = folders2;
@@ -567,6 +568,18 @@ public sealed partial class MainPage : Page
         }
     }
 
+    private static bool IsAltPressed()
+    {
+        try
+        {
+            return (GetKeyState(0x12) & 0x8000) != 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private void SelectAllAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
         var focused = FocusManager.GetFocusedElement(this.XamlRoot);
@@ -581,39 +594,7 @@ public sealed partial class MainPage : Page
 
     private void FilesOrFolders_KeyDown(object sender, KeyRoutedEventArgs e)
     {
-        bool isCtrlDown = IsCtrlPressed();
-        if (isCtrlDown)
-        {
-            if (e.Key == Windows.System.VirtualKey.A)
-            {
-                SelectAllItems();
-                e.Handled = true;
-                return;
-            }
-            if (e.Key == Windows.System.VirtualKey.Add || (int)e.Key == 187)
-            {
-                StepCardSize(+1);
-                e.Handled = true;
-                return;
-            }
-            if (e.Key == Windows.System.VirtualKey.Subtract || (int)e.Key == 189)
-            {
-                StepCardSize(-1);
-                e.Handled = true;
-                return;
-            }
-            if (e.Key == Windows.System.VirtualKey.Number0 || e.Key == Windows.System.VirtualKey.NumberPad0)
-            {
-                SetCardSizeTier(3);
-                e.Handled = true;
-                return;
-            }
-        }
-        else if (e.Key == Windows.System.VirtualKey.Escape)
-        {
-            ClearSelection();
-            e.Handled = true;
-        }
+        MainPage_KeyDown(sender, e);
     }
 
     private void EscapeAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
@@ -701,6 +682,30 @@ public sealed partial class MainPage : Page
                 return;
             }
 
+            // Ctrl + X: Cut
+            if (e.Key == Windows.System.VirtualKey.X)
+            {
+                ExecuteClipboardCut();
+                e.Handled = true;
+                return;
+            }
+
+            // Ctrl + C: Copy
+            if (e.Key == Windows.System.VirtualKey.C)
+            {
+                ExecuteClipboardCopy();
+                e.Handled = true;
+                return;
+            }
+
+            // Ctrl + V: Paste
+            if (e.Key == Windows.System.VirtualKey.V)
+            {
+                _ = ExecuteClipboardPasteAsync();
+                e.Handled = true;
+                return;
+            }
+
             // Zoom in: Numpad Add (+), VirtualKey 187 (=/+ on standard keyboard)
             if (e.Key == Windows.System.VirtualKey.Add || (int)e.Key == 187)
             {
@@ -750,9 +755,7 @@ public sealed partial class MainPage : Page
             var selectedFolder = FoldersGridView?.SelectedItem as FolderModel;
             if (selectedFolder != null)
             {
-                _currentFolderId = selectedFolder.Id;
-                CurrentFolderTitle.Text = selectedFolder.Name;
-                _ = LoadContentsAsync();
+                NavigateToFolder(selectedFolder.Id, selectedFolder.Name);
                 e.Handled = true;
                 return;
             }
@@ -760,6 +763,15 @@ public sealed partial class MainPage : Page
             if (selectedFile != null)
             {
                 ShowFileDetails(selectedFile);
+                e.Handled = true;
+                return;
+            }
+        }
+        else if (e.Key == Windows.System.VirtualKey.Back || (e.Key == Windows.System.VirtualKey.Left && IsAltPressed()))
+        {
+            if (NavBackBtn != null && NavBackBtn.Visibility == Visibility.Visible)
+            {
+                NavBackBtn_Click(this, new RoutedEventArgs());
                 e.Handled = true;
                 return;
             }
@@ -1731,15 +1743,55 @@ public sealed partial class MainPage : Page
         }
     }
 
+    private async void NavigateToFolder(string folderId, string folderName)
+    {
+        _navHistory.Push((_currentFolderId, CurrentFolderTitle.Text));
+        _currentFolderId = folderId;
+        _currentPageTag = "drive";
+        CurrentFolderTitle.Text = folderName;
+        UpdateNavBackButton();
+        await LoadContentsAsync();
+    }
+
+    private void UpdateNavBackButton()
+    {
+        if (NavBackBtn != null)
+        {
+            bool canGoBack = _navHistory.Count > 0 || !string.IsNullOrEmpty(_currentFolderId);
+            NavBackBtn.Visibility = canGoBack ? Visibility.Visible : Visibility.Collapsed;
+            if (_navHistory.Count > 0)
+            {
+                var prev = _navHistory.Peek();
+                ToolTipService.SetToolTip(NavBackBtn, $"Back to {prev.Title}");
+            }
+            else
+            {
+                ToolTipService.SetToolTip(NavBackBtn, "Back to My Drive");
+            }
+        }
+    }
+
     private async void NavBackBtn_Click(object sender, RoutedEventArgs e)
     {
-        _currentFolderId = null;
-        _currentPageTag = "drive";
-        CurrentFolderTitle.Text = "My Drive";
+        if (_navHistory.Count > 0)
+        {
+            var (prevFolderId, prevTitle) = _navHistory.Pop();
+            _currentFolderId = prevFolderId;
+            _currentPageTag = "drive";
+            CurrentFolderTitle.Text = string.IsNullOrEmpty(prevTitle) ? "My Drive" : prevTitle;
+        }
+        else
+        {
+            _currentFolderId = null;
+            _currentPageTag = "drive";
+            CurrentFolderTitle.Text = "My Drive";
+        }
+
         if (DriveNavItem != null)
         {
             NavView.SelectedItem = DriveNavItem;
         }
+        UpdateNavBackButton();
         await LoadContentsAsync();
     }
 
@@ -1823,6 +1875,9 @@ public sealed partial class MainPage : Page
                 CurrentFolderTitle.Text = "Trash";
             }
 
+            _navHistory.Clear();
+            UpdateNavBackButton();
+
             await LoadContentsAsync();
             if (DriveScrollViewer != null && DriveScrollViewer.ActualWidth > 0)
             {
@@ -1831,15 +1886,13 @@ public sealed partial class MainPage : Page
         }
     }
 
-    private async void FoldersGridView_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    private void FoldersGridView_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
         var folder = (e.OriginalSource as FrameworkElement)?.DataContext as FolderModel
                      ?? FoldersGridView.SelectedItem as FolderModel;
         if (folder != null)
         {
-            _currentFolderId = folder.Id;
-            CurrentFolderTitle.Text = folder.Name;
-            await LoadContentsAsync();
+            NavigateToFolder(folder.Id, folder.Name);
         }
     }
 
@@ -1865,13 +1918,11 @@ public sealed partial class MainPage : Page
         }
     }
 
-    private async void FoldersGridView_ItemClick(object sender, ItemClickEventArgs e)
+    private void FoldersGridView_ItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is FolderModel folder)
         {
-            _currentFolderId = folder.Id;
-            CurrentFolderTitle.Text = folder.Name;
-            await LoadContentsAsync();
+            NavigateToFolder(folder.Id, folder.Name);
         }
     }
 
@@ -2251,14 +2302,12 @@ public sealed partial class MainPage : Page
         }
     }
 
-    private async void ContextMenu_OpenFolder_Click(object sender, RoutedEventArgs e)
+    private void ContextMenu_OpenFolder_Click(object sender, RoutedEventArgs e)
     {
         var folder = (sender as FrameworkElement)?.DataContext as FolderModel;
         if (folder != null)
         {
-            _currentFolderId = folder.Id;
-            CurrentFolderTitle.Text = folder.Name;
-            await LoadContentsAsync();
+            NavigateToFolder(folder.Id, folder.Name);
         }
     }
 
@@ -2279,5 +2328,139 @@ public sealed partial class MainPage : Page
             await _service.TrashAsync(folder.Id, true);
             await LoadContentsAsync();
         }
+    }
+
+    private (List<string> FileIds, List<string> FolderIds) GetSelectedOrTargetItemIds(object? senderContext = null)
+    {
+        var selectedFiles = _viewMode == 0
+            ? (FilesGridView?.SelectedItems.OfType<FileModel>().ToList() ?? new List<FileModel>())
+            : (FilesListView?.SelectedItems.OfType<FileModel>().ToList() ?? new List<FileModel>());
+        var selectedFolders = FoldersGridView?.SelectedItems.OfType<FolderModel>().ToList() ?? new List<FolderModel>();
+
+        var fileIds = selectedFiles.Select(f => f.Id).ToList();
+        var folderIds = selectedFolders.Select(f => f.Id).ToList();
+
+        if (fileIds.Count == 0 && folderIds.Count == 0)
+        {
+            if (senderContext is FileModel fm)
+            {
+                fileIds.Add(fm.Id);
+            }
+            else if (senderContext is FolderModel fdm)
+            {
+                folderIds.Add(fdm.Id);
+            }
+            else if (_selectedFileForDetails != null)
+            {
+                fileIds.Add(_selectedFileForDetails.Id);
+            }
+        }
+
+        return (fileIds, folderIds);
+    }
+
+    private void ExecuteClipboardCut(object? senderContext = null)
+    {
+        var (fileIds, folderIds) = GetSelectedOrTargetItemIds(senderContext);
+        if (fileIds.Count == 0 && folderIds.Count == 0) return;
+
+        _clipboardFileIds.Clear();
+        _clipboardFileIds.AddRange(fileIds);
+        _clipboardFolderIds.Clear();
+        _clipboardFolderIds.AddRange(folderIds);
+        _isClipboardCut = true;
+
+        var count = fileIds.Count + folderIds.Count;
+        if (StatusBarSelectionText != null)
+        {
+            StatusBarSelectionText.Text = $"• {count} item{(count == 1 ? "" : "s")} cut (press Ctrl+V to paste)";
+        }
+    }
+
+    private void ExecuteClipboardCopy(object? senderContext = null)
+    {
+        var (fileIds, folderIds) = GetSelectedOrTargetItemIds(senderContext);
+        if (fileIds.Count == 0 && folderIds.Count == 0) return;
+
+        _clipboardFileIds.Clear();
+        _clipboardFileIds.AddRange(fileIds);
+        _clipboardFolderIds.Clear();
+        _clipboardFolderIds.AddRange(folderIds);
+        _isClipboardCut = false;
+
+        var count = fileIds.Count + folderIds.Count;
+        if (StatusBarSelectionText != null)
+        {
+            StatusBarSelectionText.Text = $"• {count} item{(count == 1 ? "" : "s")} copied (press Ctrl+V to paste)";
+        }
+    }
+
+    private async Task ExecuteClipboardPasteAsync()
+    {
+        if (_clipboardFileIds.Count == 0 && _clipboardFolderIds.Count == 0)
+        {
+            return;
+        }
+
+        var count = _clipboardFileIds.Count + _clipboardFolderIds.Count;
+        bool success;
+        if (_isClipboardCut)
+        {
+            success = await _service.MoveItemsAsync(_clipboardFileIds, _clipboardFolderIds, _currentFolderId);
+            if (success)
+            {
+                if (StatusBarSelectionText != null)
+                {
+                    StatusBarSelectionText.Text = $"• Moved {count} item{(count == 1 ? "" : "s")}";
+                }
+                _clipboardFileIds.Clear();
+                _clipboardFolderIds.Clear();
+            }
+        }
+        else
+        {
+            success = await _service.CopyItemsAsync(_clipboardFileIds, _clipboardFolderIds, _currentFolderId);
+            if (success)
+            {
+                if (StatusBarSelectionText != null)
+                {
+                    StatusBarSelectionText.Text = $"• Copied {count} item{(count == 1 ? "" : "s")}";
+                }
+            }
+        }
+
+        if (success)
+        {
+            await LoadContentsAsync();
+        }
+    }
+
+    private void ContextMenu_CutFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var folder = (sender as FrameworkElement)?.DataContext as FolderModel;
+        ExecuteClipboardCut(folder);
+    }
+
+    private void ContextMenu_CopyFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var folder = (sender as FrameworkElement)?.DataContext as FolderModel;
+        ExecuteClipboardCopy(folder);
+    }
+
+    private void ContextMenu_CutFile_Click(object sender, RoutedEventArgs e)
+    {
+        var file = (sender as FrameworkElement)?.DataContext as FileModel;
+        ExecuteClipboardCut(file);
+    }
+
+    private void ContextMenu_CopyFile_Click(object sender, RoutedEventArgs e)
+    {
+        var file = (sender as FrameworkElement)?.DataContext as FileModel;
+        ExecuteClipboardCopy(file);
+    }
+
+    private async void ContextMenu_Paste_Click(object sender, RoutedEventArgs e)
+    {
+        await ExecuteClipboardPasteAsync();
     }
 }
