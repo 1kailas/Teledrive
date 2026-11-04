@@ -986,8 +986,8 @@ public sealed partial class MainPage : Page
 
         if (FoldersGridView?.ItemsPanelRoot is ItemsWrapGrid foldersWrap)
         {
-            foldersWrap.ItemWidth = tileWidth <= 110 ? 150 : (tileWidth <= 140 ? 165 : (tileWidth <= 175 ? 190 : (tileWidth <= 220 ? 230 : 280)));
-            foldersWrap.ItemHeight = tileWidth <= 110 ? 42 : 46;
+            foldersWrap.ItemWidth = tileWidth <= 110 ? 180 : (tileWidth <= 140 ? 200 : (tileWidth <= 175 ? 220 : (tileWidth <= 220 ? 250 : 290)));
+            foldersWrap.ItemHeight = tileWidth <= 110 ? 46 : 50;
         }
     }
 
@@ -1753,6 +1753,99 @@ public sealed partial class MainPage : Page
             else
             {
                 ToolTipService.SetToolTip(NavBackBtn, "Back to My Drive");
+            }
+        }
+        UpdateHeaderBreadcrumbs();
+    }
+
+    private void UpdateHeaderBreadcrumbs()
+    {
+        if (BreadcrumbsBarStack == null) return;
+        BreadcrumbsBarStack.Children.Clear();
+
+        if (_currentPageTag != "drive" || (string.IsNullOrEmpty(_currentFolderId) && _navHistory.Count == 0))
+        {
+            BreadcrumbsBarStack.Children.Add(new TextBlock
+            {
+                Text = CurrentFolderTitle?.Text ?? "My Drive",
+                FontSize = 20,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            return;
+        }
+
+        var crumbs = new List<(string? Id, string Name)>();
+        crumbs.Add((null, "My Drive"));
+
+        var historyList = _navHistory.Reverse().ToList();
+        foreach (var h in historyList)
+        {
+            if (!string.IsNullOrEmpty(h.FolderId) && !crumbs.Any(c => c.Id == h.FolderId))
+            {
+                crumbs.Add((h.FolderId, h.Title));
+            }
+        }
+
+        if (!string.IsNullOrEmpty(_currentFolderId) && !crumbs.Any(c => c.Id == _currentFolderId))
+        {
+            crumbs.Add((_currentFolderId, CurrentFolderTitle?.Text ?? "Folder"));
+        }
+
+        for (int i = 0; i < crumbs.Count; i++)
+        {
+            var crumb = crumbs[i];
+            bool isLast = (i == crumbs.Count - 1);
+
+            if (isLast)
+            {
+                BreadcrumbsBarStack.Children.Add(new TextBlock
+                {
+                    Text = crumb.Name,
+                    FontSize = 20,
+                    FontWeight = FontWeights.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+            }
+            else
+            {
+                var btn = new Button
+                {
+                    Content = crumb.Name,
+                    Background = new SolidColorBrush(Colors.Transparent),
+                    BorderThickness = new Thickness(0),
+                    Padding = new Thickness(4, 2, 4, 2),
+                    FontSize = 18,
+                    Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"],
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                var targetId = crumb.Id;
+                var targetTitle = crumb.Name;
+                int targetIndex = i;
+                btn.Click += async (s, e) =>
+                {
+                    while (_navHistory.Count > targetIndex)
+                    {
+                        _navHistory.Pop();
+                    }
+                    _currentFolderId = targetId;
+                    if (CurrentFolderTitle != null)
+                    {
+                        CurrentFolderTitle.Text = targetTitle;
+                    }
+                    UpdateNavBackButton();
+                    await LoadContentsAsync();
+                };
+                BreadcrumbsBarStack.Children.Add(btn);
+
+                BreadcrumbsBarStack.Children.Add(new FontIcon
+                {
+                    Glyph = "\uE76C",
+                    FontSize = 9,
+                    Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(2, 0, 2, 0)
+                });
             }
         }
     }
@@ -2586,19 +2679,42 @@ public sealed partial class MainPage : Page
         var folderTree = await _service.GetFolderTreeAsync();
         var options = FolderPickerOption.BuildFlattenedFolderList(folderTree);
 
-        var rootPanel = new StackPanel { Spacing = 14, MinWidth = 420, MaxWidth = 500 };
+        // State tracking
+        string? currentNavId = _currentFolderId;
+        string? selectedTargetId = _currentFolderId;
 
-        // 1. Summary Card
+        // Verify initial folder exists in options; if not fallback to root
+        var initialMatch = options.FirstOrDefault(o => o.Id == currentNavId) ?? options[0];
+        currentNavId = initialMatch.Id;
+        selectedTargetId = initialMatch.Id;
+
+        // Fixed-size Root Grid so the dialog NEVER changes height or width
+        var rootGrid = new Grid
+        {
+            Width = 520,
+            Height = 560,
+            MinHeight = 560,
+            MaxHeight = 560,
+            RowSpacing = 8
+        };
+        rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 0: Summary
+        rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 1: Address Bar / Breadcrumbs
+        rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 2: Search Filter
+        rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 3: Explorer List
+        rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 4: Inline New Folder
+        rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 5: Destination Card
+        rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 6: CheckBox
+
+        // 0. Summary Header Card
         var summaryBorder = new Border
         {
             Background = (Brush)Application.Current.Resources["LayerFillColorDefaultBrush"],
             BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(14, 12, 14, 12)
+            Padding = new Thickness(12, 10, 12, 10)
         };
-
-        var summaryStack = new StackPanel { Spacing = 4 };
+        var summaryStack = new StackPanel { Spacing = 2 };
 
         int totalCount = filePaths.Count + folderPaths.Count;
         string itemsDescription;
@@ -2616,276 +2732,120 @@ public sealed partial class MainPage : Page
         }
 
         var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        titleRow.Children.Add(new FontIcon { Glyph = "\uE898", FontSize = 16, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"] });
+        titleRow.Children.Add(new FontIcon { Glyph = "\uE898", FontSize = 15, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"] });
         titleRow.Children.Add(new TextBlock
         {
             Text = $"Ready to upload {itemsDescription}",
             FontWeight = FontWeights.SemiBold,
-            FontSize = 14
+            FontSize = 13
         });
         summaryStack.Children.Add(titleRow);
 
         summaryStack.Children.Add(new TextBlock
         {
             Text = $"Total size: {FileModel.FormatBytes((ulong)Math.Max(0, totalBytes))}",
-            FontSize = 12,
+            FontSize = 11,
             Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-            Margin = new Thickness(24, 0, 0, 0)
+            Margin = new Thickness(23, 0, 0, 0)
         });
 
         summaryBorder.Child = summaryStack;
-        rootPanel.Children.Add(summaryBorder);
+        Grid.SetRow(summaryBorder, 0);
+        rootGrid.Children.Add(summaryBorder);
 
-        // 2. Items Preview List (Scrollable)
-        var previewList = new StackPanel { Spacing = 4 };
-        int displayedItems = 0;
-
-        foreach (var dir in folderPaths)
+        // 1. File Explorer Address Bar (Breadcrumbs + Up Button + New Folder)
+        var addressBarBorder = new Border
         {
-            if (displayedItems >= 25) break;
-            var dirName = System.IO.Path.GetFileName(dir.TrimEnd('\\', '/'));
-            if (string.IsNullOrEmpty(dirName)) dirName = dir;
-
-            var row = new Grid { Margin = new Thickness(0, 1, 0, 1) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var icon = new FontIcon { Glyph = "\uED43", FontSize = 13, Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 234, 179, 8)), Margin = new Thickness(0, 0, 8, 0) };
-            Grid.SetColumn(icon, 0);
-            row.Children.Add(icon);
-
-            var nameText = new TextBlock { Text = dirName, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
-            Grid.SetColumn(nameText, 1);
-            row.Children.Add(nameText);
-
-            var tagText = new TextBlock { Text = "Folder", FontSize = 11, Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"], VerticalAlignment = VerticalAlignment.Center };
-            Grid.SetColumn(tagText, 2);
-            row.Children.Add(tagText);
-
-            previewList.Children.Add(row);
-            displayedItems++;
-        }
-
-        foreach (var file in filePaths)
-        {
-            if (displayedItems >= 25) break;
-            var fileName = System.IO.Path.GetFileName(file);
-            long fSize = 0;
-            try { fSize = new FileInfo(file).Length; } catch { }
-
-            var row = new Grid { Margin = new Thickness(0, 1, 0, 1) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var icon = new FontIcon { Glyph = "\uE8B7", FontSize = 13, Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"], Margin = new Thickness(0, 0, 8, 0) };
-            Grid.SetColumn(icon, 0);
-            row.Children.Add(icon);
-
-            var nameText = new TextBlock { Text = fileName, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
-            Grid.SetColumn(nameText, 1);
-            row.Children.Add(nameText);
-
-            var sizeText = new TextBlock { Text = FileModel.FormatBytes((ulong)Math.Max(0, fSize)), FontSize = 11, Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"], VerticalAlignment = VerticalAlignment.Center };
-            Grid.SetColumn(sizeText, 2);
-            row.Children.Add(sizeText);
-
-            previewList.Children.Add(row);
-            displayedItems++;
-        }
-
-        if (totalCount > 25)
-        {
-            previewList.Children.Add(new TextBlock
-            {
-                Text = $"+ {totalCount - 25} more item{(totalCount - 25 > 1 ? "s" : "")}...",
-                FontSize = 11,
-                FontStyle = Windows.UI.Text.FontStyle.Italic,
-                Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
-                Margin = new Thickness(22, 2, 0, 0)
-            });
-        }
-
-        var previewScroll = new ScrollViewer
-        {
-            MaxHeight = 110,
             Background = (Brush)Application.Current.Resources["ControlFillColorDefaultBrush"],
             BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(10, 8, 10, 8),
-            Content = previewList
+            Padding = new Thickness(6, 4, 6, 4)
         };
-        rootPanel.Children.Add(previewScroll);
 
-        // 3. Destination Selector Section
-        var destHeaderGrid = new Grid();
-        destHeaderGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        destHeaderGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var addressBarGrid = new Grid();
+        addressBarGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Up button
+        addressBarGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Breadcrumbs
+        addressBarGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // + New Folder
 
-        var destLabel = new TextBlock
+        var upButton = new Button
         {
-            Text = "Upload Destination:",
-            FontWeight = FontWeights.SemiBold,
-            FontSize = 13,
+            Content = new FontIcon { Glyph = "\uE74A", FontSize = 13 },
+            Padding = new Thickness(6, 4, 6, 4),
+            Margin = new Thickness(0, 0, 6, 0)
+        };
+        ToolTipService.SetToolTip(upButton, "Up to parent folder");
+        Grid.SetColumn(upButton, 0);
+        addressBarGrid.Children.Add(upButton);
+
+        var breadcrumbsStack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+        var breadcrumbsScroll = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            HorizontalScrollMode = ScrollMode.Enabled,
+            VerticalScrollMode = ScrollMode.Disabled,
+            Content = breadcrumbsStack,
             VerticalAlignment = VerticalAlignment.Center
         };
-        Grid.SetColumn(destLabel, 0);
-        destHeaderGrid.Children.Add(destLabel);
+        Grid.SetColumn(breadcrumbsScroll, 1);
+        addressBarGrid.Children.Add(breadcrumbsScroll);
 
         var newFolderToggleBtn = new Button
         {
             Content = "+ New Folder",
-            FontSize = 12,
-            Padding = new Thickness(8, 4, 8, 4)
+            FontSize = 11,
+            Padding = new Thickness(8, 4, 8, 4),
+            Margin = new Thickness(6, 0, 0, 0)
         };
-        Grid.SetColumn(newFolderToggleBtn, 1);
-        destHeaderGrid.Children.Add(newFolderToggleBtn);
+        Grid.SetColumn(newFolderToggleBtn, 2);
+        addressBarGrid.Children.Add(newFolderToggleBtn);
 
-        rootPanel.Children.Add(destHeaderGrid);
+        addressBarBorder.Child = addressBarGrid;
+        Grid.SetRow(addressBarBorder, 1);
+        rootGrid.Children.Add(addressBarBorder);
 
-        // Filter / Search for deep nested folders
+        // 2. Search / Quick Filter
         var filterBox = new TextBox
         {
-            PlaceholderText = "Search or filter folders (e.g. Work, Invoices, Q4)...",
+            PlaceholderText = "Filter subfolders or search all (e.g. Work, Q4)...",
             FontSize = 12,
-            Margin = new Thickness(0, 2, 0, 4)
+            Height = 32
         };
-        rootPanel.Children.Add(filterBox);
+        Grid.SetRow(filterBox, 2);
+        rootGrid.Children.Add(filterBox);
 
-        var destinationCombo = new ComboBox
+        // 3. Folder Explorer List (Fixed Height Scrollable Area)
+        var explorerItemsStack = new StackPanel { Spacing = 4 };
+        var explorerScroll = new ScrollViewer
         {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            ItemsSource = options
+            Background = (Brush)Application.Current.Resources["ControlFillColorDefaultBrush"],
+            BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(8),
+            Content = explorerItemsStack
         };
+        Grid.SetRow(explorerScroll, 3);
+        rootGrid.Children.Add(explorerScroll);
 
-        FolderPickerOption initialOption;
-        if (!string.IsNullOrEmpty(_currentFolderId))
+        // 4. Inline New Folder Input
+        var inlineNewFolderPanel = new Border
         {
-            var match = options.FirstOrDefault(o => o.Id == _currentFolderId);
-            initialOption = match ?? options[0];
-        }
-        else
-        {
-            initialOption = options[0];
-        }
-        destinationCombo.SelectedItem = initialOption;
-        rootPanel.Children.Add(destinationCombo);
-
-        // Path Breadcrumb & Subfolder Navigation Chips
-        var pathTextBlock = new TextBlock
-        {
-            Text = $"📍 Path: {initialOption.FullPath}",
-            FontSize = 12,
-            Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"],
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            Margin = new Thickness(2, 4, 2, 0)
-        };
-        rootPanel.Children.Add(pathTextBlock);
-
-        var subfoldersPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        var subfoldersScroll = new ScrollViewer
-        {
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            HorizontalScrollMode = ScrollMode.Enabled,
-            VerticalScrollMode = ScrollMode.Disabled,
-            Content = subfoldersPanel,
-            Margin = new Thickness(0, 4, 0, 0),
+            Background = (Brush)Application.Current.Resources["LayerFillColorDefaultBrush"],
+            BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(8, 6, 8, 6),
             Visibility = Visibility.Collapsed
         };
-        rootPanel.Children.Add(subfoldersScroll);
-
+        var inlineStack = new StackPanel { Spacing = 4 };
         var targetParentLabel = new TextBlock
         {
-            Text = $"Creating inside: {initialOption.RawName}",
             FontSize = 11,
-            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-            Margin = new Thickness(2, 0, 0, 2)
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
         };
-
-        void UpdateSubfolderChipsAndPath(FolderPickerOption current)
-        {
-            pathTextBlock.Text = $"📍 Path: {current.FullPath}";
-            targetParentLabel.Text = $"Creating inside: {current.RawName}";
-            subfoldersPanel.Children.Clear();
-
-            // Up to parent button
-            if (current.Id != null)
-            {
-                var parentOpt = options.FirstOrDefault(o => o.Id == current.ParentId) ?? options[0];
-                var upBtn = new Button
-                {
-                    Content = $"⬆ Up to {parentOpt.RawName}",
-                    FontSize = 11,
-                    Padding = new Thickness(6, 2, 6, 2)
-                };
-                upBtn.Click += (s, ev) => destinationCombo.SelectedItem = parentOpt;
-                subfoldersPanel.Children.Add(upBtn);
-            }
-
-            // Subfolder chips
-            var children = options.Where(o => o.ParentId == current.Id).Take(5).ToList();
-            if (children.Count > 0)
-            {
-                subfoldersPanel.Children.Add(new TextBlock
-                {
-                    Text = "Subfolders:",
-                    FontSize = 11,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-                    Margin = new Thickness(4, 0, 0, 0)
-                });
-
-                foreach (var child in children)
-                {
-                    var childBtn = new Button
-                    {
-                        Content = $"📁 {child.RawName}",
-                        FontSize = 11,
-                        Padding = new Thickness(6, 2, 6, 2)
-                    };
-                    childBtn.Click += (s, ev) => destinationCombo.SelectedItem = child;
-                    subfoldersPanel.Children.Add(childBtn);
-                }
-            }
-
-            subfoldersScroll.Visibility = subfoldersPanel.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        }
-
-        destinationCombo.SelectionChanged += (s, e) =>
-        {
-            if (destinationCombo.SelectedItem is FolderPickerOption opt)
-            {
-                UpdateSubfolderChipsAndPath(opt);
-            }
-        };
-
-        filterBox.TextChanged += (s, e) =>
-        {
-            var q = filterBox.Text.Trim();
-            if (string.IsNullOrEmpty(q))
-            {
-                destinationCombo.ItemsSource = options;
-                destinationCombo.SelectedItem = initialOption;
-            }
-            else
-            {
-                var filtered = options.Where(o => o.Id == null ||
-                    o.RawName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                    o.FullPath.Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
-                destinationCombo.ItemsSource = filtered;
-                if (filtered.Count > 1) destinationCombo.SelectedIndex = 1;
-                else if (filtered.Count == 1) destinationCombo.SelectedIndex = 0;
-            }
-        };
-
-        UpdateSubfolderChipsAndPath(initialOption);
-
-        // Inline New Folder Input (Supports nested paths!)
-        var inlineNewFolderPanel = new StackPanel { Visibility = Visibility.Collapsed, Spacing = 4, Margin = new Thickness(0, 4, 0, 0) };
-        inlineNewFolderPanel.Children.Add(targetParentLabel);
+        inlineStack.Children.Add(targetParentLabel);
 
         var inlineInputGrid = new Grid();
         inlineInputGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -2895,6 +2855,7 @@ public sealed partial class MainPage : Page
         var newFolderNameInput = new TextBox
         {
             PlaceholderText = "Folder name or nested path (e.g. Work/2026/Q4)...",
+            FontSize = 12,
             Margin = new Thickness(0, 0, 6, 0)
         };
         Grid.SetColumn(newFolderNameInput, 0);
@@ -2903,6 +2864,7 @@ public sealed partial class MainPage : Page
         var createFolderBtn = new Button
         {
             Content = "Create",
+            FontSize = 12,
             Style = (Style)Application.Current.Resources["AccentButtonStyle"],
             Margin = new Thickness(0, 0, 4, 0)
         };
@@ -2911,13 +2873,367 @@ public sealed partial class MainPage : Page
 
         var cancelNewFolderBtn = new Button
         {
-            Content = "Cancel"
+            Content = "Cancel",
+            FontSize = 12
         };
         Grid.SetColumn(cancelNewFolderBtn, 2);
         inlineInputGrid.Children.Add(cancelNewFolderBtn);
 
-        inlineNewFolderPanel.Children.Add(inlineInputGrid);
-        rootPanel.Children.Add(inlineNewFolderPanel);
+        inlineStack.Children.Add(inlineInputGrid);
+        inlineNewFolderPanel.Child = inlineStack;
+        Grid.SetRow(inlineNewFolderPanel, 4);
+        rootGrid.Children.Add(inlineNewFolderPanel);
+
+        // 5. Selected Destination Confirmation Card
+        var destCardBorder = new Border
+        {
+            Background = (Brush)Application.Current.Resources["LayerFillColorDefaultBrush"],
+            BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 8, 10, 8)
+        };
+        var destCardGrid = new Grid();
+        destCardGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        destCardGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var destInfoStack = new StackPanel { Spacing = 2 };
+        var destTitleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        destTitleRow.Children.Add(new FontIcon { Glyph = "\uE8B7", FontSize = 12, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"] });
+        destTitleRow.Children.Add(new TextBlock { Text = "Upload Target:", FontSize = 11, FontWeight = FontWeights.SemiBold });
+        destInfoStack.Children.Add(destTitleRow);
+
+        var destPathText = new TextBlock
+        {
+            FontSize = 12,
+            Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"],
+            FontWeight = FontWeights.Medium,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(18, 0, 0, 0)
+        };
+        destInfoStack.Children.Add(destPathText);
+        Grid.SetColumn(destInfoStack, 0);
+        destCardGrid.Children.Add(destInfoStack);
+
+        var uploadHereBtn = new Button
+        {
+            Content = "Select Current",
+            FontSize = 11,
+            Padding = new Thickness(8, 4, 8, 4),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(uploadHereBtn, 1);
+        destCardGrid.Children.Add(uploadHereBtn);
+
+        destCardBorder.Child = destCardGrid;
+        Grid.SetRow(destCardBorder, 5);
+        rootGrid.Children.Add(destCardBorder);
+
+        // 6. Navigate CheckBox
+        var navigateCheck = new CheckBox
+        {
+            Content = "Open destination folder when upload starts",
+            IsChecked = true,
+            FontSize = 12
+        };
+        Grid.SetRow(navigateCheck, 6);
+        rootGrid.Children.Add(navigateCheck);
+
+        // Helper Functions
+        List<FolderPickerOption> GetBreadcrumbs(string? folderId)
+        {
+            var list = new List<FolderPickerOption>();
+            var cur = options.FirstOrDefault(o => o.Id == folderId);
+            while (cur != null && cur.Id != null)
+            {
+                list.Insert(0, cur);
+                cur = options.FirstOrDefault(o => o.Id == cur.ParentId);
+            }
+            // Add root (options[0]) at the beginning
+            list.Insert(0, options[0]);
+            return list;
+        }
+
+        List<FolderPickerOption> GetSubfolders(string? parentId)
+        {
+            if (parentId == null)
+            {
+                // Top-level subfolders of My Drive root
+                return options.Where(o => o.Id != null && string.IsNullOrEmpty(o.ParentId)).ToList();
+            }
+            return options.Where(o => o.ParentId == parentId).ToList();
+        }
+
+        void UpdateDestinationCard()
+        {
+            var targetOpt = options.FirstOrDefault(o => o.Id == selectedTargetId) ?? options[0];
+            destPathText.Text = targetOpt.FullPath;
+            var currentNavOpt = options.FirstOrDefault(o => o.Id == currentNavId) ?? options[0];
+            targetParentLabel.Text = $"Creating inside: {currentNavOpt.RawName}";
+
+            // If currentNavId matches selectedTargetId, indicate it's already selected
+            if (selectedTargetId == currentNavId)
+            {
+                uploadHereBtn.IsEnabled = false;
+                uploadHereBtn.Content = "Selected \u2713";
+            }
+            else
+            {
+                uploadHereBtn.IsEnabled = true;
+                uploadHereBtn.Content = $"Select {currentNavOpt.RawName}";
+            }
+        }
+
+        void RefreshAddressBar()
+        {
+            breadcrumbsStack.Children.Clear();
+            var crumbs = GetBreadcrumbs(currentNavId);
+
+            // Up button state
+            upButton.IsEnabled = (currentNavId != null);
+
+            for (int i = 0; i < crumbs.Count; i++)
+            {
+                var crumb = crumbs[i];
+                bool isLast = (i == crumbs.Count - 1);
+
+                var crumbBtn = new Button
+                {
+                    Background = new SolidColorBrush(Colors.Transparent),
+                    BorderThickness = new Thickness(0),
+                    Padding = new Thickness(4, 2, 4, 2),
+                    FontSize = 12,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                var crumbStack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+                if (i == 0)
+                {
+                    crumbStack.Children.Add(new FontIcon { Glyph = "\uE8B7", FontSize = 12, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"] });
+                }
+                crumbStack.Children.Add(new TextBlock
+                {
+                    Text = crumb.RawName,
+                    FontWeight = isLast ? FontWeights.SemiBold : FontWeights.Normal,
+                    Foreground = isLast
+                        ? (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"]
+                        : (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"]
+                });
+                crumbBtn.Content = crumbStack;
+
+                var crumbId = crumb.Id;
+                crumbBtn.Click += (s, e) =>
+                {
+                    currentNavId = crumbId;
+                    selectedTargetId = crumbId;
+                    filterBox.Text = "";
+                    RenderExplorerView();
+                };
+
+                breadcrumbsStack.Children.Add(crumbBtn);
+
+                if (!isLast)
+                {
+                    breadcrumbsStack.Children.Add(new FontIcon
+                    {
+                        Glyph = "\uE76C",
+                        FontSize = 8,
+                        Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(2, 0, 2, 0)
+                    });
+                }
+            }
+
+            // Scroll to end of breadcrumbs so deepest folder is visible
+            breadcrumbsScroll.ChangeView(breadcrumbsScroll.ScrollableWidth, null, null, false);
+        }
+
+        void RenderExplorerView()
+        {
+            RefreshAddressBar();
+            UpdateDestinationCard();
+            explorerItemsStack.Children.Clear();
+
+            var query = filterBox.Text.Trim();
+            List<FolderPickerOption> itemsToDisplay;
+
+            if (!string.IsNullOrEmpty(query))
+            {
+                // Global search mode across all folders
+                itemsToDisplay = options
+                    .Where(o => o.Id != null && (
+                        o.RawName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                        o.FullPath.Contains(query, StringComparison.OrdinalIgnoreCase)))
+                    .ToList();
+            }
+            else
+            {
+                // Browsing subfolders of currentNavId
+                itemsToDisplay = GetSubfolders(currentNavId);
+            }
+
+            if (itemsToDisplay.Count == 0)
+            {
+                var emptyPanel = new StackPanel
+                {
+                    Spacing = 8,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 40, 0, 40)
+                };
+
+                emptyPanel.Children.Add(new FontIcon
+                {
+                    Glyph = "\uED43",
+                    FontSize = 32,
+                    Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
+                    HorizontalAlignment = HorizontalAlignment.Center
+                });
+
+                var currentNavOpt = options.FirstOrDefault(o => o.Id == currentNavId) ?? options[0];
+                string emptyMsg = string.IsNullOrEmpty(query)
+                    ? $"No subfolders in \"{currentNavOpt.RawName}\""
+                    : $"No folders match \"{query}\"";
+
+                emptyPanel.Children.Add(new TextBlock
+                {
+                    Text = emptyMsg,
+                    FontSize = 13,
+                    Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+                    HorizontalAlignment = HorizontalAlignment.Center
+                });
+
+                if (string.IsNullOrEmpty(query))
+                {
+                    emptyPanel.Children.Add(new TextBlock
+                    {
+                        Text = $"Files will be uploaded directly into this folder.",
+                        FontSize = 11,
+                        Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
+                        HorizontalAlignment = HorizontalAlignment.Center
+                    });
+                }
+
+                explorerItemsStack.Children.Add(emptyPanel);
+                return;
+            }
+
+            foreach (var opt in itemsToDisplay)
+            {
+                var isSelected = (opt.Id == selectedTargetId);
+                var rowBorder = new Border
+                {
+                    Background = isSelected
+                        ? (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"]
+                        : new SolidColorBrush(Colors.Transparent),
+                    BorderBrush = isSelected
+                        ? (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"]
+                        : new SolidColorBrush(Colors.Transparent),
+                    BorderThickness = new Thickness(isSelected ? 1 : 0),
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(8, 6, 8, 6),
+                    Margin = new Thickness(0, 1, 0, 1)
+                };
+
+                var rowGrid = new Grid();
+                rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Folder Icon
+                rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Name + Path
+                rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Open ❯ Button
+
+                var icon = new FontIcon
+                {
+                    Glyph = "\uED43",
+                    FontSize = 16,
+                    Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 234, 179, 8)),
+                    Margin = new Thickness(0, 0, 10, 0),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                Grid.SetColumn(icon, 0);
+                rowGrid.Children.Add(icon);
+
+                var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                var nameBlock = new TextBlock
+                {
+                    Text = opt.RawName,
+                    FontSize = 13,
+                    FontWeight = isSelected ? FontWeights.SemiBold : FontWeights.Normal,
+                    TextTrimming = TextTrimming.CharacterEllipsis
+                };
+                textStack.Children.Add(nameBlock);
+
+                if (!string.IsNullOrEmpty(query))
+                {
+                    var pathSub = new TextBlock
+                    {
+                        Text = opt.FullPath,
+                        FontSize = 10,
+                        Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
+                        TextTrimming = TextTrimming.CharacterEllipsis
+                    };
+                    textStack.Children.Add(pathSub);
+                }
+                Grid.SetColumn(textStack, 1);
+                rowGrid.Children.Add(textStack);
+
+                // Open ❯ Button
+                var openBtnContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+                openBtnContent.Children.Add(new TextBlock { Text = "Open", FontSize = 11, VerticalAlignment = VerticalAlignment.Center });
+                openBtnContent.Children.Add(new FontIcon { Glyph = "\uE76C", FontSize = 9, VerticalAlignment = VerticalAlignment.Center });
+
+                var openBtn = new Button
+                {
+                    Content = openBtnContent,
+                    Padding = new Thickness(8, 3, 8, 3),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                var targetOptId = opt.Id;
+                openBtn.Click += (s, e) =>
+                {
+                    currentNavId = targetOptId;
+                    selectedTargetId = targetOptId;
+                    filterBox.Text = "";
+                    RenderExplorerView();
+                };
+                Grid.SetColumn(openBtn, 2);
+                rowGrid.Children.Add(openBtn);
+
+                rowBorder.Child = rowGrid;
+
+                // Single click on row selects it as upload destination
+                rowBorder.PointerPressed += (s, e) =>
+                {
+                    selectedTargetId = targetOptId;
+                    RenderExplorerView();
+                };
+
+                explorerItemsStack.Children.Add(rowBorder);
+            }
+        }
+
+        // Event Handlers
+        upButton.Click += (s, e) =>
+        {
+            if (currentNavId != null)
+            {
+                var cur = options.FirstOrDefault(o => o.Id == currentNavId);
+                currentNavId = cur?.ParentId; // Can be null (My Drive Root)
+                selectedTargetId = currentNavId;
+                filterBox.Text = "";
+                RenderExplorerView();
+            }
+        };
+
+        uploadHereBtn.Click += (s, e) =>
+        {
+            selectedTargetId = currentNavId;
+            RenderExplorerView();
+        };
+
+        filterBox.TextChanged += (s, e) =>
+        {
+            RenderExplorerView();
+        };
 
         newFolderToggleBtn.Click += (s, e) =>
         {
@@ -2939,42 +3255,33 @@ public sealed partial class MainPage : Page
             var name = newFolderNameInput.Text.Trim();
             if (string.IsNullOrEmpty(name)) return;
 
-            var sel = destinationCombo.SelectedItem as FolderPickerOption;
-            string? parentId = sel?.Id;
-
             createFolderBtn.IsEnabled = false;
-            var createdId = await _service.CreateFolderAsync(name, parentId);
+            // Create folder inside currentNavId (supports nested paths like Work/2026/Q4)
+            var createdId = await _service.CreateFolderAsync(name, currentNavId);
             createFolderBtn.IsEnabled = true;
 
             if (!string.IsNullOrEmpty(createdId))
             {
                 var refreshedTree = await _service.GetFolderTreeAsync();
                 options = FolderPickerOption.BuildFlattenedFolderList(refreshedTree);
-                destinationCombo.ItemsSource = options;
-                var createdOption = options.FirstOrDefault(o => o.Id == createdId);
-                destinationCombo.SelectedItem = createdOption ?? options[0];
+                currentNavId = createdId;
+                selectedTargetId = createdId;
 
                 inlineNewFolderPanel.Visibility = Visibility.Collapsed;
                 newFolderToggleBtn.Visibility = Visibility.Visible;
                 newFolderNameInput.Text = "";
+                RenderExplorerView();
             }
         };
 
-        // 4. Navigate Checkbox
-        var navigateCheck = new CheckBox
-        {
-            Content = "Open destination folder when upload starts",
-            IsChecked = true,
-            FontSize = 12,
-            Margin = new Thickness(0, 4, 0, 0)
-        };
-        rootPanel.Children.Add(navigateCheck);
+        // Initial render
+        RenderExplorerView();
 
-        // 5. Create ContentDialog
+        // Create ContentDialog
         var dialog = new ContentDialog
         {
             Title = "Upload to TeleDrive",
-            Content = rootPanel,
+            Content = rootGrid,
             PrimaryButtonText = "Upload",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
@@ -2984,7 +3291,7 @@ public sealed partial class MainPage : Page
         var dialogResult = await dialog.ShowAsync();
         if (dialogResult == ContentDialogResult.Primary)
         {
-            var chosen = destinationCombo.SelectedItem as FolderPickerOption ?? options[0];
+            var chosen = options.FirstOrDefault(o => o.Id == selectedTargetId) ?? options[0];
             return (true, chosen.Id, chosen.RawName, navigateCheck.IsChecked == true);
         }
 
