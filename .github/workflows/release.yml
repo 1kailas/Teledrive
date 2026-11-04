@@ -76,11 +76,24 @@ jobs:
         run: |
           Compress-Archive -Path TeleDrive-WinUI-win-x64 -DestinationPath TeleDrive-WinUI-win-x64.zip
 
+      - name: Build TeleDrive MSI Installer
+        shell: pwsh
+        run: |
+          node scripts/build-winui-msi.js
+        continue-on-error: true
+
       - name: Upload WinUI Desktop Artifact
         uses: actions/upload-artifact@v4
         with:
           name: TeleDrive-WinUI-win-x64
           path: TeleDrive-WinUI-win-x64.zip
+
+      - name: Upload TeleDrive MSI Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: TeleDrive-Setup
+          path: TeleDrive-Setup.msi
 
   build-rust-engine:
     name: Build TeleDriveR Rust Daemon (Windows x64)
