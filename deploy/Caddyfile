@@ -1,0 +1,13 @@
+# TeleDrive via Caddy — automatic HTTPS.
+# Replace example.com. Caddy terminates TLS and proxies to the app on 8080.
+# Keep UPLOAD_SLICE_SIZE_MB <= 95 if you front this with Cloudflare's proxy
+# (its free-tier request-body limit is 100 MB).
+teledrive.example.com {
+	reverse_proxy 127.0.0.1:8080 {
+		# no buffering — uploads stream raw slices, SSE streams events,
+		# ranged downloads stream multi-GB files
+		flush_interval -1
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-For {remote}
+	}
+}

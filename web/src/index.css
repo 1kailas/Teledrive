@@ -1,0 +1,348 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ============================================================
+   TELEDRIVE DESIGN SYSTEM
+   Professional High-End Desktop Architecture
+   Firm geometric stability, zero layout shifts, zero wobbly transforms,
+   instant native-feeling luminance feedback.
+   ============================================================ */
+
+:root {
+  --bg: #f8fafc;
+  --bg-subtle: #f1f5f9;
+  --surface: #ffffff;
+  --surface-2: #f1f5f9;
+  --surface-3: #e2e8f0;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --text: #0f172a;
+  --text-2: #475569;
+  --text-3: #94a3b8;
+  --accent: #0284c7;
+  --accent-hover: #0369a1;
+  --accent-soft: rgba(2, 132, 199, 0.1);
+  --accent-text: #0284c7;
+  --danger: #ef4444;
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.08);
+  --shadow-lg: 0 12px 24px -4px rgb(0 0 0 / 0.1);
+  --ring: 0 0 0 2px rgba(2, 132, 199, 0.25);
+}
+
+.dark {
+  --bg: #0d0f12;
+  --bg-subtle: #12151b;
+  --surface: #151820;
+  --surface-2: #1c202a;
+  --surface-3: #242936;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --text: #f0f2f5;
+  --text-2: #9ba3b2;
+  --text-3: #6b7280;
+  --accent: #38bdf8;
+  --accent-hover: #0ea5e9;
+  --accent-soft: rgba(56, 189, 248, 0.12);
+  --accent-text: #38bdf8;
+  --danger: #f87171;
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.35);
+  --shadow-md: 0 4px 12px 0 rgb(0 0 0 / 0.45);
+  --shadow-lg: 0 16px 36px 0 rgb(0 0 0 / 0.6);
+  --ring: 0 0 0 2px rgba(56, 189, 248, 0.35);
+}
+
+html, body, #root { height: 100%; margin: 0; padding: 0; }
+html { scrollbar-gutter: stable; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Google Sans", "Inter Variable", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13.5px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+  border-color: var(--border);
+}
+.overflow-auto, .overflow-y-auto, .overflow-y-scroll {
+  scrollbar-gutter: stable;
+}
+
+/* Utilities */
+.bg-app      { background: var(--bg); }
+.bg-subtle   { background: var(--bg-subtle); }
+.surface     { background: var(--surface); }
+.surface-2   { background: var(--surface-2); }
+.surface-3   { background: var(--surface-3); }
+.border-app  { border-color: var(--border); }
+.text-app    { color: var(--text); }
+.text-2      { color: var(--text-2); }
+.text-3      { color: var(--text-3); }
+.accent      { color: var(--accent-text); }
+.accent-bg   { background: var(--accent-soft); }
+.shadow-overlay { box-shadow: var(--shadow-lg); }
+
+/* Buttons & Components with Solid, Professional Native Feedback */
+@layer components {
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 13px; border-radius: 8px; font-weight: 500; font-size: 13px;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+    cursor: pointer;
+    transition: background-color 0.08s ease, border-color 0.08s ease;
+  }
+  .btn:hover  { background: var(--surface-3); border-color: var(--border-strong); }
+  .btn:active { background: color-mix(in srgb, var(--surface-3) 85%, var(--accent) 15%); }
+  .btn:disabled { opacity: .45; cursor: default; pointer-events: none; }
+
+  .btn-primary {
+    background: var(--accent); border-color: var(--accent); color: #0b0d11; font-weight: 600;
+  }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-primary:active { filter: brightness(0.95); }
+
+  .btn-danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, transparent); background: color-mix(in srgb, var(--danger) 8%, transparent); }
+  .btn-danger:hover { background: color-mix(in srgb, var(--danger) 16%, transparent); border-color: var(--danger); }
+
+  /* Google Drive "+ New" button */
+  .gdrive-new-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 18px; border-radius: 12px; font-size: 13.5px; font-weight: 600;
+    background: var(--surface-2); color: var(--text);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    cursor: pointer;
+    transition: background-color 0.08s ease, border-color 0.08s ease, box-shadow 0.08s ease;
+  }
+  .gdrive-new-btn:hover {
+    background: var(--surface-3);
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-md);
+  }
+  .gdrive-new-btn:active {
+    background: color-mix(in srgb, var(--surface-3) 90%, var(--accent) 10%);
+  }
+
+  .icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border-radius: 8px;
+    color: var(--text-2); cursor: pointer; background: transparent;
+    border: none;
+    transition: background-color 0.08s ease, color 0.08s ease;
+  }
+  .icon-btn:hover { background: var(--surface-2); color: var(--text); }
+  .icon-btn:active { background: var(--surface-3); }
+  .icon-btn:disabled { opacity: .3; cursor: default; pointer-events: none; }
+
+  .input {
+    width: 100%; padding: 7px 12px; border-radius: 10px; font-size: 13px;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+    transition: border-color 0.08s ease, background-color 0.08s ease, box-shadow 0.08s ease;
+  }
+  .input:focus { outline: none; background: var(--surface); border-color: var(--accent); box-shadow: var(--ring); }
+
+  .menu-item {
+    display: flex; align-items: center; gap: 9px; padding: 7px 10px;
+    font-size: 13px; border-radius: 7px; cursor: pointer; color: var(--text-2);
+    transition: background-color 0.06s ease, color 0.06s ease;
+  }
+  .menu-item:hover { background: var(--surface-3); color: var(--text); }
+  .menu-item.danger { color: var(--danger); }
+  .menu-item.danger:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+}
+
+/* Google Drive Navigation Pill Links */
+.gdrive-nav-item {
+  display: flex; align-items: center; gap: 11px;
+  padding: 8px 14px; border-radius: 10px; font-size: 13px; font-weight: 500;
+  color: var(--text-2); text-decoration: none; cursor: pointer;
+  transition: background-color 0.08s ease, color 0.08s ease;
+}
+.gdrive-nav-item:hover { background: var(--surface-2); color: var(--text); }
+.gdrive-nav-item.active {
+  background: var(--accent-soft); color: var(--accent-text); font-weight: 600;
+}
+
+/* Google Drive Filter Chip */
+.gdrive-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 8px; font-size: 13px; font-weight: 500;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
+  cursor: pointer;
+  transition: background-color 0.08s ease, border-color 0.08s ease, color 0.08s ease;
+}
+.gdrive-chip:hover { background: var(--surface-2); color: var(--text); border-color: var(--border-strong); }
+.gdrive-chip.active {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* Google Drive Folder Card */
+.gdrive-folder-card {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  border-radius: 10px; background: var(--surface-2);
+  border: 1px solid var(--border);
+  cursor: pointer; font-size: 13px; font-weight: 500;
+  transition: background-color 0.08s ease, border-color 0.08s ease, box-shadow 0.08s ease;
+}
+.gdrive-folder-card:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow);
+}
+.gdrive-folder-card.selected {
+  background: var(--accent-soft); color: var(--accent-text);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+
+/* Google Drive File Grid Card */
+.gdrive-file-card {
+  position: relative; border-radius: 12px; overflow: hidden;
+  background: var(--surface-2); cursor: pointer;
+  border: 1px solid var(--border);
+  transition: background-color 0.08s ease, border-color 0.08s ease, box-shadow 0.08s ease;
+}
+.gdrive-file-card:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+}
+.gdrive-file-card.selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--accent), var(--shadow);
+}
+.gdrive-file-card .card-check {
+  position: absolute; top: 8px; left: 8px; z-index: 3; opacity: 0;
+  transition: opacity 0.08s ease;
+}
+.gdrive-file-card:hover .card-check, .gdrive-file-card.selected .card-check {
+  opacity: 1;
+}
+
+.cbx {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--surface-2);
+  cursor: pointer;
+  display: grid;
+  place-content: center;
+  transition: background-color 0.08s ease, border-color 0.08s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.cbx:hover {
+  border-color: var(--accent);
+}
+.cbx:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.cbx:checked::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border: solid #0b0d11;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+.preview-area {
+  aspect-ratio: 16/10; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; position: relative; background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+}
+
+/* List view row */
+.gdrive-list-row {
+  display: grid; grid-template-columns: 1fr 140px 100px 140px 40px;
+  align-items: center; gap: 12px; padding: 10px 16px;
+  border-bottom: 1px solid var(--border); font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.06s ease;
+}
+.gdrive-list-row:hover { background: var(--surface-2); }
+.gdrive-list-row.selected { background: var(--accent-soft) !important; color: var(--accent-text); }
+
+/* Badges & Indicators */
+.badge {
+  font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px;
+  background: rgb(0 0 0 / 0.65); color: #fff; display: inline-flex; align-items: center; gap: 4px;
+}
+.badge.storing { background: #1a73e8; }
+
+.toast {
+  display: flex; align-items: center; gap: 10px; padding: 12px 18px;
+  border-radius: 10px; font-size: 13.5px; box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+}
+.toast svg.t-icon { flex-shrink: 0; }
+.toast.success svg.t-icon { color: #10b981; }
+.toast.error   svg.t-icon { color: var(--danger); }
+.toast.info    svg.t-icon { color: var(--accent); }
+
+/* Progress bar */
+.bar { height: 4px; border-radius: 9999px; background: var(--surface-3); overflow: hidden; }
+.bar > i { display: block; height: 100%; border-radius: 9999px; background: var(--accent); transition: width .3s ease-out; }
+.bar.danger > i { background: var(--danger); }
+.bar.ok > i { background: #10b981; }
+
+.seg-bar { display: flex; gap: 2px; height: 4px; border-radius: 9999px; overflow: hidden; }
+.seg { position: relative; background: var(--surface-3); overflow: hidden; min-width: 4px; }
+.seg > i { position: absolute; inset: 0 auto 0 0; border-radius: 9999px; background: var(--accent); }
+.seg-queued { background: color-mix(in srgb, var(--accent) 30%, var(--surface-3)); }
+.seg-working { background: color-mix(in srgb, var(--accent) 40%, var(--surface-3)); }
+.seg-done { background: #10b981; }
+.seg-failed { background: var(--danger); }
+
+/* ============================================================
+   GOOGLE DRIVE FULLSCREEN PREVIEW OVERLAY
+   ============================================================ */
+.preview-backdrop {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 55; background: #000000; display: flex; flex-direction: column;
+}
+
+.pv-toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px; height: 56px; min-height: 56px;
+  background: #14171d; border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pv-back-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 16px; border-radius: 9999px; font-size: 13.5px; font-weight: 500;
+  color: #ffffff; background: #20242e; border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer; transition: background-color 0.08s ease;
+}
+.pv-back-btn:hover { background: #2a303d; border-color: rgba(255, 255, 255, 0.2); }
+
+.pv-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; border-radius: 9999px;
+  color: #e3e3e3; background: transparent; border: none; cursor: pointer;
+  transition: background-color 0.08s ease;
+}
+.pv-btn:hover { background: rgba(255, 255, 255, 0.12); }
+.pv-btn:disabled { opacity: .3; cursor: default; pointer-events: none; }
+
+.pv-hit {
+  position: absolute; top: 56px; bottom: 0; width: 12%; min-width: 48px;
+  z-index: 5; cursor: pointer; display: flex; align-items: center;
+  opacity: 0; transition: opacity .12s ease;
+}
+.pv-hit:hover { opacity: 1; }
+.pv-hit > span {
+  margin: 0 12px; background: rgba(20, 23, 29, 0.85); border-radius: 50%;
+  padding: 12px; color: #fff; display: flex; backdrop-filter: blur(8px);
+}

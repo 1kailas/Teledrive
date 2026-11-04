@@ -1,22 +1,34 @@
 {
   "name": "teledrive",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
-  "description": "Web-based personal cloud storage using Telegram Saved Messages",
+  "description": "Single-owner, unlimited-storage file explorer backed by a private Telegram channel",
+  "engines": {
+    "node": ">=20.19"
+  },
   "workspaces": [
-    "frontend",
-    "worker"
+    "server",
+    "web"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:worker\"",
-    "dev:frontend": "npm run dev --workspace=frontend",
-    "dev:worker": "npm run dev --workspace=worker",
-    "build": "npm run build --workspace=frontend && npm run build --workspace=worker",
-    "build:frontend": "npm run build --workspace=frontend",
-    "build:worker": "npm run build --workspace=worker",
-    "db:migrate": "npm run db:migrate:local --workspace=worker"
+    "dev": "concurrently -k -n server,web \"npm run dev -w server\" \"npm run dev -w web\"",
+    "dev:mock": "concurrently -k -n telegram,server,web \"npm:mock:telegram\" \"env NODE_ENV=development PORT=8080 TELEGRAM_BOT_API_URL=http://127.0.0.1:8082 TELEGRAM_BOT_API_DIR=./data/mock-bot-api TELEGRAM_BOT_TOKENS=1111111:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,2222222:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB TELEGRAM_CHANNEL_ID=-1001234567890 ADMIN_PASSWORD=admin12345 npm run dev -w server\" \"npm run dev -w web\"",
+    "mock:telegram": "env MOCK_DIR=./data/mock-bot-api npm run mock:telegram -w server",
+    "build": "npm run build -w web && npm run build -w server",
+    "build:winui": "powershell.exe -NoProfile -Command \"Set-Location 'winui-desktop/TeleDrive.WinUI'; & 'C:\\Program Files\\dotnet\\dotnet.exe' publish -c Release -p:Platform=x64 --self-contained true -o publish\"",
+    "rust:build": "cd rust-desktop && env PATH=\"$HOME/.cargo/bin:$PATH\" cargo build --release --target x86_64-pc-windows-gnu",
+    "start": "node server/dist/index.js",
+    "test": "npm test -w server && npm test -w web",
+    "test:desktop": "powershell.exe -NoProfile -Command \"& 'C:\\Program Files\\dotnet\\dotnet.exe' test 'winui-desktop\\TeleDrive.Tests\\TeleDrive.Tests.csproj'\" < /dev/null",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
+    "doctor": "npm run doctor -w server",
+    "bots:logout": "npm run bots:logout -w server",
+    "hash-password": "npm run hash-password -w server",
+    "backup": "npm run backup -w server",
+    "lint": "npm run lint -w web",
+    "channel:find": "npm run channel:find -w server"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "concurrently": "9.2.5"
   }
 }

@@ -1,0 +1,31 @@
+# telegram-bot-api (self-hosted, --local) for TeleDrive.
+#
+# IMPORTANT: run as the SAME user as teledrive.service. The app hands the
+# bot-api `file://` paths of its tmp part files (bot-api must READ them), and
+# the app later READS (and evicts) the bot-api's downloaded part files from
+# TELEGRAM_BOT_API_DIR. Two users would need shared groups + umask games —
+# same user keeps it simple and correct.
+[Unit]
+Description=Telegram Bot API server (local mode) for TeleDrive
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=teledrive
+Group=teledrive
+# run script loads .env and exports TELEGRAM_API_ID/HASH
+ExecStart=/opt/teledrive/scripts/run-telegram-bot-api.sh
+WorkingDirectory=/opt/teledrive
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+# bot-api needs its data dir for downloaded files
+ReadWritePaths=/var/lib/telegram-bot-api /opt/teledrive/data
+
+[Install]
+WantedBy=multi-user.target

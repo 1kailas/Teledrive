@@ -7,12 +7,35 @@ node_modules/
 dist/
 build/
 .wrangler/
+rust-desktop/target/
+rust-desktop/build-msi
+rust-desktop/release/
+*.msi
+bin/
 
-# Environment variables
+# WinUI build artifacts
+winui-desktop/**/bin/
+winui-desktop/**/obj/
+winui-desktop/**/publish/
+winui-desktop/**/AppPackages/
+winui-desktop/**/BundleArtifacts/
+
+# Environment variables & secrets
 .env
+.env.*
 .env.local
 .env.*.local
 .dev.vars
+.env.old
+env.json
+**/env.json
+**/env*.json
+
+# Binaries & libraries
+rust-desktop/resources/bot-api/
+*.exe
+*.dll
+*.pdb
 
 # IDE
 .vscode/
@@ -37,3 +60,12 @@ coverage/
 # Misc
 *.tsbuildinfo
 .eslintcache
+
+# Local data (db, tmp uploads, thumbnails, mock bot-api)
+data/
+
+# Old env backup (contains legacy secrets)
+.env.old
+
+# Windows WSL artifacts
+*:Zone.Identifier

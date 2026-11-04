@@ -1,0 +1,26 @@
+# TeleDrive app server. Same user as teledrive-bot-api.service — see that
+# unit's comment: file:// uploads and cache eviction require shared access
+# to DATA_DIR/tmp and TELEGRAM_BOT_API_DIR.
+[Unit]
+Description=TeleDrive — unlimited personal storage on Telegram
+After=network-online.target teledrive-bot-api.service
+Wants=teledrive-bot-api.service
+
+[Service]
+Type=simple
+User=teledrive
+Group=teledrive
+WorkingDirectory=/opt/teledrive
+ExecStart=/usr/bin/node server/dist/index.js
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+# app writes to DATA_DIR (db, tmp uploads, thumbnails) and reads bot-api files
+ReadWritePaths=/opt/teledrive/data /var/lib/telegram-bot-api
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,1593 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="TeleDrive_WinUI.MainPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="using:TeleDrive_WinUI"
+    xmlns:models="using:TeleDrive_WinUI.Models"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    KeyDown="MainPage_KeyDown">
+
+    <Grid
+        Background="{ThemeResource LayerFillColorDefaultBrush}"
+        AllowDrop="True"
+        DragOver="Common_DragOver"
+        DragLeave="Common_DragLeave"
+        Drop="Common_Drop">
+
+        <!-- Windows 11 Fluent NavigationView -->
+        <NavigationView
+            x:Name="NavView"
+            IsBackButtonVisible="Collapsed"
+            IsSettingsVisible="True"
+            OpenPaneLength="240"
+            CompactPaneLength="48"
+            PaneDisplayMode="Left"
+            IsPaneOpen="True"
+            CompactModeThresholdWidth="640"
+            ExpandedModeThresholdWidth="1008"
+            PaneOpened="NavView_PaneOpened"
+            PaneClosed="NavView_PaneClosed"
+            SelectionChanged="NavView_SelectionChanged"
+            ItemInvoked="NavView_ItemInvoked">
+            
+            <NavigationView.MenuItems>
+                <NavigationViewItem x:Name="DriveNavItem" Tag="drive" Content="My Drive">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE8B7;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Tag="folder_documents" Content="Documents">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE8A5;" Foreground="#10B981" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Tag="folder_pictures" Content="Pictures">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xEB9F;" Foreground="#38BDF8" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Tag="folder_videos" Content="Videos">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE714;" Foreground="#A855F7" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Tag="folder_music" Content="Music">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xEC4F;" Foreground="#EC4899" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+
+                <NavigationViewItemSeparator />
+
+                <NavigationViewItem Tag="starred" Content="Starred">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE734;" Foreground="#F59E0B" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Tag="recent" Content="Recent Activity">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE823;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+
+                <NavigationViewItemSeparator />
+
+                <NavigationViewItem x:Name="TransfersNavItem" Tag="transfers" Content="Transfers Hub">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE896;" Foreground="#2DD4BF" />
+                    </NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge x:Name="TransfersBadge" Visibility="Collapsed" Value="0" />
+                    </NavigationViewItem.InfoBadge>
+                </NavigationViewItem>
+                
+                <NavigationViewItem Tag="trash" Content="Trash">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE74D;" Foreground="#EF4444" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
+
+            <!-- Main Content Area -->
+            <Grid Padding="24,16,24,8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Top Command Bar / Toolbar -->
+                <Grid Grid.Row="0" Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Breadcrumbs & Title -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
+                        <Button
+                            x:Name="NavBackBtn"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Padding="6,4"
+                            Click="NavBackBtn_Click"
+                            Visibility="Collapsed"
+                            ToolTipService.ToolTip="Back to My Drive">
+                            <FontIcon Glyph="&#xE72B;" FontSize="14" />
+                        </Button>
+                        <TextBlock
+                            x:Name="CurrentFolderTitle"
+                            FontSize="22"
+                            FontWeight="SemiBold"
+                            Text="My Drive" />
+                        <TextBlock
+                            x:Name="ItemCountSubtitle"
+                            VerticalAlignment="Center"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="" />
+                    </StackPanel>
+
+                    <!-- Actions Bar -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                        <AutoSuggestBox
+                            x:Name="SearchBox"
+                            Width="200"
+                            PlaceholderText="Search files..."
+                            QueryIcon="Find"
+                            TextChanged="SearchBox_TextChanged" />
+
+                        <Button
+                            x:Name="UploadFilesBtn"
+                            Style="{StaticResource AccentButtonStyle}"
+                            Click="UploadFilesBtn_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE898;" FontSize="14" />
+                                <TextBlock Text="Upload Files" />
+                            </StackPanel>
+                        </Button>
+
+                        <Button
+                            x:Name="UploadFolderBtn"
+                            Click="UploadFolderBtn_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xED25;" FontSize="14" />
+                                <TextBlock Text="Upload Folder" />
+                            </StackPanel>
+                        </Button>
+
+                        <Button x:Name="NewFolderBtn" Click="NewFolderBtn_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE8F4;" FontSize="14" />
+                                <TextBlock Text="New Folder" />
+                            </StackPanel>
+                        </Button>
+
+                        <Button
+                            x:Name="EmptyTrashBtn"
+                            Style="{StaticResource AccentButtonStyle}"
+                            Background="#DC2626"
+                            Click="EmptyTrashBtn_Click"
+                            Visibility="Collapsed"
+                            ToolTipService.ToolTip="Permanently delete all items in trash and purge messages from Telegram cloud">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE74D;" FontSize="14" />
+                                <TextBlock Text="Empty Trash" />
+                            </StackPanel>
+                        </Button>
+
+                        <Button ToolTipService.ToolTip="Refresh" Click="RefreshBtn_Click">
+                            <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Split Content: Files Area (Left) + Properties Drawer (Right) -->
+                <Grid Grid.Row="1" ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left: Main Views Container -->
+                    <Grid Grid.Column="0">
+                        <!-- Content Area: Drive / Files View -->
+                        <ScrollViewer
+                            x:Name="DriveScrollViewer"
+                            Padding="0,0,4,0"
+                            Margin="0"
+                            AllowDrop="True"
+                            DragOver="Common_DragOver"
+                            DragLeave="Common_DragLeave"
+                            Drop="Common_Drop"
+                            HorizontalScrollBarVisibility="Disabled"
+                            VerticalScrollBarVisibility="Auto"
+                            SizeChanged="DriveScrollViewer_SizeChanged"
+                            Tapped="DriveScrollViewer_Tapped"
+                            PointerWheelChanged="DriveScrollViewer_PointerWheelChanged">
+                            <ScrollViewer.ContextFlyout>
+                                <MenuFlyout>
+                                    <MenuFlyoutItem Text="Upload Files..." Click="UploadFilesBtn_Click">
+                                        <MenuFlyoutItem.Icon>
+                                            <FontIcon Glyph="&#xE898;" Foreground="#38BDF8" />
+                                        </MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem Text="Upload Folder..." Click="UploadFolderBtn_Click">
+                                        <MenuFlyoutItem.Icon>
+                                            <FontIcon Glyph="&#xED25;" Foreground="#38BDF8" />
+                                        </MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutSeparator />
+                                    <MenuFlyoutItem Text="New Folder..." Click="NewFolderBtn_Click">
+                                        <MenuFlyoutItem.Icon>
+                                            <FontIcon Glyph="&#xE8F4;" />
+                                        </MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutSeparator />
+                                    <MenuFlyoutItem Text="Refresh (F5)" Click="RefreshBtn_Click">
+                                        <MenuFlyoutItem.Icon>
+                                            <FontIcon Glyph="&#xE72C;" />
+                                        </MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                </MenuFlyout>
+                            </ScrollViewer.ContextFlyout>
+                            <StackPanel Spacing="24">
+                                <!-- Folders Section -->
+                                <StackPanel x:Name="FoldersSection" Spacing="8">
+                                    <TextBlock
+                                        FontSize="12"
+                                        FontWeight="SemiBold"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Text="FOLDERS" />
+                                    <GridView
+                                        x:Name="FoldersGridView"
+                                        Padding="0"
+                                        Margin="0"
+                                        HorizontalAlignment="Left"
+                                        DoubleTapped="FoldersGridView_DoubleTapped"
+                                        SelectionMode="Extended"
+                                        SelectionChanged="FoldersGridView_SelectionChanged"
+                                        Loaded="FoldersGridView_Loaded"
+                                        KeyDown="FilesOrFolders_KeyDown">
+                                        <GridView.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <ItemsWrapGrid Orientation="Horizontal" HorizontalAlignment="Left" MaximumRowsOrColumns="-1" />
+                                            </ItemsPanelTemplate>
+                                        </GridView.ItemsPanel>
+                                        <GridView.ItemContainerStyle>
+                                            <Style TargetType="GridViewItem">
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                                <Setter Property="Margin" Value="4" />
+                                                <Setter Property="Padding" Value="0" />
+                                            </Style>
+                                        </GridView.ItemContainerStyle>
+                                        <GridView.ItemTemplate>
+                                            <DataTemplate x:DataType="models:FolderModel">
+                                                <Border
+                                                    Padding="10,6"
+                                                    HorizontalAlignment="Stretch"
+                                                    VerticalAlignment="Stretch"
+                                                    Background="{x:Bind SelectionBackground, Mode=OneWay}"
+                                                    BorderBrush="{x:Bind SelectionBorderBrush, Mode=OneWay}"
+                                                    BorderThickness="{x:Bind SelectionBorderThickness, Mode=OneWay}"
+                                                    CornerRadius="8">
+                                                    <Border.ContextFlyout>
+                                                        <MenuFlyout>
+                                                            <MenuFlyoutItem Text="Open Folder" Click="ContextMenu_OpenFolder_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE8DA;" Foreground="#38BDF8" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutItem Text="Star" Click="FolderStarBtn_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE734;" Foreground="#F59E0B" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutItem Text="Rename..." Click="ContextMenu_RenameFolder_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE8AC;" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutSeparator />
+                                                            <MenuFlyoutItem Text="Move to Trash" Click="ContextMenu_TrashFolder_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE74D;" Foreground="#F43F5E" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                        </MenuFlyout>
+                                                    </Border.ContextFlyout>
+                                                    <Grid ColumnSpacing="8">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+
+                                                        <FontIcon
+                                                            Grid.Column="0"
+                                                            FontSize="20"
+                                                            Foreground="#F59E0B"
+                                                            Glyph="&#xE8B7;" />
+
+                                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                            <TextBlock
+                                                                FontWeight="Medium"
+                                                                FontSize="12"
+                                                                MaxLines="1"
+                                                                Text="{x:Bind Name}"
+                                                                TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock
+                                                                FontSize="10.5"
+                                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                                Text="{x:Bind FormattedItemCount}" />
+                                                        </StackPanel>
+
+                                                        <!-- Selection indicator checkmark badge -->
+                                                        <Border
+                                                            Grid.Column="2"
+                                                            Width="16"
+                                                            Height="16"
+                                                            CornerRadius="8"
+                                                            Background="#38BDF8"
+                                                            Visibility="{x:Bind SelectionCheckmarkVisibility, Mode=OneWay}"
+                                                            VerticalAlignment="Center">
+                                                            <FontIcon
+                                                                Glyph="&#xE73E;"
+                                                                FontSize="9"
+                                                                Foreground="Black"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center" />
+                                                        </Border>
+
+                                                        <Button
+                                                            Grid.Column="3"
+                                                            Width="22"
+                                                            Height="22"
+                                                            Background="Transparent"
+                                                            BorderThickness="0"
+                                                            Padding="0"
+                                                            CornerRadius="4"
+                                                            VerticalAlignment="Center"
+                                                            Click="FolderStarBtn_Click">
+                                                            <FontIcon
+                                                                FontSize="10"
+                                                                Foreground="#F59E0B"
+                                                                Glyph="{x:Bind StarGlyph, Mode=OneWay}" />
+                                                        </Button>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </GridView.ItemTemplate>
+                                    </GridView>
+                                </StackPanel>
+
+                                <!-- Files Section (Grid View) -->
+                                <StackPanel x:Name="FilesGridSection" Spacing="8">
+                                    <TextBlock
+                                        FontSize="12"
+                                        FontWeight="SemiBold"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Text="FILES" />
+                                    <GridView
+                                        x:Name="FilesGridView"
+                                        Padding="0"
+                                        Margin="0"
+                                        HorizontalAlignment="Left"
+                                        AllowDrop="True"
+                                        DragOver="Common_DragOver"
+                                        DragLeave="Common_DragLeave"
+                                        Drop="Common_Drop"
+                                        DoubleTapped="FilesGridView_DoubleTapped"
+                                        SelectionMode="Extended"
+                                        SelectionChanged="FilesGridView_SelectionChanged"
+                                        Loaded="FilesGridView_Loaded"
+                                        KeyDown="FilesOrFolders_KeyDown">
+                                        <GridView.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <ItemsWrapGrid Orientation="Horizontal" HorizontalAlignment="Left" MaximumRowsOrColumns="-1" />
+                                            </ItemsPanelTemplate>
+                                        </GridView.ItemsPanel>
+                                        <GridView.ItemContainerStyle>
+                                            <Style TargetType="GridViewItem">
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                                <Setter Property="Margin" Value="4" />
+                                                <Setter Property="Padding" Value="0" />
+                                            </Style>
+                                        </GridView.ItemContainerStyle>
+                                        <GridView.ItemTemplate>
+                                            <DataTemplate x:DataType="models:FileModel">
+                                                <Border
+                                                    HorizontalAlignment="Stretch"
+                                                    VerticalAlignment="Stretch"
+                                                    Padding="6"
+                                                    Background="{x:Bind SelectionBackground, Mode=OneWay}"
+                                                    BorderBrush="{x:Bind SelectionBorderBrush, Mode=OneWay}"
+                                                    BorderThickness="{x:Bind SelectionBorderThickness, Mode=OneWay}"
+                                                    CornerRadius="8">
+                                                    <Border.ContextFlyout>
+                                                        <MenuFlyout>
+                                                            <MenuFlyoutItem Text="Download to Device" Click="ContextMenu_Download_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE896;" Foreground="#2DD4BF" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutItem Text="Copy ID" Click="ContextMenu_CopyId_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE8C8;" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutItem Text="Star" Click="ContextMenu_Star_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE734;" Foreground="#F59E0B" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutItem Text="Rename..." Click="ContextMenu_Rename_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE8AC;" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutSeparator />
+                                                            <MenuFlyoutItem Text="Move to Trash" Click="ContextMenu_Trash_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE74D;" Foreground="#F43F5E" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutSeparator />
+                                                            <MenuFlyoutItem Text="Properties" Click="ContextMenu_Properties_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE946;" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                        </MenuFlyout>
+                                                    </Border.ContextFlyout>
+                                                    <Grid RowSpacing="4">
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="*" />
+                                                            <RowDefinition Height="Auto" />
+                                                        </Grid.RowDefinitions>
+
+                                                        <!-- Preview / Windows Shell Thumbnail Area -->
+                                                        <Border
+                                                            Grid.Row="0"
+                                                            Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                                            CornerRadius="6">
+                                                            <Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                                                                <!-- Authentic Windows Shell Thumbnail or Icon -->
+                                                                <Image
+                                                                    x:Name="ThumbImage"
+                                                                    HorizontalAlignment="Center"
+                                                                    VerticalAlignment="Center"
+                                                                    Source="{x:Bind EffectiveThumbnailUrl, Mode=OneWay}"
+                                                                    Stretch="Uniform" />
+
+                                                                <!-- Selection Checkmark Badge (Top-Right) -->
+                                                                <Border
+                                                                    HorizontalAlignment="Right"
+                                                                    VerticalAlignment="Top"
+                                                                    Margin="4"
+                                                                    Width="18"
+                                                                    Height="18"
+                                                                    CornerRadius="9"
+                                                                    Background="#38BDF8"
+                                                                    Visibility="{x:Bind SelectionCheckmarkVisibility, Mode=OneWay}">
+                                                                    <FontIcon
+                                                                        Glyph="&#xE73E;"
+                                                                        FontSize="10"
+                                                                        Foreground="Black"
+                                                                        HorizontalAlignment="Center"
+                                                                        VerticalAlignment="Center" />
+                                                                </Border>
+                                                            </Grid>
+                                                        </Border>
+
+                                                        <!-- File Metadata & Actions -->
+                                                        <StackPanel Grid.Row="1" Spacing="4">
+                                                            <!-- Filename spanning full width (fixed height 28 for uniform vertical alignment) -->
+                                                            <TextBlock
+                                                                Height="28"
+                                                                FontSize="11.5"
+                                                                FontWeight="Medium"
+                                                                MaxLines="2"
+                                                                TextWrapping="Wrap"
+                                                                Text="{x:Bind Name}"
+                                                                TextTrimming="CharacterEllipsis"
+                                                                VerticalAlignment="Top"
+                                                                ToolTipService.ToolTip="{x:Bind Name}" />
+
+                                                            <!-- Bottom Action Bar: Size (Left) + 2 Action Buttons (Right: Download + Star) -->
+                                                            <Grid VerticalAlignment="Center">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                </Grid.ColumnDefinitions>
+
+                                                                <TextBlock
+                                                                    Grid.Column="0"
+                                                                    FontSize="10"
+                                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                                    Text="{x:Bind FormattedSize}"
+                                                                    VerticalAlignment="Center"
+                                                                    TextTrimming="CharacterEllipsis" />
+
+                                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                                                                    <Button
+                                                                        Width="20"
+                                                                        Height="20"
+                                                                        Padding="0"
+                                                                        Background="Transparent"
+                                                                        BorderThickness="0"
+                                                                        CornerRadius="4"
+                                                                        Click="FileDownloadBtn_Click"
+                                                                        ToolTipService.ToolTip="Download Directly">
+                                                                        <FontIcon FontSize="9.5" Foreground="#2DD4BF" Glyph="&#xE896;" />
+                                                                    </Button>
+                                                                    <Button
+                                                                        Width="20"
+                                                                        Height="20"
+                                                                        Padding="0"
+                                                                        Background="Transparent"
+                                                                        BorderThickness="0"
+                                                                        CornerRadius="4"
+                                                                        Click="FileStarBtn_Click"
+                                                                        ToolTipService.ToolTip="Star File">
+                                                                        <FontIcon
+                                                                            FontSize="9.5"
+                                                                            Foreground="#F59E0B"
+                                                                            Glyph="{x:Bind StarGlyph, Mode=OneWay}" />
+                                                                    </Button>
+                                                                </StackPanel>
+                                                            </Grid>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </GridView.ItemTemplate>
+                                    </GridView>
+                                </StackPanel>
+
+                                <!-- Files Section (List View) -->
+                                <StackPanel x:Name="FilesListSection" Spacing="8" Visibility="Collapsed">
+                                    <TextBlock
+                                        FontSize="12"
+                                        FontWeight="SemiBold"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Text="FILES" />
+                                    <ListView
+                                        x:Name="FilesListView"
+                                        DoubleTapped="FilesListView_DoubleTapped"
+                                        SelectionMode="Extended"
+                                        SelectionChanged="FilesListView_SelectionChanged"
+                                        KeyDown="FilesOrFolders_KeyDown">
+                                        <ListView.ItemTemplate>
+                                            <DataTemplate x:DataType="models:FileModel">
+                                                <Border
+                                                    Margin="0,0,0,4"
+                                                    Padding="12,8"
+                                                    Background="{x:Bind SelectionBackground, Mode=OneWay}"
+                                                    BorderBrush="{x:Bind SelectionBorderBrush, Mode=OneWay}"
+                                                    BorderThickness="{x:Bind SelectionBorderThickness, Mode=OneWay}"
+                                                    CornerRadius="6">
+                                                    <Border.ContextFlyout>
+                                                        <MenuFlyout>
+                                                            <MenuFlyoutItem Text="Download to Device" Click="ContextMenu_Download_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE896;" Foreground="#2DD4BF" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutItem Text="Copy ID" Click="ContextMenu_CopyId_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE8C8;" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutItem Text="Star" Click="ContextMenu_Star_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE734;" Foreground="#F59E0B" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutItem Text="Rename..." Click="ContextMenu_Rename_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE8AC;" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutSeparator />
+                                                            <MenuFlyoutItem Text="Move to Trash" Click="ContextMenu_Trash_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE74D;" Foreground="#F43F5E" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                            <MenuFlyoutSeparator />
+                                                            <MenuFlyoutItem Text="Properties" Click="ContextMenu_Properties_Click">
+                                                                <MenuFlyoutItem.Icon>
+                                                                    <FontIcon Glyph="&#xE946;" />
+                                                                </MenuFlyoutItem.Icon>
+                                                            </MenuFlyoutItem>
+                                                        </MenuFlyout>
+                                                    </Border.ContextFlyout>
+                                                    <Grid ColumnSpacing="16">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+
+                                                        <FontIcon
+                                                            Grid.Column="0"
+                                                            FontSize="20"
+                                                            Foreground="{x:Bind CategoryBrush}"
+                                                            Glyph="{x:Bind CategoryGlyph}" />
+
+                                                        <TextBlock
+                                                            Grid.Column="1"
+                                                            VerticalAlignment="Center"
+                                                            FontWeight="Medium"
+                                                            Text="{x:Bind Name}" />
+
+                                                        <TextBlock
+                                                            Grid.Column="2"
+                                                            VerticalAlignment="Center"
+                                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                            Text="{x:Bind Category}" />
+
+                                                        <TextBlock
+                                                            Grid.Column="3"
+                                                            VerticalAlignment="Center"
+                                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                            Text="{x:Bind FormattedSize}" />
+
+                                                        <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="4">
+                                                            <Button
+                                                                Background="Transparent"
+                                                                BorderThickness="0"
+                                                                Padding="4"
+                                                                Click="FileDownloadBtn_Click"
+                                                                ToolTipService.ToolTip="Download Directly">
+                                                                <FontIcon FontSize="13" Foreground="#2DD4BF" Glyph="&#xE896;" />
+                                                            </Button>
+                                                            <Button
+                                                                Background="Transparent"
+                                                                BorderThickness="0"
+                                                                Padding="4"
+                                                                Click="FileStarBtn_Click"
+                                                                ToolTipService.ToolTip="Star File">
+                                                                <FontIcon
+                                                                    FontSize="13"
+                                                                    Foreground="#F59E0B"
+                                                                    Glyph="{x:Bind StarGlyph, Mode=OneWay}" />
+                                                            </Button>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ListView.ItemTemplate>
+                                    </ListView>
+                                </StackPanel>
+
+                                <!-- Empty State -->
+                                <StackPanel
+                                    x:Name="EmptyState"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Margin="0,64,0,0"
+                                    Spacing="12"
+                                    Visibility="Collapsed">
+                                    <FontIcon x:Name="EmptyStateIcon" FontSize="56" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="&#xE8B7;" />
+                                    <TextBlock
+                                        x:Name="EmptyStateTitle"
+                                        FontSize="18"
+                                        FontWeight="SemiBold"
+                                        Text="This folder is empty" />
+                                    <TextBlock
+                                        x:Name="EmptyStateSubtitle"
+                                        HorizontalAlignment="Center"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Text="Upload files or drag and drop items here to get started." />
+                                </StackPanel>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- Content Area: Recent Activity View -->
+                        <ScrollViewer
+                            x:Name="RecentView"
+                            HorizontalScrollBarVisibility="Disabled"
+                            VerticalScrollBarVisibility="Auto"
+                            Visibility="Collapsed">
+                            <StackPanel Spacing="16">
+                                <!-- Header & Switcher -->
+                                <Grid>
+                                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                        <TextBlock FontSize="18" FontWeight="SemiBold" Text="Recent Activity" />
+                                        <Border
+                                            Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="6"
+                                            Padding="2">
+                                            <StackPanel Orientation="Horizontal" Spacing="2">
+                                                <Button
+                                                    x:Name="RecentAllBtn"
+                                                    Content="All Activity"
+                                                    Padding="8,4"
+                                                    Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                                    BorderThickness="0"
+                                                    Foreground="Black"
+                                                    Click="RecentAllBtn_Click" />
+                                                <Button
+                                                    x:Name="RecentFilesBtn"
+                                                    Content="Cloud Files"
+                                                    Padding="8,4"
+                                                    Background="Transparent"
+                                                    BorderThickness="0"
+                                                    Click="RecentFilesBtn_Click" />
+                                                <Button
+                                                    x:Name="RecentDownloadsBtn"
+                                                    Content="Downloads &amp; Uploads"
+                                                    Padding="8,4"
+                                                    Background="Transparent"
+                                                    BorderThickness="0"
+                                                    Click="RecentDownloadsBtn_Click" />
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8">
+                                        <Button Content="Clear Finished" Click="ClearFinishedDownloads_Click" />
+                                        <Button Content="📁 Downloads Folder" Click="OpenDownloadsFolder_Click" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Recent Downloads List -->
+                                <ListView
+                                    x:Name="RecentDownloadsListView"
+                                    SelectionMode="None">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate x:DataType="models:TransferTaskModel">
+                                            <Border
+                                                Margin="0,0,0,8"
+                                                Padding="14,12"
+                                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="8">
+                                                <Grid ColumnSpacing="16">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <!-- Status Icon -->
+                                                    <FontIcon
+                                                        Grid.Column="0"
+                                                        VerticalAlignment="Center"
+                                                        FontSize="22"
+                                                        Foreground="{x:Bind StatusBrush, Mode=OneWay}"
+                                                        Glyph="{x:Bind StatusGlyph, Mode=OneWay}" />
+
+                                                    <!-- File & Progress Info -->
+                                                    <StackPanel Grid.Column="1" Spacing="4">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Name}" />
+                                                            <Border
+                                                                Padding="6,1"
+                                                                CornerRadius="4"
+                                                                Background="{ThemeResource LayerFillColorDefaultBrush}">
+                                                                <TextBlock
+                                                                    FontSize="10"
+                                                                    FontWeight="Bold"
+                                                                    Foreground="{x:Bind TypeBadgeBrush, Mode=OneWay}"
+                                                                    Text="{x:Bind TypeBadge, Mode=OneWay}" />
+                                                            </Border>
+                                                            <TextBlock
+                                                                FontSize="11"
+                                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                                Text="{x:Bind Status, Mode=OneWay}" />
+                                                        </StackPanel>
+
+                                                        <ProgressBar
+                                                            Height="6"
+                                                            CornerRadius="3"
+                                                            Maximum="100"
+                                                            Value="{x:Bind ProgressPercentage, Mode=OneWay}" />
+
+                                                        <Grid>
+                                                            <TextBlock
+                                                                HorizontalAlignment="Left"
+                                                                FontSize="11"
+                                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                                Text="{x:Bind ProgressSummary, Mode=OneWay}" />
+                                                            <TextBlock
+                                                                HorizontalAlignment="Right"
+                                                                FontSize="11"
+                                                                Foreground="{x:Bind StatusBrush, Mode=OneWay}"
+                                                                Text="{x:Bind SpeedSummary, Mode=OneWay}" />
+                                                        </Grid>
+                                                    </StackPanel>
+
+                                                    <!-- Action Buttons -->
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                        <Button
+                                                            Content="Open File"
+                                                            Visibility="{x:Bind CanOpenVisibility, Mode=OneWay}"
+                                                            Click="OpenDownloadedFile_Click" />
+                                                        <Button
+                                                            Content="Reveal"
+                                                            Visibility="{x:Bind CanOpenVisibility, Mode=OneWay}"
+                                                            Click="RevealDownloadedFile_Click" />
+                                                        <Button
+                                                            Content="Pause"
+                                                            Visibility="{x:Bind CanPauseVisibility, Mode=OneWay}"
+                                                            Click="PauseDownload_Click" />
+                                                        <Button
+                                                            Content="Resume"
+                                                            Visibility="{x:Bind PausedVisibility, Mode=OneWay}"
+                                                            Click="ResumeDownload_Click" />
+                                                        <Button
+                                                            Content="Cancel"
+                                                            Visibility="{x:Bind NotDoneVisibility, Mode=OneWay}"
+                                                            Click="CancelTransfer_Click" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- Content Area: Dedicated Transfers Hub View -->
+                        <ScrollViewer
+                            x:Name="TransfersView"
+                            HorizontalScrollBarVisibility="Disabled"
+                            VerticalScrollBarVisibility="Auto"
+                            Visibility="Collapsed">
+                            <StackPanel Spacing="16">
+                                <!-- Header & Actions -->
+                                <Grid>
+                                    <StackPanel Spacing="4">
+                                        <TextBlock FontSize="20" FontWeight="SemiBold" Text="Transfers Hub" />
+                                        <TextBlock
+                                            FontSize="12"
+                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                            Text="Live direct upload &amp; download stream syncing with Telegram cloud" />
+                                    </StackPanel>
+
+                                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                        <Button Content="Clear Finished" Click="ClearFinishedDownloads_Click" />
+                                        <Button Content="📁 Downloads Folder" Click="OpenDownloadsFolder_Click" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Filter Chips -->
+                                <Border
+                                    HorizontalAlignment="Left"
+                                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="6"
+                                    Padding="2">
+                                    <StackPanel Orientation="Horizontal" Spacing="2">
+                                        <Button
+                                            x:Name="TransfersAllBtn"
+                                            Content="All Transfers"
+                                            Padding="10,5"
+                                            Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                            BorderThickness="0"
+                                            Foreground="Black"
+                                            Click="TransfersAllBtn_Click" />
+                                        <Button
+                                            x:Name="TransfersActiveBtn"
+                                            Content="Active"
+                                            Padding="10,5"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Click="TransfersActiveBtn_Click" />
+                                        <Button
+                                            x:Name="TransfersUploadsBtn"
+                                            Content="Uploads"
+                                            Padding="10,5"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Click="TransfersUploadsBtn_Click" />
+                                        <Button
+                                            x:Name="TransfersDownloadsBtn"
+                                            Content="Downloads"
+                                            Padding="10,5"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Click="TransfersDownloadsBtn_Click" />
+                                        <Button
+                                            x:Name="TransfersCompletedBtn"
+                                            Content="Completed"
+                                            Padding="10,5"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Click="TransfersCompletedBtn_Click" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Transfers Empty State -->
+                                <StackPanel
+                                    x:Name="TransfersEmptyState"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Margin="0,48,0,0"
+                                    Spacing="12"
+                                    Visibility="Collapsed">
+                                    <FontIcon FontSize="48" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="&#xE896;" />
+                                    <TextBlock
+                                        FontSize="16"
+                                        FontWeight="SemiBold"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        HorizontalAlignment="Center"
+                                        Text="No transfers" />
+                                    <TextBlock
+                                        FontSize="12"
+                                        Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                        HorizontalAlignment="Center"
+                                        Text="Drop files onto TeleDrive or click Upload to transfer to cloud" />
+                                </StackPanel>
+
+                                <!-- Transfers Hub ListView -->
+                                <ListView
+                                    x:Name="TransfersListView"
+                                    SelectionMode="None">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate x:DataType="models:TransferTaskModel">
+                                            <Border
+                                                Margin="0,0,0,8"
+                                                Padding="14,12"
+                                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="8">
+                                                <Grid ColumnSpacing="16">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <!-- Status Icon -->
+                                                    <FontIcon
+                                                        Grid.Column="0"
+                                                        VerticalAlignment="Center"
+                                                        FontSize="22"
+                                                        Foreground="{x:Bind StatusBrush, Mode=OneWay}"
+                                                        Glyph="{x:Bind StatusGlyph, Mode=OneWay}" />
+
+                                                    <!-- File & Progress Info -->
+                                                    <StackPanel Grid.Column="1" Spacing="4">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Name}" />
+                                                            <Border
+                                                                Padding="6,1"
+                                                                CornerRadius="4"
+                                                                Background="{ThemeResource LayerFillColorDefaultBrush}">
+                                                                <TextBlock
+                                                                    FontSize="10"
+                                                                    FontWeight="Bold"
+                                                                    Foreground="{x:Bind TypeBadgeBrush, Mode=OneWay}"
+                                                                    Text="{x:Bind TypeBadge, Mode=OneWay}" />
+                                                            </Border>
+                                                            <TextBlock
+                                                                FontSize="11"
+                                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                                Text="{x:Bind Status, Mode=OneWay}" />
+                                                        </StackPanel>
+
+                                                        <ProgressBar
+                                                            Height="6"
+                                                            CornerRadius="3"
+                                                            Maximum="100"
+                                                            Value="{x:Bind ProgressPercentage, Mode=OneWay}" />
+
+                                                        <Grid>
+                                                            <TextBlock
+                                                                HorizontalAlignment="Left"
+                                                                FontSize="11"
+                                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                                Text="{x:Bind ProgressSummary, Mode=OneWay}" />
+                                                            <TextBlock
+                                                                HorizontalAlignment="Right"
+                                                                FontSize="11"
+                                                                Foreground="{x:Bind StatusBrush, Mode=OneWay}"
+                                                                Text="{x:Bind SpeedSummary, Mode=OneWay}" />
+                                                        </Grid>
+                                                    </StackPanel>
+
+                                                    <!-- Action Buttons -->
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                        <Button
+                                                            Content="Open"
+                                                            Visibility="{x:Bind CanOpenVisibility, Mode=OneWay}"
+                                                            Click="OpenDownloadedFile_Click" />
+                                                        <Button
+                                                            Content="Reveal"
+                                                            Visibility="{x:Bind CanOpenVisibility, Mode=OneWay}"
+                                                            Click="RevealDownloadedFile_Click" />
+                                                        <Button
+                                                            Content="Pause"
+                                                            Visibility="{x:Bind CanPauseVisibility, Mode=OneWay}"
+                                                            Click="PauseDownload_Click" />
+                                                        <Button
+                                                            Content="Resume"
+                                                            Visibility="{x:Bind PausedVisibility, Mode=OneWay}"
+                                                            Click="ResumeDownload_Click" />
+                                                        <Button
+                                                            Content="Cancel"
+                                                            Visibility="{x:Bind NotDoneVisibility, Mode=OneWay}"
+                                                            Click="CancelTransfer_Click" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+                            </StackPanel>
+                        </ScrollViewer>
+                        <!-- Content Area: Settings View -->
+                        <ScrollViewer
+                            x:Name="SettingsView"
+                            HorizontalScrollBarVisibility="Disabled"
+                            VerticalScrollBarVisibility="Auto"
+                            Visibility="Collapsed">
+                            <StackPanel MaxWidth="800" HorizontalAlignment="Stretch" Spacing="18" Padding="0,0,24,24">
+                                <!-- Settings Subtitle (Page title 'Settings' is prominently displayed in the main top header) -->
+                                <TextBlock Text="Configure display scales, card sizes, local cache, and system diagnostics." FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="0,0,0,4" />
+
+                                <!-- Appearance & Display Card -->
+                                <Border
+                                    Padding="18"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8">
+                                    <StackPanel Spacing="16">
+                                        <TextBlock Text="APPEARANCE &amp; DISPLAY" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock Text="Card Scale &amp; Tile Size" FontWeight="Medium" FontSize="13" />
+                                                <TextBlock Text="Control how large folders and files appear in the grid view" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <ComboBox Grid.Column="1" x:Name="SettingsCardSizeCombo" Width="210" VerticalAlignment="Center" SelectionChanged="SettingsCardSizeCombo_SelectionChanged">
+                                                <ComboBoxItem Content="Tiny / Micro (96px)" Tag="96" />
+                                                <ComboBoxItem Content="Mini / Ultra Compact (130px)" Tag="130" />
+                                                <ComboBoxItem Content="Compact (165px)" Tag="165" />
+                                                <ComboBoxItem Content="Medium / Standard (205px)" Tag="205" />
+                                                <ComboBoxItem Content="Large (265px)" Tag="265" />
+                                            </ComboBox>
+                                        </Grid>
+
+                                        <MenuFlyoutSeparator />
+
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock Text="Default View Mode" FontWeight="Medium" FontSize="13" />
+                                                <TextBlock Text="Initial display mode for directories" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <ComboBox Grid.Column="1" x:Name="SettingsViewModeCombo" Width="210" VerticalAlignment="Center" SelectionChanged="SettingsViewModeCombo_SelectionChanged">
+                                                <ComboBoxItem Content="Grid View" Tag="0" />
+                                                <ComboBoxItem Content="List View" Tag="1" />
+                                            </ComboBox>
+                                        </Grid>
+
+                                        <MenuFlyoutSeparator />
+
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock Text="App Theme" FontWeight="Medium" FontSize="13" />
+                                                <TextBlock Text="Select dark, light, or Windows system default theme" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <ComboBox Grid.Column="1" x:Name="SettingsThemeCombo" Width="210" VerticalAlignment="Center" SelectionChanged="SettingsThemeCombo_SelectionChanged">
+                                                <ComboBoxItem Content="System (Follow Windows)" Tag="Default" />
+                                                <ComboBoxItem Content="Dark Mode" Tag="Dark" />
+                                                <ComboBoxItem Content="Light Mode" Tag="Light" />
+                                            </ComboBox>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Storage & Local Cache -->
+                                <Border
+                                    Padding="18"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8">
+                                    <StackPanel Spacing="16">
+                                        <TextBlock Text="STORAGE &amp; LOCAL CACHE" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock Text="Downloads Folder" FontWeight="Medium" FontSize="13" />
+                                                <TextBlock Text="Saved destination for downloaded cloud chunks" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" VerticalAlignment="Center" Click="OpenDownloadsFolder_Click">
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                    <FontIcon Glyph="&#xED25;" FontSize="12" />
+                                                    <TextBlock Text="Open in Explorer" />
+                                                </StackPanel>
+                                            </Button>
+                                        </Grid>
+
+                                        <MenuFlyoutSeparator />
+
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock Text="Thumbnail &amp; Shell Icon Cache" FontWeight="Medium" FontSize="13" />
+                                                <TextBlock Text="Reset local high-DPI thumbnails and re-index shell icons" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" VerticalAlignment="Center" Click="SettingsClearCacheBtn_Click">
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                    <FontIcon Glyph="&#xE74D;" FontSize="12" />
+                                                    <TextBlock Text="Clear Cache" />
+                                                </StackPanel>
+                                            </Button>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- System & Daemon Status -->
+                                <Border
+                                    Padding="18"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8">
+                                    <StackPanel Spacing="14">
+                                        <TextBlock Text="SYSTEM &amp; TELEGRAM BOT DAEMON" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="Local Rust Daemon" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="1" Text="http://127.0.0.1:48291 (Active)" Foreground="#10B981" FontWeight="Medium" VerticalAlignment="Center" />
+                                        </Grid>
+
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="Local Telegram Bot API" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="1" Text="http://127.0.0.1:8082 (2GB Cloud Server Active)" Foreground="#10B981" FontWeight="Medium" VerticalAlignment="Center" />
+                                        </Grid>
+
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="Desktop Runtime" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="1" Text="Windows 11 x64 · Native WinUI 3 (.NET 8)" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+
+                    <!-- Right: File Details & Metadata Permanent Sidebar (matching Windows File Explorer) -->
+                    <Border
+                        x:Name="FileDetailsPane"
+                        Grid.Column="1"
+                        Width="320"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="10"
+                        Visibility="Visible">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Padding="16" Spacing="14">
+                                <!-- Drawer Header -->
+                                <Grid>
+                                    <TextBlock Text="File Properties" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <Button
+                                        HorizontalAlignment="Right"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Padding="4"
+                                        Click="CloseDetailsPane_Click"
+                                        ToolTipService.ToolTip="Close Details">
+                                        <FontIcon Glyph="&#xE711;" FontSize="11" />
+                                    </Button>
+                                </Grid>
+
+                                <!-- Empty Selection Placeholder (File Explorer style) -->
+                                <StackPanel
+                                    x:Name="DetailsEmptyPlaceholder"
+                                    Visibility="Collapsed"
+                                    Spacing="12"
+                                    Padding="16,40,16,20"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                                    <FontIcon Glyph="&#xE9F5;" FontSize="48" Foreground="{ThemeResource TextFillColorTertiaryBrush}" HorizontalAlignment="Center" />
+                                    <TextBlock
+                                        Text="Select a file to preview"
+                                        FontSize="15"
+                                        FontWeight="SemiBold"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        HorizontalAlignment="Center" />
+                                    <TextBlock
+                                        Text="Choose an item to view its details, properties, and Telegram cloud chunks."
+                                        FontSize="12"
+                                        TextWrapping="Wrap"
+                                        TextAlignment="Center"
+                                        Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                        HorizontalAlignment="Center" />
+                                </StackPanel>
+
+                                <!-- Details Content Container -->
+                                <StackPanel x:Name="DetailsContentStack" Spacing="14">
+                                <!-- Visual Preview Card -->
+                                <Border
+                                    Height="160"
+                                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="8">
+                                    <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Image
+                                            x:Name="DetailsThumbImage"
+                                            MaxHeight="144"
+                                            MaxWidth="280"
+                                            Stretch="Uniform" />
+                                        <FontIcon
+                                            x:Name="DetailsFallbackIcon"
+                                            FontSize="52"
+                                            Visibility="Collapsed" />
+                                    </Grid>
+                                </Border>
+
+                                <!-- File Title & Pill -->
+                                <StackPanel Spacing="4">
+                                    <TextBlock x:Name="DetailsFileName" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="DetailsCategoryPill" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                </StackPanel>
+
+                                <!-- Quick Actions Toolbar -->
+                                <StackPanel Spacing="6">
+                                    <!-- Normal Mode Actions (Drive, Recent, Starred, Folders) -->
+                                    <StackPanel x:Name="NormalDetailsActions" Spacing="6">
+                                        <Button
+                                            x:Name="DetailsDownloadBtn"
+                                            HorizontalAlignment="Stretch"
+                                            Height="34"
+                                            Style="{StaticResource AccentButtonStyle}"
+                                            Click="DetailsDownloadBtn_Click">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <FontIcon Glyph="&#xE896;" FontSize="13" />
+                                                <TextBlock Text="Download to Device" FontWeight="SemiBold" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Grid ColumnSpacing="6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <Button
+                                                Grid.Column="0"
+                                                HorizontalAlignment="Stretch"
+                                                Height="32"
+                                                Padding="0"
+                                                Click="DetailsStarBtn_Click"
+                                                ToolTipService.ToolTip="Toggle Star">
+                                                <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                                                    <FontIcon x:Name="DetailsStarIcon" Glyph="&#xE734;" FontSize="11" Foreground="#F59E0B" />
+                                                    <TextBlock x:Name="DetailsStarText" Text="Star" FontSize="11" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button
+                                                Grid.Column="1"
+                                                HorizontalAlignment="Stretch"
+                                                Height="32"
+                                                Padding="0"
+                                                Click="DetailsCopyIdBtn_Click"
+                                                ToolTipService.ToolTip="Copy Cloud File ID">
+                                                <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                                                    <FontIcon Glyph="&#xE8C8;" FontSize="11" />
+                                                    <TextBlock Text="Copy ID" FontSize="11" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button
+                                                x:Name="DetailsTrashBtn"
+                                                Grid.Column="2"
+                                                HorizontalAlignment="Stretch"
+                                                Height="32"
+                                                Padding="0"
+                                                Click="DetailsTrashBtn_Click"
+                                                ToolTipService.ToolTip="Move to Trash">
+                                                <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                                                    <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="#EF4444" />
+                                                    <TextBlock Text="Trash" FontSize="11" Foreground="#EF4444" />
+                                                </StackPanel>
+                                            </Button>
+                                        </Grid>
+                                        <!-- Permanent Delete directly from cloud button -->
+                                        <Button
+                                            HorizontalAlignment="Stretch"
+                                            Height="28"
+                                            Padding="0"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Click="DetailsDeletePermanentlyBtn_Click"
+                                            ToolTipService.ToolTip="Permanently delete from Telegram cloud without sending to trash">
+                                            <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                                                <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="#F87171" />
+                                                <TextBlock Text="Delete Permanently from Cloud" FontSize="11" Foreground="#F87171" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+
+                                    <!-- Trash Mode Actions -->
+                                    <StackPanel x:Name="TrashDetailsActions" Spacing="6" Visibility="Collapsed">
+                                        <Button
+                                            x:Name="DetailsRestoreBtn"
+                                            HorizontalAlignment="Stretch"
+                                            Height="34"
+                                            Style="{StaticResource AccentButtonStyle}"
+                                            Click="DetailsRestoreBtn_Click">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <FontIcon Glyph="&#xE777;" FontSize="13" />
+                                                <TextBlock Text="Restore to Drive" FontWeight="SemiBold" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button
+                                            x:Name="DetailsTrashPermanentDeleteBtn"
+                                            HorizontalAlignment="Stretch"
+                                            Height="34"
+                                            Background="#DC2626"
+                                            Foreground="White"
+                                            Click="DetailsDeletePermanentlyBtn_Click"
+                                            ToolTipService.ToolTip="Permanently delete from Telegram cloud">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <FontIcon Glyph="&#xE74D;" FontSize="13" />
+                                                <TextBlock Text="Delete Forever from Cloud" FontWeight="SemiBold" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <MenuFlyoutSeparator />
+
+                                <!-- General Information -->
+                                <TextBlock Text="FILE ATTRIBUTES" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <StackPanel Spacing="8">
+                                    <Grid>
+                                        <TextBlock Text="Size" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock x:Name="DetailsFileSize" HorizontalAlignment="Right" FontSize="12" FontWeight="Medium" />
+                                    </Grid>
+                                    <Grid>
+                                        <TextBlock Text="MIME Type" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock x:Name="DetailsMimeType" HorizontalAlignment="Right" FontSize="12" FontWeight="Medium" />
+                                    </Grid>
+                                    <Grid>
+                                        <TextBlock Text="Modified" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock x:Name="DetailsModifiedDate" HorizontalAlignment="Right" FontSize="12" FontWeight="Medium" />
+                                    </Grid>
+                                    <Grid>
+                                        <TextBlock Text="Created" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock x:Name="DetailsCreatedDate" HorizontalAlignment="Right" FontSize="12" FontWeight="Medium" />
+                                    </Grid>
+                                </StackPanel>
+
+                                <!-- Media / EXIF / Technical Metadata -->
+                                <StackPanel x:Name="DetailsMediaSection" Spacing="8" Visibility="Collapsed">
+                                    <MenuFlyoutSeparator />
+                                    <TextBlock Text="MEDIA &amp; METADATA" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <Grid x:Name="DetailsDimensionsRow">
+                                        <TextBlock Text="Dimensions" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock x:Name="DetailsDimensionsText" HorizontalAlignment="Right" FontSize="12" FontWeight="Medium" />
+                                    </Grid>
+                                    <Grid x:Name="DetailsDurationRow">
+                                        <TextBlock Text="Duration" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock x:Name="DetailsDurationText" HorizontalAlignment="Right" FontSize="12" FontWeight="Medium" />
+                                    </Grid>
+                                    <Grid x:Name="DetailsTakenAtRow">
+                                        <TextBlock Text="Date Taken" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock x:Name="DetailsTakenAtText" HorizontalAlignment="Right" FontSize="12" FontWeight="Medium" />
+                                    </Grid>
+                                    <ItemsControl x:Name="DetailsMetadataItemsControl">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="models:MetadataEntry">
+                                                <Grid Margin="0,3,0,0">
+                                                    <TextBlock Text="{x:Bind Key}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <TextBlock Text="{x:Bind Value}" HorizontalAlignment="Right" FontSize="12" FontWeight="Medium" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+
+                                <MenuFlyoutSeparator />
+
+                                <!-- Telegram Cloud Chunking -->
+                                <TextBlock Text="TELEGRAM CLOUD STORAGE" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <StackPanel Spacing="8">
+                                    <Grid>
+                                        <TextBlock Text="Chunks" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock x:Name="DetailsPartsText" HorizontalAlignment="Right" FontSize="12" FontWeight="Medium" />
+                                    </Grid>
+                                    <Grid>
+                                        <TextBlock Text="Security" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Text="AES-256 Cloud Vault" HorizontalAlignment="Right" FontSize="12" FontWeight="Medium" Foreground="#10B981" />
+                                    </Grid>
+                                    <Grid>
+                                        <TextBlock Text="File ID" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock x:Name="DetailsCloudIdText" HorizontalAlignment="Right" FontSize="11" TextTrimming="CharacterEllipsis" MaxWidth="170" />
+                                    </Grid>
+                                </StackPanel>
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+                </Grid>
+
+                <!-- Bottom Status Bar (matching Windows File Explorer) -->
+                <Grid
+                    Grid.Row="2"
+                    Height="36"
+                    Margin="0,8,0,0"
+                    VerticalAlignment="Center">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left: Status Item & Selection Counts & Inline Transfer Widget -->
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <TextBlock
+                            x:Name="StatusBarItemCountText"
+                            FontSize="12"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="0 items" />
+                        <TextBlock
+                            x:Name="StatusBarSelectionText"
+                            FontSize="12"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="" />
+                        <!-- Integrated Status Bar Transfer Indicator -->
+                        <Button
+                            x:Name="StatusBarTransferBtn"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Padding="6,2"
+                            Margin="6,0,0,0"
+                            CornerRadius="4"
+                            Visibility="Collapsed"
+                            Click="StatusBarTransferBtn_Click"
+                            ToolTipService.ToolTip="Click to open Transfers Hub">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <FontIcon x:Name="StatusBarTransferIcon" FontSize="11" Foreground="#2DD4BF" Glyph="&#xE896;" />
+                                <TextBlock
+                                    x:Name="StatusBarTransferText"
+                                    FontSize="12"
+                                    Foreground="#2DD4BF"
+                                    Text="2 transfers active" />
+                                <ProgressBar
+                                    x:Name="StatusBarTransferProgress"
+                                    Width="60"
+                                    Height="4"
+                                    CornerRadius="2"
+                                    Maximum="100"
+                                    Value="0"
+                                    VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- Right: Details Pane Toggle & View Mode Toggles -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <Button
+                            x:Name="ToggleDetailsPaneBtn"
+                            Padding="6,4"
+                            Background="{ThemeResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Click="ToggleDetailsPaneBtn_Click"
+                            ToolTipService.ToolTip="Toggle Details Pane">
+                            <FontIcon x:Name="ToggleDetailsPaneIcon" Glyph="&#xE9F5;" FontSize="13" />
+                        </Button>
+
+                        <Border
+                            x:Name="ViewModeToggleBorder"
+                            Background="{ThemeResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="2">
+                            <StackPanel Orientation="Horizontal" Spacing="2">
+                                <Button
+                                    x:Name="GridViewBtn"
+                                    Padding="6,4"
+                                    Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                    BorderThickness="0"
+                                    CornerRadius="4"
+                                    Click="GridViewBtn_Click"
+                                    ToolTipService.ToolTip="Grid / Large Icons">
+                                    <FontIcon Glyph="&#xE80A;" FontSize="13" Foreground="Black" />
+                                </Button>
+                                <Button
+                                    x:Name="ListViewBtn"
+                                    Padding="6,4"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    CornerRadius="4"
+                                    Click="ListViewBtn_Click"
+                                    ToolTipService.ToolTip="Details / List View">
+                                    <FontIcon Glyph="&#xE8FD;" FontSize="13" />
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </NavigationView>
+
+        <!-- Drag & Drop Visual Overlay -->
+        <Border
+            x:Name="DragDropOverlay"
+            Background="#A0000000"
+            IsHitTestVisible="False"
+            Visibility="Collapsed"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch">
+            <Border
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Padding="40,32"
+                Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}"
+                BorderBrush="#2DD4BF"
+                BorderThickness="2"
+                CornerRadius="16">
+                <StackPanel Spacing="14" HorizontalAlignment="Center">
+                    <FontIcon FontSize="52" Foreground="#2DD4BF" Glyph="&#xE898;" />
+                    <TextBlock
+                        Text="Drop files or folders here"
+                        FontSize="20"
+                        FontWeight="SemiBold"
+                        HorizontalAlignment="Center" />
+                    <TextBlock
+                        Text="Files will be ingested and uploaded directly to Telegram Cloud"
+                        FontSize="13"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        HorizontalAlignment="Center" />
+                </StackPanel>
+            </Border>
+        </Border>
+    </Grid>
+</Page>

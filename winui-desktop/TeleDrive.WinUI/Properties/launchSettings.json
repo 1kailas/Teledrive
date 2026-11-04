@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "TeleDrive.WinUI (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "TeleDrive.WinUI (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

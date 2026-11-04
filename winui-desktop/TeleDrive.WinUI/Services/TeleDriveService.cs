@@ -1,0 +1,915 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Threading;
+using System.Threading.Tasks;
+using TeleDrive_WinUI.Models;
+
+namespace TeleDrive_WinUI.Services;
+
+public class TeleDriveService
+{
+    private static TeleDriveService? _instance;
+    public static TeleDriveService Instance => _instance ??= new TeleDriveService();
+
+    private readonly HttpClient _http;
+    public string BaseUrl { get; private set; } = "http://127.0.0.1:48291";
+
+    public event Action? OnUploadCompleted;
+
+    // Track upload & download progress to calculate live speed and ETA
+    private readonly ConcurrentDictionary<string, (ulong Bytes, DateTime Time, ulong Speed)> _lastUploadProgress = new();
+    private readonly ConcurrentDictionary<string, (ulong Bytes, DateTime Time, ulong Speed)> _lastDownloadProgress = new();
+    // Cache completed uploads so they remain visible in transfers hub
+    private readonly ConcurrentDictionary<string, TransferTaskModel> _completedTransfers = new();
+    private int _previousActiveUploadCount = 0;
+
+    public TeleDriveService()
+    {
+        _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        _http.DefaultRequestHeaders.Add("X-Requested-With", "teledrive");
+    }
+
+    public async Task EnsureDaemonRunningAsync()
+    {
+        // 1. Quick check if daemon is already responding on BaseUrl (<200ms)
+        if (await PingDaemonAsync(BaseUrl))
+        {
+            return;
+        }
+
+        // 2. Read daemon.json in AppData to check for an active daemon on an alternate port
+        var detectedPort = ReadDaemonPort();
+        if (detectedPort.HasValue && detectedPort.Value != 48291)
+        {
+            var detectedUrl = $"http://127.0.0.1:{detectedPort.Value}";
+            if (await PingDaemonAsync(detectedUrl))
+            {
+                BaseUrl = detectedUrl;
+                return;
+            }
+        }
+
+        // 3. Not running, launch TeleDriveR.exe --daemon
+        TryLaunchDaemon();
+
+        // 4. Poll every 80ms up to 2.5 seconds for instant detection as soon as socket opens
+        var sw = Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < 2500)
+        {
+            await Task.Delay(80);
+            var port = ReadDaemonPort() ?? 48291;
+            var url = $"http://127.0.0.1:{port}";
+            if (await PingDaemonAsync(url))
+            {
+                BaseUrl = url;
+                return;
+            }
+        }
+    }
+
+    private async Task<bool> PingDaemonAsync(string url)
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
+            var res = await _http.GetAsync($"{url}/api/auth/me", cts.Token);
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private int? ReadDaemonPort()
+    {
+        try
+        {
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            var candidates = new[]
+            {
+                Path.Combine(appData, "TeleDrive", "data", "daemon.json"),
+                Path.Combine(appData, "TeleDrive", "daemon.json"),
+                Path.Combine(AppContext.BaseDirectory, "daemon.json")
+            };
+
+            foreach (var path in candidates)
+            {
+                if (File.Exists(path))
+                {
+                    var text = File.ReadAllText(path);
+                    using var doc = JsonDocument.Parse(text);
+                    if (doc.RootElement.TryGetProperty("port", out var p) && p.TryGetInt32(out var port))
+                    {
+                        return port;
+                    }
+                }
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    private void TryLaunchDaemon()
+    {
+        try
+        {
+            var exeDir = AppContext.BaseDirectory;
+            var daemonPaths = new[]
+            {
+                Path.Combine(exeDir, "TeleDriveR.exe"),
+                Path.Combine(exeDir, "..", "..", "..", "..", "..", "rust-desktop", "target", "x86_64-pc-windows-gnu", "release", "TeleDriveR.exe"),
+                Path.Combine(exeDir, "..", "..", "..", "..", "..", "rust-desktop", "target", "release", "TeleDriveR.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "TeleDriveR", "TeleDriveR.exe")
+            };
+
+            foreach (var path in daemonPaths)
+            {
+                var full = Path.GetFullPath(path);
+                if (File.Exists(full))
+                {
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = full,
+                        Arguments = "--daemon",
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        WorkingDirectory = Path.GetDirectoryName(full)
+                    };
+                    Process.Start(psi);
+                    break;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"TryLaunchDaemon failed: {ex.Message}");
+        }
+    }
+
+    public async Task<(List<FolderModel> Folders, List<FileModel> Files)> GetDriveAsync(string? folderId = null)
+    {
+        try
+        {
+            var url = string.IsNullOrEmpty(folderId) ? $"{BaseUrl}/api/drive" : $"{BaseUrl}/api/drive?folderId={Uri.EscapeDataString(folderId)}";
+            var json = await _http.GetStringAsync(url);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            var folders = new List<FolderModel>();
+            if (root.TryGetProperty("folders", out var foldersArr))
+            {
+                foreach (var f in foldersArr.EnumerateArray())
+                {
+                    folders.Add(new FolderModel
+                    {
+                        Id = f.GetProperty("id").GetString() ?? "",
+                        ParentId = f.TryGetProperty("parentId", out var pid) ? pid.GetString() : null,
+                        Name = f.GetProperty("name").GetString() ?? "",
+                        Starred = f.TryGetProperty("starred", out var st) && st.GetBoolean(),
+                        CreatedAt = f.TryGetProperty("createdAt", out var ca) ? ca.GetInt64() : 0,
+                        UpdatedAt = f.TryGetProperty("updatedAt", out var ua) ? ua.GetInt64() : 0,
+                        ItemCount = f.TryGetProperty("itemCount", out var ic) ? ic.GetInt32() : 0,
+                    });
+                }
+            }
+
+            var files = new List<FileModel>();
+            if (root.TryGetProperty("files", out var filesArr))
+            {
+                foreach (var f in filesArr.EnumerateArray())
+                {
+                    var fid = f.GetProperty("id").GetString() ?? "";
+                    files.Add(new FileModel
+                    {
+                        Id = fid,
+                        FolderId = f.TryGetProperty("folderId", out var fidElem) ? fidElem.GetString() : null,
+                        BlobId = f.TryGetProperty("blobId", out var bid) ? bid.GetString() : null,
+                        Name = f.GetProperty("name").GetString() ?? "",
+                        Extension = f.TryGetProperty("extension", out var ext) ? ext.GetString() ?? "" : "",
+                        MimeType = f.TryGetProperty("mimeType", out var mt) ? mt.GetString() ?? "" : "",
+                        Category = f.TryGetProperty("category", out var cat) ? cat.GetString() ?? "document" : "document",
+                        Size = f.TryGetProperty("size", out var sz) ? sz.GetUInt64() : 0,
+                        Starred = f.TryGetProperty("starred", out var st) && st.GetBoolean(),
+                        HasThumbnail = f.TryGetProperty("hasThumbnail", out var ht) && ht.GetBoolean(),
+                        ThumbnailUrl = $"{BaseUrl}/api/thumbnails/{fid}",
+                        CreatedAt = f.TryGetProperty("createdAt", out var ca) ? ca.GetInt64() : 0,
+                        UpdatedAt = f.TryGetProperty("updatedAt", out var ua) ? ua.GetInt64() : 0,
+                        Width = f.TryGetProperty("width", out var wElem) && wElem.ValueKind == JsonValueKind.Number ? wElem.GetInt32() : null,
+                        Height = f.TryGetProperty("height", out var hElem) && hElem.ValueKind == JsonValueKind.Number ? hElem.GetInt32() : null,
+                        Duration = f.TryGetProperty("duration", out var dElem) && dElem.ValueKind == JsonValueKind.Number ? dElem.GetDouble() : null,
+                        PartCount = f.TryGetProperty("partCount", out var pcElem) && pcElem.ValueKind == JsonValueKind.Number ? pcElem.GetInt32() : null,
+                        TakenAt = f.TryGetProperty("takenAt", out var tkElem) && tkElem.ValueKind == JsonValueKind.Number ? tkElem.GetInt64() : null,
+                        MetadataJson = f.TryGetProperty("metadata", out var metaElem) && metaElem.ValueKind != JsonValueKind.Null ? metaElem.ToString() : null,
+                    });
+                }
+            }
+
+            return (folders, files);
+        }
+        catch
+        {
+            return (new List<FolderModel>(), new List<FileModel>());
+        }
+    }
+
+    public async Task<FileModel?> GetFileDetailsAsync(string fileId)
+    {
+        try
+        {
+            var json = await _http.GetStringAsync($"{BaseUrl}/api/files/{fileId}");
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("file", out var f))
+            {
+                var fid = f.GetProperty("id").GetString() ?? "";
+                return new FileModel
+                {
+                    Id = fid,
+                    FolderId = f.TryGetProperty("folderId", out var fidElem) ? fidElem.GetString() : null,
+                    BlobId = f.TryGetProperty("blobId", out var bid) ? bid.GetString() : null,
+                    Name = f.GetProperty("name").GetString() ?? "",
+                    Extension = f.TryGetProperty("extension", out var ext) ? ext.GetString() ?? "" : "",
+                    MimeType = f.TryGetProperty("mimeType", out var mt) ? mt.GetString() ?? "" : "",
+                    Category = f.TryGetProperty("category", out var cat) ? cat.GetString() ?? "document" : "document",
+                    Size = f.TryGetProperty("size", out var sz) ? sz.GetUInt64() : 0,
+                    Starred = f.TryGetProperty("starred", out var st) && st.GetBoolean(),
+                    HasThumbnail = f.TryGetProperty("hasThumbnail", out var ht) && ht.GetBoolean(),
+                    ThumbnailUrl = $"{BaseUrl}/api/thumbnails/{fid}",
+                    CreatedAt = f.TryGetProperty("createdAt", out var ca) ? ca.GetInt64() : 0,
+                    UpdatedAt = f.TryGetProperty("updatedAt", out var ua) ? ua.GetInt64() : 0,
+                    Width = f.TryGetProperty("width", out var wElem) && wElem.ValueKind == JsonValueKind.Number ? wElem.GetInt32() : null,
+                    Height = f.TryGetProperty("height", out var hElem) && hElem.ValueKind == JsonValueKind.Number ? hElem.GetInt32() : null,
+                    Duration = f.TryGetProperty("duration", out var dElem) && dElem.ValueKind == JsonValueKind.Number ? dElem.GetDouble() : null,
+                    PartCount = f.TryGetProperty("partCount", out var pcElem) && pcElem.ValueKind == JsonValueKind.Number ? pcElem.GetInt32() : null,
+                    TakenAt = f.TryGetProperty("takenAt", out var tkElem) && tkElem.ValueKind == JsonValueKind.Number ? tkElem.GetInt64() : null,
+                    MetadataJson = f.TryGetProperty("metadata", out var metaElem) && metaElem.ValueKind != JsonValueKind.Null ? metaElem.ToString() : null,
+                };
+            }
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<List<FileModel>> GetRecentAsync()
+    {
+        try
+        {
+            var json = await _http.GetStringAsync($"{BaseUrl}/api/recent");
+            using var doc = JsonDocument.Parse(json);
+            var files = new List<FileModel>();
+            if (doc.RootElement.TryGetProperty("files", out var arr))
+            {
+                foreach (var f in arr.EnumerateArray())
+                {
+                    var fid = f.GetProperty("id").GetString() ?? "";
+                    files.Add(new FileModel
+                    {
+                        Id = fid,
+                        Name = f.GetProperty("name").GetString() ?? "",
+                        Category = f.TryGetProperty("category", out var cat) ? cat.GetString() ?? "document" : "document",
+                        Size = f.TryGetProperty("size", out var sz) ? sz.GetUInt64() : 0,
+                        Starred = f.TryGetProperty("starred", out var st) && st.GetBoolean(),
+                        HasThumbnail = f.TryGetProperty("hasThumbnail", out var ht) && ht.GetBoolean(),
+                        ThumbnailUrl = $"{BaseUrl}/api/thumbnails/{fid}",
+                        UpdatedAt = f.TryGetProperty("updatedAt", out var ua) ? ua.GetInt64() : 0,
+                    });
+                }
+            }
+            return files;
+        }
+        catch
+        {
+            return new List<FileModel>();
+        }
+    }
+
+    public async Task<List<TransferTaskModel>> GetDownloadsAsync()
+    {
+        try
+        {
+            var json = await _http.GetStringAsync($"{BaseUrl}/api/native-downloads");
+            using var doc = JsonDocument.Parse(json);
+            var tasks = new List<TransferTaskModel>();
+            var now = DateTime.UtcNow;
+
+            if (doc.RootElement.TryGetProperty("downloads", out var arr))
+            {
+                foreach (var t in arr.EnumerateArray())
+                {
+                    var id = t.GetProperty("id").GetString() ?? "";
+                    var fileId = t.TryGetProperty("fileId", out var fid) ? fid.GetString() ?? "" : "";
+                    var name = t.GetProperty("name").GetString() ?? "";
+                    var size = t.TryGetProperty("size", out var sz) ? sz.GetUInt64() : 0;
+                    var dl = t.TryGetProperty("downloaded", out var d) ? d.GetUInt64() : 0;
+                    var status = t.TryGetProperty("status", out var st) ? st.GetString() ?? "queued" : "queued";
+                    var speed = t.TryGetProperty("speed", out var sp) ? sp.GetUInt64() : 0;
+                    var eta = t.TryGetProperty("eta", out var et) ? et.GetUInt64() : 0;
+                    var destPath = t.TryGetProperty("destPath", out var dp) ? dp.GetString() ?? "" : "";
+                    var error = t.TryGetProperty("error", out var er) ? er.GetString() : null;
+                    var createdAt = t.TryGetProperty("createdAt", out var ca) ? ca.GetInt64() : 0;
+
+                    if (status == "done" || status == "complete")
+                    {
+                        dl = size;
+                        speed = 0;
+                        eta = 0;
+                    }
+                    else if (status == "downloading")
+                    {
+                        ulong prevDl = _lastDownloadProgress.TryGetValue(id, out var lastDl) ? lastDl.Bytes : 0;
+                        if (dl < prevDl)
+                        {
+                            dl = prevDl;
+                        }
+                        else if (dl == prevDl && size > 0 && dl < size)
+                        {
+                            // Smooth forward motion so it doesn't freeze at start or between parts
+                            ulong remaining = size - dl;
+                            ulong step = Math.Max(64 * 1024, (ulong)(remaining * 0.12));
+                            dl = Math.Min((ulong)(size * 0.99), dl + step);
+                        }
+
+                        if (_lastDownloadProgress.TryGetValue(id, out var lastInfo))
+                        {
+                            var elapsed = (now - lastInfo.Time).TotalSeconds;
+                            if (elapsed >= 0.15)
+                            {
+                                if (dl > lastInfo.Bytes)
+                                {
+                                    speed = (ulong)((dl - lastInfo.Bytes) / elapsed);
+                                }
+                                else if (lastInfo.Speed > 0)
+                                {
+                                    speed = (ulong)(lastInfo.Speed * 0.95);
+                                }
+
+                                if (speed > 0 && size > dl)
+                                {
+                                    eta = (size - dl) / speed;
+                                }
+                            }
+                        }
+                        _lastDownloadProgress[id] = (dl, now, speed);
+                    }
+
+                    tasks.Add(new TransferTaskModel
+                    {
+                        Id = id,
+                        FileId = fileId,
+                        Name = name,
+                        Type = "download",
+                        Size = size,
+                        Transferred = dl,
+                        Status = status,
+                        DestPath = destPath,
+                        Speed = speed,
+                        Eta = eta,
+                        Error = error,
+                        CreatedAt = createdAt,
+                    });
+                }
+            }
+            return tasks;
+        }
+        catch
+        {
+            return new List<TransferTaskModel>();
+        }
+    }
+
+    public async Task<List<TransferTaskModel>> GetUploadsAsync()
+    {
+        try
+        {
+            var json = await _http.GetStringAsync($"{BaseUrl}/api/uploads");
+            using var doc = JsonDocument.Parse(json);
+            var tasks = new List<TransferTaskModel>();
+            var now = DateTime.UtcNow;
+
+            if (doc.RootElement.TryGetProperty("uploads", out var arr))
+            {
+                foreach (var u in arr.EnumerateArray())
+                {
+                    var id = u.GetProperty("id").GetString() ?? "";
+                    var size = u.TryGetProperty("size", out var sz) ? sz.GetUInt64() : 0;
+                    var name = u.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                    var status = u.TryGetProperty("status", out var st) ? st.GetString() ?? "uploading" : "uploading";
+                    var createdAt = u.TryGetProperty("createdAt", out var ca) ? ca.GetInt64() : 0;
+
+                    ulong partsReceived = 0;
+                    ulong partsTotal = 0;
+                    ulong bytesStored = 0;
+
+                    if (u.TryGetProperty("progress", out var pr))
+                    {
+                        partsReceived = pr.TryGetProperty("partsReceived", out var pRec) ? pRec.GetUInt64() : 0;
+                        partsTotal = pr.TryGetProperty("partsTotal", out var pTot) ? pTot.GetUInt64() : 0;
+                        bytesStored = pr.TryGetProperty("bytesStored", out var bs) ? bs.GetUInt64() : 0;
+                    }
+
+                    ulong transferred = 0;
+
+                    if (status == "done" || status == "stored" || status == "complete" || (partsTotal > 0 && partsReceived >= partsTotal))
+                    {
+                        transferred = size;
+                        status = "done";
+                    }
+                    else
+                    {
+                        // Base bytes confirmed in cloud
+                        ulong baseBytes = bytesStored > 0
+                            ? bytesStored
+                            : (partsTotal > 0 ? (ulong)((double)partsReceived / partsTotal * size) : 0);
+
+                        ulong prevBytes = _lastUploadProgress.TryGetValue(id, out var last) ? last.Bytes : 0;
+                        transferred = Math.Max(baseBytes, prevBytes);
+
+                        // Calculate in-flight ceiling
+                        ulong partSize = partsTotal > 0 ? Math.Max(1024, size / partsTotal) : size;
+                        ulong currentPartCap = Math.Min(size, baseBytes + partSize);
+
+                        if (transferred < currentPartCap)
+                        {
+                            ulong remaining = currentPartCap - transferred;
+                            // Smooth forward progression (never stuck at start or between parts)
+                            ulong step = Math.Max(64 * 1024, (ulong)(remaining * 0.15));
+                            ulong maxSafeActive = (ulong)(size * 0.992);
+                            transferred = Math.Min(maxSafeActive, transferred + step);
+                        }
+                    }
+
+                    // Calculate instantaneous upload speed & ETA
+                    ulong speed = 0;
+                    ulong eta = 0;
+                    if (status != "done")
+                    {
+                        if (_lastUploadProgress.TryGetValue(id, out var last))
+                        {
+                            var elapsed = (now - last.Time).TotalSeconds;
+                            if (elapsed >= 0.15)
+                            {
+                                if (transferred > last.Bytes)
+                                {
+                                    speed = (ulong)((transferred - last.Bytes) / elapsed);
+                                }
+                                else if (last.Speed > 0)
+                                {
+                                    speed = (ulong)(last.Speed * 0.95);
+                                }
+
+                                if (speed > 0 && size > transferred)
+                                {
+                                    eta = (size - transferred) / speed;
+                                }
+                            }
+                        }
+                    }
+                    _lastUploadProgress[id] = (transferred, now, speed);
+
+                    var task = new TransferTaskModel
+                    {
+                        Id = id,
+                        FileId = u.TryGetProperty("fileId", out var fid) ? fid.GetString() ?? "" : "",
+                        Name = name,
+                        Type = "upload",
+                        Size = size,
+                        Transferred = transferred,
+                        Status = status,
+                        Speed = speed,
+                        Eta = eta,
+                        CreatedAt = createdAt
+                    };
+
+                    tasks.Add(task);
+
+                    // Cache in history so when it completes and drops from active_uploads, it's remembered
+                    _completedTransfers[id] = task;
+                }
+            }
+
+            return tasks;
+        }
+        catch
+        {
+            return new List<TransferTaskModel>();
+        }
+    }
+
+    public async Task<List<TransferTaskModel>> GetAllTransfersAsync()
+    {
+        var downloads = await GetDownloadsAsync();
+        var uploads = await GetUploadsAsync();
+
+        // Check if any upload completed: any item in _completedTransfers that is no longer active
+        var activeUploadIds = new HashSet<string>(uploads.Select(u => u.Id));
+        bool anyFinished = false;
+        foreach (var kvp in _completedTransfers.Where(c => c.Value.IsUpload && !activeUploadIds.Contains(c.Key)))
+        {
+            if (kvp.Value.Status != "done")
+            {
+                kvp.Value.Status = "done";
+                kvp.Value.Transferred = kvp.Value.Size;
+                kvp.Value.Speed = 0;
+                kvp.Value.Eta = 0;
+                anyFinished = true;
+            }
+        }
+        if (anyFinished)
+        {
+            OnUploadCompleted?.Invoke();
+        }
+        _previousActiveUploadCount = uploads.Count;
+
+        var combined = new List<TransferTaskModel>();
+        combined.AddRange(downloads);
+        combined.AddRange(uploads);
+
+        // Include remembered completed uploads
+        var activeIds = new HashSet<string>(combined.Select(t => t.Id));
+        foreach (var past in _completedTransfers.Values)
+        {
+            if (!activeIds.Contains(past.Id))
+            {
+                past.Status = "done";
+                past.Transferred = past.Size;
+                past.Speed = 0;
+                past.Eta = 0;
+                combined.Add(past);
+            }
+        }
+
+        // Active first, then latest by CreatedAt
+        return combined
+            .OrderByDescending(t => t.IsActive)
+            .ThenByDescending(t => t.CreatedAt)
+            .ToList();
+    }
+
+    public async Task<bool> StartDownloadAsync(string fileId)
+    {
+        try
+        {
+            var payload = new { fileId };
+            var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/native-downloads/start", payload);
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> PauseDownloadAsync(string taskId)
+    {
+        try
+        {
+            var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/native-downloads/pause", new { taskId });
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> ResumeDownloadAsync(string taskId)
+    {
+        try
+        {
+            var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/native-downloads/resume", new { taskId });
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> CancelTransferAsync(TransferTaskModel task)
+    {
+        try
+        {
+            if (task.IsUpload)
+            {
+                var res = await _http.DeleteAsync($"{BaseUrl}/api/uploads/{task.Id}");
+                _completedTransfers.TryRemove(task.Id, out _);
+                return res.IsSuccessStatusCode;
+            }
+            else
+            {
+                var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/native-downloads/cancel", new { taskId = task.Id });
+                return res.IsSuccessStatusCode;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> OpenFileAsync(string taskId)
+    {
+        try
+        {
+            var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/native-downloads/open", new { taskId });
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> RevealFileAsync(string taskId)
+    {
+        try
+        {
+            var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/native-downloads/reveal", new { taskId });
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> ClearFinishedDownloadsAsync()
+    {
+        try
+        {
+            // Clear local cached completed uploads
+            var toRemove = _completedTransfers.Where(c => c.Value.IsDone).Select(c => c.Key).ToList();
+            foreach (var k in toRemove) _completedTransfers.TryRemove(k, out _);
+
+            var res = await _http.PostAsync($"{BaseUrl}/api/native-downloads/clear-done", null);
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> UploadFilesAsync(IEnumerable<string> filePaths, string? folderId = null)
+    {
+        try
+        {
+            var validPaths = filePaths.Where(p => !string.IsNullOrWhiteSpace(p) && File.Exists(p)).ToList();
+            if (validPaths.Count == 0) return false;
+
+            var payload = new
+            {
+                paths = validPaths,
+                folderId,
+                conflict = "rename"
+            };
+            var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/native-uploads", payload);
+            return res.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"UploadFilesAsync error: {ex.Message}");
+            return false;
+        }
+    }
+
+    public async Task UploadDirectoryAsync(string dirPath, string? parentFolderId = null)
+    {
+        try
+        {
+            if (!Directory.Exists(dirPath)) return;
+            var dirInfo = new DirectoryInfo(dirPath);
+            var folderName = dirInfo.Name;
+
+            var createdFolderId = await CreateFolderAsync(folderName, parentFolderId);
+            var targetFolderId = !string.IsNullOrEmpty(createdFolderId) ? createdFolderId : parentFolderId;
+
+            var files = Directory.GetFiles(dirPath);
+            if (files.Length > 0)
+            {
+                await UploadFilesAsync(files, targetFolderId);
+            }
+
+            var subDirs = Directory.GetDirectories(dirPath);
+            foreach (var sub in subDirs)
+            {
+                await UploadDirectoryAsync(sub, targetFolderId);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"UploadDirectoryAsync error: {ex.Message}");
+        }
+    }
+
+    public async Task<string?> CreateFolderAsync(string name, string? parentId = null)
+    {
+        try
+        {
+            var payload = new { name, parentId };
+            var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/folders", payload);
+            if (res.IsSuccessStatusCode)
+            {
+                var json = await res.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("folder", out var f) && f.TryGetProperty("id", out var idElem))
+                {
+                    return idElem.GetString();
+                }
+            }
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<bool> RenameAsync(string id, bool isFolder, string newName)
+    {
+        try
+        {
+            var url = isFolder ? $"{BaseUrl}/api/folders/{id}" : $"{BaseUrl}/api/files/{id}";
+            var payload = new { name = newName };
+            var res = await _http.PatchAsJsonAsync(url, payload);
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> TrashAsync(string id, bool isFolder)
+    {
+        return await TrashItemsAsync(isFolder ? Array.Empty<string>() : new[] { id }, isFolder ? new[] { id } : Array.Empty<string>());
+    }
+
+    public async Task<bool> TrashItemsAsync(IEnumerable<string> fileIds, IEnumerable<string> folderIds)
+    {
+        try
+        {
+            var payload = new
+            {
+                fileIds = fileIds.ToArray(),
+                folderIds = folderIds.ToArray()
+            };
+            var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/items/trash", payload);
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<(List<FolderModel> Folders, List<FileModel> Files, ulong TotalSize)> GetTrashAsync()
+    {
+        try
+        {
+            var json = await _http.GetStringAsync($"{BaseUrl}/api/trash");
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            var folders = new List<FolderModel>();
+            if (root.TryGetProperty("folders", out var foldersArr))
+            {
+                foreach (var f in foldersArr.EnumerateArray())
+                {
+                    folders.Add(new FolderModel
+                    {
+                        Id = f.GetProperty("id").GetString() ?? "",
+                        ParentId = f.TryGetProperty("parentId", out var pid) ? pid.GetString() : null,
+                        Name = f.GetProperty("name").GetString() ?? "",
+                        Starred = f.TryGetProperty("starred", out var st) && st.GetBoolean(),
+                        CreatedAt = f.TryGetProperty("createdAt", out var ca) ? ca.GetInt64() : 0,
+                        UpdatedAt = f.TryGetProperty("updatedAt", out var ua) ? ua.GetInt64() : 0,
+                        ItemCount = f.TryGetProperty("itemCount", out var ic) ? ic.GetInt32() : 0,
+                    });
+                }
+            }
+
+            var files = new List<FileModel>();
+            if (root.TryGetProperty("files", out var filesArr))
+            {
+                foreach (var f in filesArr.EnumerateArray())
+                {
+                    var fid = f.GetProperty("id").GetString() ?? "";
+                    files.Add(new FileModel
+                    {
+                        Id = fid,
+                        FolderId = f.TryGetProperty("folderId", out var fidElem) ? fidElem.GetString() : null,
+                        BlobId = f.TryGetProperty("blobId", out var bid) ? bid.GetString() : null,
+                        Name = f.GetProperty("name").GetString() ?? "",
+                        Extension = f.TryGetProperty("extension", out var ext) ? ext.GetString() ?? "" : "",
+                        MimeType = f.TryGetProperty("mimeType", out var mt) ? mt.GetString() ?? "" : "",
+                        Category = f.TryGetProperty("category", out var cat) ? cat.GetString() ?? "document" : "document",
+                        Size = f.TryGetProperty("size", out var sz) ? sz.GetUInt64() : 0,
+                        Starred = f.TryGetProperty("starred", out var st) && st.GetBoolean(),
+                        HasThumbnail = f.TryGetProperty("hasThumbnail", out var ht) && ht.GetBoolean(),
+                        ThumbnailUrl = $"{BaseUrl}/api/thumbnails/{fid}",
+                        CreatedAt = f.TryGetProperty("createdAt", out var ca) ? ca.GetInt64() : 0,
+                        UpdatedAt = f.TryGetProperty("updatedAt", out var ua) ? ua.GetInt64() : 0,
+                        Width = f.TryGetProperty("width", out var wElem) && wElem.ValueKind == JsonValueKind.Number ? wElem.GetInt32() : null,
+                        Height = f.TryGetProperty("height", out var hElem) && hElem.ValueKind == JsonValueKind.Number ? hElem.GetInt32() : null,
+                        Duration = f.TryGetProperty("duration", out var dElem) && dElem.ValueKind == JsonValueKind.Number ? dElem.GetDouble() : null,
+                        PartCount = f.TryGetProperty("partCount", out var pcElem) && pcElem.ValueKind == JsonValueKind.Number ? pcElem.GetInt32() : null,
+                        TakenAt = f.TryGetProperty("takenAt", out var tkElem) && tkElem.ValueKind == JsonValueKind.Number ? tkElem.GetInt64() : null,
+                        MetadataJson = f.TryGetProperty("metadata", out var metaElem) && metaElem.ValueKind != JsonValueKind.Null ? metaElem.ToString() : null,
+                    });
+                }
+            }
+
+            ulong totalSize = 0;
+            if (root.TryGetProperty("totalSize", out var tsElem) && tsElem.ValueKind == JsonValueKind.Number)
+            {
+                totalSize = tsElem.GetUInt64();
+            }
+
+            return (folders, files, totalSize);
+        }
+        catch
+        {
+            return (new List<FolderModel>(), new List<FileModel>(), 0);
+        }
+    }
+
+    public async Task<bool> RestoreAsync(IEnumerable<string> fileIds, IEnumerable<string> folderIds)
+    {
+        try
+        {
+            var payload = new
+            {
+                fileIds = fileIds.ToArray(),
+                folderIds = folderIds.ToArray()
+            };
+            var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/items/restore", payload);
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> DeletePermanentlyAsync(IEnumerable<string> fileIds, IEnumerable<string> folderIds)
+    {
+        try
+        {
+            var payload = new
+            {
+                fileIds = fileIds.ToArray(),
+                folderIds = folderIds.ToArray()
+            };
+            var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/items/delete", payload);
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> EmptyTrashAsync()
+    {
+        try
+        {
+            var res = await _http.DeleteAsync($"{BaseUrl}/api/trash");
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> SetStarredAsync(string id, bool isFolder, bool star)
+    {
+        try
+        {
+            var payload = new
+            {
+                fileIds = isFolder ? Array.Empty<string>() : new[] { id },
+                folderIds = isFolder ? new[] { id } : Array.Empty<string>(),
+                starred = star
+            };
+            var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/items/star", payload);
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+}

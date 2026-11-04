@@ -1,0 +1,158 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release Tag (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-web-server:
+    name: Build Web & Fastify Server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Test Suite
+        run: npm test
+
+      - name: Build Web SPA and Server
+        run: npm run build
+
+      - name: Package Server & Web Bundle
+        run: |
+          mkdir -p release-pkg/teledrive
+          cp -r server/dist release-pkg/teledrive/server-dist
+          cp -r server/package.json release-pkg/teledrive/
+          cp -r web/dist release-pkg/teledrive/web-dist
+          cp -r deploy release-pkg/teledrive/
+          cp -r scripts release-pkg/teledrive/
+          cp README.md LICENSE package.json release-pkg/teledrive/
+          cd release-pkg
+          tar -czf ../teledrive-web-server.tar.gz teledrive
+
+      - name: Upload Server & Web Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: teledrive-web-server
+          path: teledrive-web-server.tar.gz
+
+  build-winui-desktop:
+    name: Build TeleDrive WinUI 3 Desktop (Windows x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Run .NET Unit Tests
+        run: dotnet test winui-desktop/TeleDrive.Tests/TeleDrive.Tests.csproj -c Release
+
+      - name: Publish WinUI Desktop (Self-Contained x64)
+        run: |
+          dotnet publish winui-desktop/TeleDrive.WinUI/TeleDrive.WinUI.csproj -c Release -p:Platform=x64 --self-contained true -o TeleDrive-WinUI-win-x64
+
+      - name: Compress WinUI Desktop Package
+        run: |
+          Compress-Archive -Path TeleDrive-WinUI-win-x64 -DestinationPath TeleDrive-WinUI-win-x64.zip
+
+      - name: Upload WinUI Desktop Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TeleDrive-WinUI-win-x64
+          path: TeleDrive-WinUI-win-x64.zip
+
+  build-rust-engine:
+    name: Build TeleDriveR Rust Daemon (Windows x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Run Rust Core Engine Tests
+        run: |
+          cd rust-desktop
+          cargo test
+
+      - name: Compile Rust Release Binary
+        run: |
+          cd rust-desktop
+          cargo build --release
+
+      - name: Package Rust Daemon
+        run: |
+          mkdir TeleDriveR-Daemon-win-x64
+          cp rust-desktop/target/release/TeleDriveR.exe TeleDriveR-Daemon-win-x64/
+          if (Test-Path rust-desktop/resources/bot-api) {
+            cp -r rust-desktop/resources/bot-api TeleDriveR-Daemon-win-x64/
+          }
+          Compress-Archive -Path TeleDriveR-Daemon-win-x64 -DestinationPath TeleDriveR-Daemon-win-x64.zip
+
+      - name: Upload Rust Daemon Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TeleDriveR-Daemon-win-x64
+          path: TeleDriveR-Daemon-win-x64.zip
+
+  create-release:
+    name: Publish GitHub Release
+    needs: [build-web-server, build-winui-desktop, build-rust-engine]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Compute SHA-256 Checksums
+        run: |
+          cd release-assets
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Determine Release Tag
+        id: release_tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_tag.outputs.tag }}
+          name: TeleDrive ${{ steps.release_tag.outputs.tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            release-assets/*

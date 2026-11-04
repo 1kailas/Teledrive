@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en" class="dark" style="background-color: #0d0f12;">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>TeleDriveR</title>
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <style>
+      html, body {
+        background-color: #0d0f12;
+        color: #f0f2f5;
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+      .td-boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background-color: #0d0f12;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+      }
+      .td-boot-logo {
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .td-boot-logo img {
+        width: 48px;
+        height: 48px;
+        object-fit: contain;
+      }
+      .td-boot-name {
+        font-weight: 600;
+        font-size: 14px;
+        color: #f0f2f5;
+        letter-spacing: .02em;
+      }
+      .td-boot-bar {
+        width: 130px;
+        height: 3px;
+        border-radius: 99px;
+        background: rgba(255, 255, 255, 0.08);
+        overflow: hidden;
+      }
+      .td-boot-bar > i {
+        display: block;
+        width: 40%;
+        height: 100%;
+        border-radius: 99px;
+        background: #38bdf8;
+        animation: td-slide 1.1s ease-in-out infinite;
+      }
+      @keyframes td-slide {
+        0% { transform: translateX(-110%); }
+        100% { transform: translateX(260%); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .td-boot-bar > i { animation: none; }
+      }
+    </style>
+  </head>
+  <body style="background-color: #0d0f12;">
+    <div id="root">
+      <div class="td-boot" role="status" aria-label="Loading TeleDriveR">
+        <div class="td-boot-logo">
+          <img src="/icon.png" alt="TeleDriveR" />
+        </div>
+        <div class="td-boot-name">TeleDriveR</div>
+        <div class="td-boot-bar"><i></i></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      (function() {
+        function notifyReady() {
+          if (window.ipc) {
+            window.ipc.postMessage('app-ready');
+          }
+        }
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+          notifyReady();
+        } else {
+          window.addEventListener('DOMContentLoaded', notifyReady);
+        }
+        window.addEventListener('load', notifyReady);
+      })();
+    </script>
+  </body>
+</html>
