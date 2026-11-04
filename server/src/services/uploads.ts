@@ -132,13 +132,14 @@ export function createUpload(ctx: AppContext, input: CreateUploadInput): UploadD
 
     // A retried create (network blip, refresh) should resume the existing
     // session instead of creating a second file/part set for the same bytes.
-    if (input.clientKey) {
+    const effectiveClientKey = input.clientKey ?? (input.lastModified ? clientKey(name, input.size, input.lastModified) : null);
+    if (effectiveClientKey) {
       const existing = db
         .prepare(
           `SELECT * FROM uploads WHERE client_key = ? AND status IN ('active','processing') AND expires_at > ?
            ORDER BY created_at DESC LIMIT 1`,
         )
-        .get(input.clientKey, now) as UploadRow | undefined;
+        .get(effectiveClientKey, now) as UploadRow | undefined;
       if (existing) {
         const existingFile = getFile(db, existing.file_id);
         if (existingFile && existingFile.folder_id === folderId) {

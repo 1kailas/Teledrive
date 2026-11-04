@@ -234,19 +234,26 @@ async function extractVideo(
   Object.keys(metadata).forEach((k) => metadata[k] === undefined && delete metadata[k]);
   // frame at min(10% duration, 5s) or 1s — requires a seekable file; part-0 of a
   // multi-part upload often has the moov atom at the end and will fail, which
-  // is fine (no thumbnail).
+  // is fine (no thumbnail), but we preserve probed width/height/duration/codec metadata!
+  let hasThumbnail = false;
   const seek = Math.max(0.1, Math.min((duration ?? 10) * 0.1, 5));
   const tmpPng = partPath + '.thumb.png';
-  await execFileP(
-    tools.ffmpeg,
-    ['-y', '-ss', String(seek), '-i', partPath, '-frames:v', '1', '-f', 'image2', tmpPng],
-    { timeout: MEDIA_TIMEOUT_MS },
-  );
-  const out = ensureThumbDir(dataDir, file.id);
-  await sharpToThumb(tmpPng, out, thumbSize);
-  fs.unlink(tmpPng, () => {});
+  try {
+    await execFileP(
+      tools.ffmpeg,
+      ['-y', '-ss', String(seek), '-i', partPath, '-frames:v', '1', '-f', 'image2', tmpPng],
+      { timeout: MEDIA_TIMEOUT_MS },
+    );
+    const out = ensureThumbDir(dataDir, file.id);
+    await sharpToThumb(tmpPng, out, thumbSize);
+    hasThumbnail = true;
+  } catch {
+    // Thumbnail extraction failed, but video stream metadata is successfully preserved
+  } finally {
+    fs.unlink(tmpPng, () => {});
+  }
   return {
-    hasThumbnail: true,
+    hasThumbnail,
     width: video?.width,
     height: video?.height,
     duration,
@@ -301,19 +308,37 @@ async function extractPdf(
   partPath: string,
   thumbSize: number,
 ): Promise<MediaResult> {
-  if (!tools.pdftoppm) return { hasThumbnail: false };
+  const metadata: Record<string, unknown> = { format: 'PDF' };
+  try {
+    const head = Buffer.alloc(256 * 1024);
+    const fd = fs.openSync(partPath, 'r');
+    const bytesRead = fs.readSync(fd, head, 0, head.length, 0);
+    fs.closeSync(fd);
+    const text = head.subarray(0, bytesRead).toString('latin1');
+    const countMatch = text.match(/\/Count\s+(\d+)/);
+    if (countMatch && countMatch[1]) {
+      const p = parseInt(countMatch[1], 10);
+      if (p > 0 && p < 100_000) metadata.pageCount = p;
+    }
+  } catch {}
+
+  if (!tools.pdftoppm) return { hasThumbnail: false, metadata };
   const prefix = partPath + '.pdfpage';
-  await execFileP(
-    tools.pdftoppm,
-    ['-png', '-f', '1', '-singlefile', '-scale-to', String(thumbSize * 2), partPath, prefix],
-    { timeout: MEDIA_TIMEOUT_MS },
-  );
-  const png = `${prefix}.png`;
-  const meta = await sharp(png).metadata();
-  const out = ensureThumbDir(dataDir, file.id);
-  await sharpToThumb(png, out, thumbSize);
-  fs.unlink(png, () => {});
-  return { hasThumbnail: true, width: meta.width, height: meta.height };
+  try {
+    await execFileP(
+      tools.pdftoppm,
+      ['-png', '-f', '1', '-singlefile', '-scale-to', String(thumbSize * 2), partPath, prefix],
+      { timeout: MEDIA_TIMEOUT_MS },
+    );
+    const png = `${prefix}.png`;
+    const meta = await sharp(png).metadata();
+    const out = ensureThumbDir(dataDir, file.id);
+    await sharpToThumb(png, out, thumbSize);
+    fs.unlink(png, () => {});
+    return { hasThumbnail: true, width: meta.width, height: meta.height, metadata };
+  } catch {
+    return { hasThumbnail: false, metadata };
+  }
 }
 
 /**

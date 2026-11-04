@@ -1074,6 +1074,23 @@ impl Database {
         let tokens: Vec<&str> = q.split_whitespace().collect();
         let state = self.state.read_safe();
 
+        // Resolve complete subtree folder IDs if filtering by folder
+        let subtree_ids: Option<std::collections::HashSet<String>> = filter.folder_id.as_ref().map(|root| {
+            let mut set = std::collections::HashSet::new();
+            set.insert(root.clone());
+            let mut queue = vec![root.clone()];
+            while let Some(cur) = queue.pop() {
+                for folder in &state.folders {
+                    if folder.trashed_at.is_none() && folder.parent_id.as_deref() == Some(&cur) {
+                        if set.insert(folder.id.clone()) {
+                            queue.push(folder.id.clone());
+                        }
+                    }
+                }
+            }
+            set
+        });
+
         let mut scored_files: Vec<(FileDTO, i32)> = Vec::new();
         for f in state.files.iter().filter(|f| f.trashed_at.is_none()) {
             if let Some(ref cat) = filter.category {
@@ -1094,8 +1111,9 @@ impl Database {
             if let Some(starred) = filter.starred {
                 if (f.starred != 0) != starred { continue; }
             }
-            if let Some(ref fid) = filter.folder_id {
-                if f.folder_id.as_deref() != Some(fid.as_str()) { continue; }
+            if let Some(ref s_ids) = subtree_ids {
+                let in_tree = f.folder_id.as_ref().map_or(false, |fid| s_ids.contains(fid));
+                if !in_tree { continue; }
             }
 
             let name_lower = f.name.to_lowercase();
@@ -1139,13 +1157,19 @@ impl Database {
             }
         }
 
-        scored_files.sort_by(|a, b| b.1.cmp(&a.1));
+        scored_files.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| b.0.created_at.cmp(&a.0.created_at)));
         let files: Vec<FileDTO> = scored_files.into_iter().map(|(f, _)| f).collect();
 
         let mut scored_folders: Vec<(FolderDTO, i32)> = Vec::new();
         for f in state.folders.iter().filter(|f| f.trashed_at.is_none()) {
             if filter.category.as_ref().map_or(false, |c| !c.is_empty() && c != "folders") {
                 continue;
+            }
+            if let Some(ref s_ids) = subtree_ids {
+                // If searching in a folder, only include descendant subfolders
+                if !s_ids.contains(&f.id) || filter.folder_id.as_deref() == Some(&f.id) {
+                    continue;
+                }
             }
             let name_lower = f.name.to_lowercase();
             let mut matches_all = true;
@@ -1174,7 +1198,7 @@ impl Database {
             }
         }
 
-        scored_folders.sort_by(|a, b| b.1.cmp(&a.1));
+        scored_folders.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.name.to_lowercase().cmp(&b.0.name.to_lowercase())));
         let folders: Vec<FolderDTO> = scored_folders.into_iter().map(|(f, _)| f).collect();
         let total = files.len() + folders.len();
 

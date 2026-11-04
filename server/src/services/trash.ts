@@ -220,16 +220,23 @@ export function listTrash(ctx: AppContext): { folders: FolderRow[]; files: FileR
   const files = db
     .prepare('SELECT * FROM files WHERE trash_root = 1 AND trashed_at IS NOT NULL ORDER BY name COLLATE NOCASE')
     .all() as FileRow[];
-  const totalSize =
-    files.reduce((a, f) => a + f.size, 0) +
-    folders.reduce((a, f) => {
-      const ids = subtreeFolderIds(db, f.id);
-      const r = db
-        .prepare(
-          `SELECT COALESCE(SUM(size),0) s FROM files WHERE folder_id IN (SELECT value FROM json_each(?))`,
-        )
-        .get(JSON.stringify(ids)) as { s: number };
-      return a + r.s;
-    }, 0);
+
+  let folderSizeSum = 0;
+  if (folders.length > 0) {
+    const allFolderIds = new Set<string>();
+    for (const f of folders) {
+      for (const id of subtreeFolderIds(db, f.id)) {
+        allFolderIds.add(id);
+      }
+    }
+    const r = db
+      .prepare(
+        `SELECT COALESCE(SUM(size),0) s FROM files WHERE folder_id IN (SELECT value FROM json_each(?))`,
+      )
+      .get(JSON.stringify([...allFolderIds])) as { s: number };
+    folderSizeSum = r.s;
+  }
+
+  const totalSize = files.reduce((a, f) => a + f.size, 0) + folderSizeSum;
   return { folders, files, totalSize };
 }
