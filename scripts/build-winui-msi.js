@@ -48,10 +48,10 @@ function findWixDir() {
 
 const wixBinWinPath = findWixDir();
 
-// Locate application source
-let appSrcWsl = path.resolve(__dirname, '../winui-desktop/TeleDrive.WinUI/bin/x64/Release/net8.0-windows10.0.26100.0/win-x64');
+// Locate application source (prefer self-contained publish output)
+let appSrcWsl = path.resolve(__dirname, '../winui-desktop/publish');
 if (!fs.existsSync(path.join(appSrcWsl, 'TeleDrive.WinUI.exe'))) {
-  appSrcWsl = path.resolve(__dirname, '../winui-desktop/publish');
+  appSrcWsl = path.resolve(__dirname, '../winui-desktop/TeleDrive.WinUI/bin/x64/Release/net8.0-windows10.0.26100.0/win-x64');
 }
 if (!fs.existsSync(path.join(appSrcWsl, 'TeleDrive.WinUI.exe'))) {
   appSrcWsl = path.resolve(__dirname, '../TeleDrive-WinUI-win-x64');
@@ -76,6 +76,11 @@ const winTempWinPath = toWinPath(winTempWsl);
 
 console.log(`Building MSI for TeleDrive from: ${appSrcWsl}`);
 console.log(`Working directory: ${winTempWsl} (${winTempWinPath})`);
+
+// Stage files into local Windows Temp folder for fast, reliable WiX linking (bypasses UNC share limits)
+const stageAppWsl = path.join(winTempWsl, 'app');
+console.log(`Staging application files into: ${stageAppWsl}...`);
+fs.cpSync(appSrcWsl, stageAppWsl, { recursive: true });
 
 function sanitizeId(str) {
   return 'c_' + str.replace(/[^a-zA-Z0-9_]/g, '_').slice(-60);
@@ -115,7 +120,7 @@ function walk(currentDir, relDir = '') {
   }
 }
 
-walk(appSrcWsl);
+walk(stageAppWsl);
 console.log(`Indexed ${components.length} files across ${dirMap.size} subdirectories.`);
 
 // Copy icon to temp for WiX

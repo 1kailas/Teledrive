@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using Microsoft.UI;
+using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -1386,12 +1387,12 @@ public sealed partial class MainPage : Page
 
                     if (filePaths.Count > 0)
                     {
-                        await _service.UploadFilesAsync(filePaths, _currentFolderId);
+                        await UploadFilesWithConflictCheckAsync(filePaths, _currentFolderId);
                     }
 
                     foreach (var folderPath in folderPaths)
                     {
-                        await _service.UploadDirectoryAsync(folderPath, _currentFolderId);
+                        await UploadDirectoryWithConflictCheckAsync(folderPath, _currentFolderId);
                     }
 
                     await RefreshTransfersAsync();
@@ -1406,6 +1407,307 @@ public sealed partial class MainPage : Page
                 def.Complete();
             }
         }
+    }
+
+    private async Task UploadFilesWithConflictCheckAsync(IEnumerable<string> filePaths, string? targetFolderId)
+    {
+        try
+        {
+            var validPaths = filePaths.Where(p => !string.IsNullOrWhiteSpace(p) && File.Exists(p)).ToList();
+            if (validPaths.Count == 0) return;
+
+            // 1. Fetch current files in destination folder to accurately detect duplicates
+            var (_, existingFiles) = await _service.GetDriveAsync(targetFolderId);
+            var existingMap = existingFiles
+                .GroupBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+            var nonConflicting = new List<string>();
+            var conflicting = new List<(string SourcePath, FileModel ExistingFile)>();
+
+            foreach (var path in validPaths)
+            {
+                var name = Path.GetFileName(path);
+                if (existingMap.TryGetValue(name, out var existingFile))
+                {
+                    conflicting.Add((path, existingFile));
+                }
+                else
+                {
+                    nonConflicting.Add(path);
+                }
+            }
+
+            // 2. Fast path: no conflicts exist
+            if (conflicting.Count == 0)
+            {
+                await _service.UploadFilesAsync(validPaths, targetFolderId, "rename");
+                await RefreshTransfersAsync();
+                return;
+            }
+
+            // 3. Conflicts found: resolve interactively like Windows File Explorer
+            var filesToReplace = new List<string>();
+            var filesToRename = new List<string>(nonConflicting);
+            bool applyToAll = false;
+            string? rememberedAction = null;
+
+            for (int i = 0; i < conflicting.Count; i++)
+            {
+                var (sourcePath, existingFile) = conflicting[i];
+
+                if (applyToAll && rememberedAction != null)
+                {
+                    if (rememberedAction == "replace") filesToReplace.Add(sourcePath);
+                    else if (rememberedAction == "rename") filesToRename.Add(sourcePath);
+                    // if "skip", do nothing
+                    continue;
+                }
+
+                var sourceInfo = new FileInfo(sourcePath);
+                var (action, doAll) = await ShowConflictDialogAsync(sourcePath, sourceInfo, existingFile, i + 1, conflicting.Count);
+
+                if (action == "cancel")
+                {
+                    // User aborted upload flow
+                    break;
+                }
+
+                if (doAll)
+                {
+                    applyToAll = true;
+                    rememberedAction = action;
+                }
+
+                if (action == "replace") filesToReplace.Add(sourcePath);
+                else if (action == "rename") filesToRename.Add(sourcePath);
+                // if "skip", do nothing
+            }
+
+            // 4. Fire the uploads according to resolution
+            if (filesToReplace.Count > 0)
+            {
+                await _service.UploadFilesAsync(filesToReplace, targetFolderId, "replace");
+            }
+            if (filesToRename.Count > 0)
+            {
+                await _service.UploadFilesAsync(filesToRename, targetFolderId, "rename");
+            }
+
+            await RefreshTransfersAsync();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"UploadFilesWithConflictCheckAsync error: {ex.Message}");
+        }
+    }
+
+    private async Task UploadDirectoryWithConflictCheckAsync(string dirPath, string? parentFolderId)
+    {
+        try
+        {
+            if (!Directory.Exists(dirPath)) return;
+            var dirInfo = new DirectoryInfo(dirPath);
+            var folderName = dirInfo.Name;
+
+            var createdFolderId = await _service.CreateFolderAsync(folderName, parentFolderId);
+            var targetFolderId = !string.IsNullOrEmpty(createdFolderId) ? createdFolderId : parentFolderId;
+
+            var files = Directory.GetFiles(dirPath);
+            if (files.Length > 0)
+            {
+                await UploadFilesWithConflictCheckAsync(files, targetFolderId);
+            }
+
+            var subDirs = Directory.GetDirectories(dirPath);
+            foreach (var sub in subDirs)
+            {
+                await UploadDirectoryWithConflictCheckAsync(sub, targetFolderId);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"UploadDirectoryWithConflictCheckAsync error: {ex.Message}");
+        }
+    }
+
+    private async Task<(string Action, bool ApplyToAll)> ShowConflictDialogAsync(
+        string sourcePath,
+        FileInfo sourceInfo,
+        FileModel existingFile,
+        int conflictIndex,
+        int totalConflicts)
+    {
+        var fileName = Path.GetFileName(sourcePath);
+        var rootPanel = new StackPanel { Spacing = 14, Width = 460 };
+
+        // Subtitle / Question
+        var questionText = new TextBlock
+        {
+            Text = totalConflicts > 1
+                ? $"Conflict ({conflictIndex} of {totalConflicts}): The destination already has a file named \"{fileName}\""
+                : $"The destination already has a file named \"{fileName}\"",
+            FontWeight = FontWeights.SemiBold,
+            FontSize = 14,
+            TextWrapping = TextWrapping.Wrap
+        };
+        rootPanel.Children.Add(questionText);
+
+        // Comparison card grid
+        var cardGrid = new Grid
+        {
+            ColumnSpacing = 12,
+            Padding = new Thickness(12),
+            Background = Application.Current.Resources.TryGetValue("CardBackgroundFillColorDefaultBrush", out var cardBg)
+                ? (Brush)cardBg
+                : new SolidColorBrush(Windows.UI.Color.FromArgb(24, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            BorderBrush = Application.Current.Resources.TryGetValue("CardStrokeColorDefaultBrush", out var cardStroke)
+                ? (Brush)cardStroke
+                : new SolidColorBrush(Windows.UI.Color.FromArgb(40, 255, 255, 255)),
+            CornerRadius = new CornerRadius(8)
+        };
+        cardGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        cardGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        // Existing file in cloud (Left)
+        var existingPanel = new StackPanel { Spacing = 4 };
+        existingPanel.Children.Add(new TextBlock
+        {
+            Text = "EXISTING IN CLOUD",
+            FontSize = 10,
+            FontWeight = FontWeights.Bold,
+            Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 168, 85, 247))
+        });
+        existingPanel.Children.Add(new TextBlock
+        {
+            Text = FileModel.FormatBytes((ulong)Math.Max(0, existingFile.Size)),
+            FontSize = 13,
+            FontWeight = FontWeights.Medium
+        });
+        var existingDate = DateTimeOffset.FromUnixTimeMilliseconds(existingFile.CreatedAt).LocalDateTime;
+        existingPanel.Children.Add(new TextBlock
+        {
+            Text = existingDate.ToString("g"),
+            FontSize = 11,
+            Opacity = 0.75
+        });
+        Grid.SetColumn(existingPanel, 0);
+        cardGrid.Children.Add(existingPanel);
+
+        // Incoming file from PC (Right)
+        var sourcePanel = new StackPanel { Spacing = 4 };
+        sourcePanel.Children.Add(new TextBlock
+        {
+            Text = "INCOMING FILE (PC)",
+            FontSize = 10,
+            FontWeight = FontWeights.Bold,
+            Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 56, 189, 248))
+        });
+        sourcePanel.Children.Add(new TextBlock
+        {
+            Text = FileModel.FormatBytes((ulong)Math.Max(0, sourceInfo.Length)),
+            FontSize = 13,
+            FontWeight = FontWeights.Medium
+        });
+        sourcePanel.Children.Add(new TextBlock
+        {
+            Text = sourceInfo.LastWriteTime.ToString("g"),
+            FontSize = 11,
+            Opacity = 0.75
+        });
+        Grid.SetColumn(sourcePanel, 1);
+        cardGrid.Children.Add(sourcePanel);
+
+        rootPanel.Children.Add(cardGrid);
+
+        // Choices
+        var radioPanel = new StackPanel { Spacing = 8, Margin = new Thickness(0, 4, 0, 0) };
+
+        var rbReplace = new RadioButton
+        {
+            GroupName = "ConflictActionGroup",
+            IsChecked = true,
+            Content = new StackPanel
+            {
+                Spacing = 2,
+                Children =
+                {
+                    new TextBlock { Text = "Replace the file in the destination", FontWeight = FontWeights.Medium, FontSize = 13 },
+                    new TextBlock { Text = "Replaces the existing cloud file with the newly uploaded version", FontSize = 11.5, Opacity = 0.7 }
+                }
+            }
+        };
+
+        var rbRename = new RadioButton
+        {
+            GroupName = "ConflictActionGroup",
+            Content = new StackPanel
+            {
+                Spacing = 2,
+                Children =
+                {
+                    new TextBlock { Text = "Keep both files (Rename incoming file)", FontWeight = FontWeights.Medium, FontSize = 13 },
+                    new TextBlock { Text = "The new file will be saved with a number suffix (e.g. \"(1)\")", FontSize = 11.5, Opacity = 0.7 }
+                }
+            }
+        };
+
+        var rbSkip = new RadioButton
+        {
+            GroupName = "ConflictActionGroup",
+            Content = new StackPanel
+            {
+                Spacing = 2,
+                Children =
+                {
+                    new TextBlock { Text = "Skip this file", FontWeight = FontWeights.Medium, FontSize = 13 },
+                    new TextBlock { Text = "Do not upload this file and keep the existing file unchanged", FontSize = 11.5, Opacity = 0.7 }
+                }
+            }
+        };
+
+        radioPanel.Children.Add(rbReplace);
+        radioPanel.Children.Add(rbRename);
+        radioPanel.Children.Add(rbSkip);
+        rootPanel.Children.Add(radioPanel);
+
+        // Checkbox for bulk conflicts
+        CheckBox? applyAllCheck = null;
+        if (totalConflicts > 1)
+        {
+            int remaining = totalConflicts - conflictIndex + 1;
+            applyAllCheck = new CheckBox
+            {
+                Content = $"Do this for all remaining conflicts ({remaining} item{(remaining > 1 ? "s" : "")})",
+                FontSize = 12,
+                Margin = new Thickness(0, 4, 0, 0)
+            };
+            rootPanel.Children.Add(applyAllCheck);
+        }
+
+        var dialog = new ContentDialog
+        {
+            Title = "Replace or Skip Files",
+            Content = rootPanel,
+            PrimaryButtonText = "Continue",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = this.XamlRoot
+        };
+
+        var result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.Primary)
+        {
+            string action = "replace";
+            if (rbRename.IsChecked == true) action = "rename";
+            else if (rbSkip.IsChecked == true) action = "skip";
+
+            bool doAll = applyAllCheck?.IsChecked == true;
+            return (action, doAll);
+        }
+
+        return ("cancel", false);
     }
 
     private async Task<string?> GetOrCreateSpecialFolderIdAsync(string folderName)
@@ -1634,8 +1936,7 @@ public sealed partial class MainPage : Page
             if (files != null && files.Count > 0)
             {
                 var paths = files.Select(f => f.Path).ToList();
-                await _service.UploadFilesAsync(paths, _currentFolderId);
-                await RefreshTransfersAsync();
+                await UploadFilesWithConflictCheckAsync(paths, _currentFolderId);
             }
         }
         catch (Exception ex)
@@ -1660,8 +1961,7 @@ public sealed partial class MainPage : Page
             var folder = await picker.PickSingleFolderAsync();
             if (folder != null && Directory.Exists(folder.Path))
             {
-                await _service.UploadDirectoryAsync(folder.Path, _currentFolderId);
-                await RefreshTransfersAsync();
+                await UploadDirectoryWithConflictCheckAsync(folder.Path, _currentFolderId);
             }
         }
         catch (Exception ex)

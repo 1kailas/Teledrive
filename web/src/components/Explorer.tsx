@@ -63,7 +63,7 @@ const CARD_SPECS: Record<CardSize, CardSpec> = {
 import { fmtBytes, relDate, itemId, itemName, isTextEditable, FolderIcon, typeLabel, sortItems, type Item } from '../utils';
 import { Thumb, FileTypeIcon, StarBadge, EmptyState } from './ui';
 import { ContextMenu, type MenuItem } from './Menu';
-import { startUpload , pickNativeFiles, isDesktopNativeUploads } from '../upload';
+import { startUpload, startUploadsWithConflictCheck, pickNativeFiles, isDesktopNativeUploads } from '../upload';
 import { startDownload } from '../download';
 import { useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -190,7 +190,7 @@ export function emptySpaceMenu(
   ];
 }
 
-export function pickFiles(folderId: string | null) {
+export function pickFiles(folderId: string | null, existingFiles?: FileDTO[]) {
   // Desktop: the OS picker returns real paths; the Rust server reads them
   // from disk. Browser builds keep the File-input flow.
   if (isDesktopNativeUploads()) {
@@ -199,7 +199,20 @@ export function pickFiles(folderId: string | null) {
   }
   const inp = document.createElement('input');
   inp.type = 'file'; inp.multiple = true;
-  inp.onchange = () => { for (const f of Array.from(inp.files ?? [])) startUpload(f, { folderId }); };
+  inp.onchange = async () => {
+    const list = Array.from(inp.files ?? []);
+    if (!list.length) return;
+    let destFiles = existingFiles;
+    if (!destFiles) {
+      try {
+        const driveRes = await api.get<{ files: FileDTO[] }>(folderId ? `/api/drive?folderId=${encodeURIComponent(folderId)}` : '/api/drive');
+        destFiles = driveRes.files;
+      } catch {
+        destFiles = [];
+      }
+    }
+    void startUploadsWithConflictCheck(list, { folderId, existingFiles: destFiles });
+  };
   inp.click();
 }
 export function pickFolder(folderId: string | null) {
@@ -544,7 +557,12 @@ export function Explorer({ folders, files, folderId = null, currentFolder = null
         if (entry) entries.push(readEntry(entry, ''));
       }
       await Promise.all(entries);
-      if (!entries.length) for (const f of Array.from(dt.files)) startUpload(f, { folderId });
+      if (!entries.length) {
+        const dropFiles = Array.from(dt.files);
+        if (dropFiles.length) {
+          void startUploadsWithConflictCheck(dropFiles, { folderId, existingFiles: files });
+        }
+      }
     };
     const onDrag = (e: DragEvent) => { e.preventDefault(); if (e.dataTransfer?.types.includes('Files')) setDragOver(true); };
     const onLeave = (e: DragEvent) => { if (e.relatedTarget === null) setDragOver(false); };

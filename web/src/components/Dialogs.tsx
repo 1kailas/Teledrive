@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, Folder as FolderIcon, Copy as CopyIcon, Link
 import { api, type TreeFolder, type ShareDTO } from '../api';
 import { useDialog, toast } from '../store';
 import { Modal, Spinner } from './ui';
+import { fmtBytes } from '../utils';
 import clsx from 'clsx';
 
 export function DialogHost() {
@@ -19,6 +20,7 @@ export function DialogHost() {
     case 'move': return <MoveDialog {...dialog} close={close} refresh={refresh} />;
     case 'share': return <ShareDialog {...dialog} close={close} />;
     case 'confirm': return <ConfirmDialog {...dialog} close={close} />;
+    case 'conflict': return <ConflictDialog {...dialog} close={close} />;
   }
 }
 
@@ -243,6 +245,143 @@ function ConfirmDialog({ title, body, danger, onOk, close }: { title: string; bo
         <button className="btn" onClick={close}>Cancel</button>
         <button className={clsx('btn', danger ? '!bg-[var(--danger)] !border-[var(--danger)] !text-white' : 'btn-primary')}
           autoFocus onClick={() => { onOk(); close(); }}>Confirm</button>
+      </div>
+    </Modal>
+  );
+}
+
+function ConflictDialog({
+  fileName,
+  sourceSize,
+  sourceTime,
+  targetSize,
+  targetTime,
+  conflictIndex,
+  totalConflicts,
+  onResolve,
+  onCancel,
+  close,
+}: {
+  fileName: string;
+  sourceSize: number;
+  sourceTime?: number;
+  targetSize: number;
+  targetTime: number;
+  conflictIndex: number;
+  totalConflicts: number;
+  onResolve: (action: 'replace' | 'rename' | 'skip', applyToAll: boolean) => void;
+  onCancel?: () => void;
+  close: () => void;
+}) {
+  const [choice, setChoice] = useState<'replace' | 'rename' | 'skip'>('replace');
+  const [applyToAll, setApplyToAll] = useState(false);
+
+  const handleClose = () => {
+    close();
+    onCancel?.();
+  };
+
+  const handleContinue = () => {
+    close();
+    onResolve(choice, applyToAll);
+  };
+
+  return (
+    <Modal title="Replace or Skip Files" onClose={handleClose}>
+      <div className="space-y-4 text-xs">
+        <p className="text-[13.5px] font-medium leading-relaxed">
+          {totalConflicts > 1 ? <span className="font-semibold text-text">Conflict ({conflictIndex} of {totalConflicts}): </span> : null}
+          The destination already has a file named <strong className="font-semibold text-text">"{fileName}"</strong>
+        </p>
+
+        {/* Side-by-side comparison card */}
+        <div className="grid grid-cols-2 gap-3 p-3 rounded-xl bg-surface-2 border border-app">
+          <div className="space-y-1">
+            <span className="text-[10px] uppercase font-bold tracking-wider text-purple-400">Existing in Drive</span>
+            <div className="font-semibold text-sm text-text">{fmtBytes(targetSize)}</div>
+            <div className="text-3 text-[11px]">{new Date(targetTime).toLocaleString()}</div>
+          </div>
+          <div className="space-y-1 border-l border-app pl-3">
+            <span className="text-[10px] uppercase font-bold tracking-wider text-sky-400">Incoming file</span>
+            <div className="font-semibold text-sm text-text">{fmtBytes(sourceSize)}</div>
+            {sourceTime ? (
+              <div className="text-3 text-[11px]">{new Date(sourceTime).toLocaleString()}</div>
+            ) : (
+              <div className="text-3 text-[11px]">Local computer</div>
+            )}
+          </div>
+        </div>
+
+        {/* Choices */}
+        <div className="space-y-2 pt-1">
+          <label className={clsx(
+            'flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition select-none',
+            choice === 'replace' ? 'bg-surface-2 border-sky-500/40 shadow-sm' : 'border-app hover:bg-surface-2/60'
+          )}>
+            <input
+              type="radio"
+              name="conflictChoice"
+              checked={choice === 'replace'}
+              onChange={() => setChoice('replace')}
+              className="mt-0.5"
+            />
+            <div>
+              <div className="font-medium text-text text-xs">Replace the file in the destination</div>
+              <div className="text-3 text-[11px] mt-0.5">Replaces the existing cloud file with this newly uploaded version</div>
+            </div>
+          </label>
+
+          <label className={clsx(
+            'flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition select-none',
+            choice === 'rename' ? 'bg-surface-2 border-sky-500/40 shadow-sm' : 'border-app hover:bg-surface-2/60'
+          )}>
+            <input
+              type="radio"
+              name="conflictChoice"
+              checked={choice === 'rename'}
+              onChange={() => setChoice('rename')}
+              className="mt-0.5"
+            />
+            <div>
+              <div className="font-medium text-text text-xs">Keep both files (Rename new file)</div>
+              <div className="text-3 text-[11px] mt-0.5">The uploaded file will be saved with a number suffix like "(1)"</div>
+            </div>
+          </label>
+
+          <label className={clsx(
+            'flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition select-none',
+            choice === 'skip' ? 'bg-surface-2 border-sky-500/40 shadow-sm' : 'border-app hover:bg-surface-2/60'
+          )}>
+            <input
+              type="radio"
+              name="conflictChoice"
+              checked={choice === 'skip'}
+              onChange={() => setChoice('skip')}
+              className="mt-0.5"
+            />
+            <div>
+              <div className="font-medium text-text text-xs">Skip this file</div>
+              <div className="text-3 text-[11px] mt-0.5">Do not upload this file and leave the existing file unchanged</div>
+            </div>
+          </label>
+        </div>
+
+        {totalConflicts > 1 && (
+          <label className="flex items-center gap-2 pt-1 text-3 hover:text-text cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={applyToAll}
+              onChange={(e) => setApplyToAll(e.target.checked)}
+              className="rounded"
+            />
+            <span>Do this for all remaining conflicts ({totalConflicts - conflictIndex + 1} files)</span>
+          </label>
+        )}
+
+        <div className="flex justify-end gap-2 pt-3 border-t border-app">
+          <button className="btn" onClick={handleClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleContinue}>Continue</button>
+        </div>
       </div>
     </Modal>
   );

@@ -6,10 +6,9 @@
 // upload releases its file and slice slots so it never blocks other transfers.
 import { create } from 'zustand';
 import { api, type UploadDTO, type Config, ApiError } from './api';
-import { toast } from './store';
+import { toast, useUi, useDialog, type FileDTO } from './store';
 import { queryClient } from './query';
 import { requestVideoThumbnail } from './videoThumb';
-import { useUi } from './store';
 
 export type UploadStatus =
   | 'queued' | 'creating' | 'uploading' | 'paused' | 'processing'
@@ -282,7 +281,7 @@ async function sendSlice(
 // ---------- public API ----------
 export function startUpload(
   file: File,
-  opts: { folderId?: string | null; relativePath?: string; uploadId?: string; fileId?: string; key?: string },
+  opts: { folderId?: string | null; relativePath?: string; uploadId?: string; fileId?: string; key?: string; onConflict?: 'rename' | 'replace' | 'error' } = {},
 ): string {
   const key = opts.key ?? `${file.name}-${file.size}-${Date.now()}-${Math.random()}`;
   // A resumed session reuses the interrupted task key so the panel replaces
@@ -319,6 +318,84 @@ export function startUpload(
     }
   });
   return key;
+}
+
+/**
+ * Uploads a list of files, detecting any same-name conflicts with existing files in the destination.
+ * If conflicts exist, prompts the user with a File Explorer-like conflict dialog (Replace, Rename, Skip).
+ */
+export async function startUploadsWithConflictCheck(
+  files: File[],
+  opts: { folderId?: string | null; relativePath?: string; existingFiles?: FileDTO[] } = {},
+): Promise<void> {
+  const folderId = opts.folderId ?? null;
+  const existingFiles = opts.existingFiles ?? [];
+  const existingMap = new Map<string, FileDTO>();
+  for (const f of existingFiles) {
+    if (f.status !== 'trashed') existingMap.set(f.name.toLowerCase(), f);
+  }
+
+  const nonConflicting: File[] = [];
+  const conflicting: { file: File; existing: FileDTO }[] = [];
+
+  for (const f of files) {
+    const rival = existingMap.get(f.name.toLowerCase());
+    if (rival) {
+      conflicting.push({ file: f, existing: rival });
+    } else {
+      nonConflicting.push(f);
+    }
+  }
+
+  // Upload non-conflicting files immediately
+  for (const f of nonConflicting) {
+    startUpload(f, { folderId, relativePath: opts.relativePath, onConflict: 'rename' });
+  }
+
+  if (conflicting.length === 0) return;
+
+  // Interactively resolve conflicting files
+  let applyToAll = false;
+  let rememberedAction: 'replace' | 'rename' | 'skip' | null = null;
+
+  for (const [i, item] of conflicting.entries()) {
+    const { file, existing } = item;
+
+    if (applyToAll && rememberedAction) {
+      if (rememberedAction !== 'skip') {
+        startUpload(file, { folderId, relativePath: opts.relativePath, onConflict: rememberedAction });
+      }
+      continue;
+    }
+
+    const resolution = await new Promise<{ action: 'replace' | 'rename' | 'skip' | 'cancel'; applyToAll: boolean }>((resolve) => {
+      useDialog.getState().open({
+        kind: 'conflict',
+        fileName: file.name,
+        sourceSize: file.size,
+        sourceTime: file.lastModified,
+        targetSize: existing.size,
+        targetTime: existing.createdAt,
+        conflictIndex: i + 1,
+        totalConflicts: conflicting.length,
+        onResolve: (action, all) => resolve({ action, applyToAll: all }),
+        onCancel: () => resolve({ action: 'cancel', applyToAll: false }),
+      });
+    });
+
+    if (resolution.action === 'cancel') {
+      break;
+    }
+
+    if (resolution.applyToAll) {
+      applyToAll = true;
+      rememberedAction = resolution.action;
+    }
+
+    if (resolution.action !== 'skip') {
+      startUpload(file, { folderId, relativePath: opts.relativePath, onConflict: resolution.action });
+    }
+  }
 }
 
 interface PartPlan {
@@ -462,7 +539,7 @@ async function sendSlicePass(
 async function runUpload(
   key: string,
   file: File,
-  opts: { folderId?: string | null; relativePath?: string; uploadId?: string; fileId?: string },
+  opts: { folderId?: string | null; relativePath?: string; uploadId?: string; fileId?: string; onConflict?: 'rename' | 'replace' | 'error' },
 ): Promise<void> {
   const runner = runners.get(key);
   if (!runner) return;
@@ -482,7 +559,7 @@ async function runUpload(
           name: file.name, size: file.size, mimeType: file.type || undefined,
           folderId: opts.folderId ?? null, lastModified: file.lastModified,
           relativePath: opts.relativePath,
-          onConflict: useUi.getState().uploadConflict,
+          onConflict: opts.onConflict ?? useUi.getState().uploadConflict,
           clientKey: clientKey(file),
         });
         uploadId = upload.id;

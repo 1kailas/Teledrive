@@ -132,7 +132,19 @@ export type DialogKind =
   | { kind: 'newText'; folderId: string | null }
   | { kind: 'move'; fileIds: string[]; folderIds: string[]; copy: boolean }
   | { kind: 'share'; fileId?: string; folderId?: string; name: string }
-  | { kind: 'confirm'; title: string; body: string; danger?: boolean; onOk: () => void };
+  | { kind: 'confirm'; title: string; body: string; danger?: boolean; onOk: () => void }
+  | {
+      kind: 'conflict';
+      fileName: string;
+      sourceSize: number;
+      sourceTime?: number;
+      targetSize: number;
+      targetTime: number;
+      conflictIndex: number;
+      totalConflicts: number;
+      onResolve: (action: 'replace' | 'rename' | 'skip', applyToAll: boolean) => void;
+      onCancel?: () => void;
+    };
 interface DialogState { dialog: DialogKind | null; open: (d: DialogKind) => void; close: () => void }
 export const useDialog = create<DialogState>()((set) => ({
   dialog: null, open: (dialog) => set({ dialog }), close: () => set({ dialog: null }),

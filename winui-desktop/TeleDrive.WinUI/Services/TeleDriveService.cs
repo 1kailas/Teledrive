@@ -661,7 +661,7 @@ public class TeleDriveService
         }
     }
 
-    public async Task<bool> UploadFilesAsync(IEnumerable<string> filePaths, string? folderId = null)
+    public async Task<bool> UploadFilesAsync(IEnumerable<string> filePaths, string? folderId = null, string conflict = "rename")
     {
         try
         {
@@ -672,7 +672,7 @@ public class TeleDriveService
             {
                 paths = validPaths,
                 folderId,
-                conflict = "rename"
+                conflict
             };
             var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/native-uploads", payload);
             return res.IsSuccessStatusCode;
@@ -684,7 +684,7 @@ public class TeleDriveService
         }
     }
 
-    public async Task UploadDirectoryAsync(string dirPath, string? parentFolderId = null)
+    public async Task UploadDirectoryAsync(string dirPath, string? parentFolderId = null, string conflict = "rename")
     {
         try
         {
@@ -698,13 +698,13 @@ public class TeleDriveService
             var files = Directory.GetFiles(dirPath);
             if (files.Length > 0)
             {
-                await UploadFilesAsync(files, targetFolderId);
+                await UploadFilesAsync(files, targetFolderId, conflict);
             }
 
             var subDirs = Directory.GetDirectories(dirPath);
             foreach (var sub in subDirs)
             {
-                await UploadDirectoryAsync(sub, targetFolderId);
+                await UploadDirectoryAsync(sub, targetFolderId, conflict);
             }
         }
         catch (Exception ex)
