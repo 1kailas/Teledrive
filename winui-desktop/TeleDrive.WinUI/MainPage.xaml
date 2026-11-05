@@ -248,7 +248,8 @@
                                         FontSize="12"
                                         FontWeight="SemiBold"
                                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                        Text="FOLDERS" />
+                                        Text="FOLDERS"
+                                        Margin="4,0,0,0" />
                                     <GridView
                                         x:Name="FoldersGridView"
                                         Padding="0"
@@ -261,13 +262,15 @@
                                         KeyDown="FilesOrFolders_KeyDown">
                                         <GridView.ItemsPanel>
                                             <ItemsPanelTemplate>
-                                                <ItemsWrapGrid Orientation="Horizontal" HorizontalAlignment="Left" MaximumRowsOrColumns="-1" />
+                                                <ItemsWrapGrid Orientation="Horizontal" HorizontalAlignment="Left" MaximumRowsOrColumns="-1" ItemWidth="215" ItemHeight="60" />
                                             </ItemsPanelTemplate>
                                         </GridView.ItemsPanel>
                                         <GridView.ItemContainerStyle>
                                             <Style TargetType="GridViewItem">
                                                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                                 <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                                <Setter Property="MinHeight" Value="0" />
+                                                <Setter Property="MinWidth" Value="0" />
                                                 <Setter Property="Margin" Value="4" />
                                                 <Setter Property="Padding" Value="0" />
                                             </Style>
@@ -275,7 +278,7 @@
                                         <GridView.ItemTemplate>
                                             <DataTemplate x:DataType="models:FolderModel">
                                                 <Border
-                                                    Padding="10,6"
+                                                    Padding="12,8"
                                                     HorizontalAlignment="Stretch"
                                                     VerticalAlignment="Stretch"
                                                     Background="{x:Bind SelectionBackground, Mode=OneWay}"
@@ -328,7 +331,7 @@
                                                             </MenuFlyoutItem>
                                                         </MenuFlyout>
                                                     </Border.ContextFlyout>
-                                                    <Grid ColumnSpacing="8">
+                                                    <Grid ColumnSpacing="10" VerticalAlignment="Center">
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="Auto" />
                                                             <ColumnDefinition Width="*" />
@@ -338,21 +341,24 @@
 
                                                         <FontIcon
                                                             Grid.Column="0"
-                                                            FontSize="20"
+                                                            FontSize="22"
                                                             Foreground="#F59E0B"
-                                                            Glyph="&#xE8B7;" />
+                                                            Glyph="&#xE8B7;"
+                                                            VerticalAlignment="Center" />
 
-                                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                                                             <TextBlock
-                                                                FontWeight="Medium"
-                                                                FontSize="12"
+                                                                FontWeight="SemiBold"
+                                                                FontSize="12.5"
                                                                 MaxLines="1"
                                                                 Text="{x:Bind Name}"
-                                                                TextTrimming="CharacterEllipsis" />
+                                                                TextTrimming="CharacterEllipsis"
+                                                                VerticalAlignment="Center" />
                                                             <TextBlock
-                                                                FontSize="10.5"
+                                                                FontSize="11"
                                                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                                Text="{x:Bind FormattedItemCount}" />
+                                                                Text="{x:Bind FormattedItemCount}"
+                                                                VerticalAlignment="Center" />
                                                         </StackPanel>
 
                                                         <!-- Selection indicator checkmark badge -->
@@ -374,8 +380,8 @@
 
                                                         <Button
                                                             Grid.Column="3"
-                                                            Width="22"
-                                                            Height="22"
+                                                            Width="24"
+                                                            Height="24"
                                                             Background="Transparent"
                                                             BorderThickness="0"
                                                             Padding="0"
@@ -383,7 +389,7 @@
                                                             VerticalAlignment="Center"
                                                             Click="FolderStarBtn_Click">
                                                             <FontIcon
-                                                                FontSize="10"
+                                                                FontSize="11"
                                                                 Foreground="#F59E0B"
                                                                 Glyph="{x:Bind StarGlyph, Mode=OneWay}" />
                                                         </Button>
@@ -400,7 +406,8 @@
                                         FontSize="12"
                                         FontWeight="SemiBold"
                                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                        Text="FILES" />
+                                        Text="FILES"
+                                        Margin="4,0,0,0" />
                                     <GridView
                                         x:Name="FilesGridView"
                                         Padding="0"
@@ -417,13 +424,15 @@
                                         KeyDown="FilesOrFolders_KeyDown">
                                         <GridView.ItemsPanel>
                                             <ItemsPanelTemplate>
-                                                <ItemsWrapGrid Orientation="Horizontal" HorizontalAlignment="Left" MaximumRowsOrColumns="-1" />
+                                                <ItemsWrapGrid Orientation="Horizontal" HorizontalAlignment="Left" MaximumRowsOrColumns="-1" ItemWidth="165" ItemHeight="168" />
                                             </ItemsPanelTemplate>
                                         </GridView.ItemsPanel>
                                         <GridView.ItemContainerStyle>
                                             <Style TargetType="GridViewItem">
                                                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                                 <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                                <Setter Property="MinHeight" Value="0" />
+                                                <Setter Property="MinWidth" Value="0" />
                                                 <Setter Property="Margin" Value="4" />
                                                 <Setter Property="Padding" Value="0" />
                                             </Style>

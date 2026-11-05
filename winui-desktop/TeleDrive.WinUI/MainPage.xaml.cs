@@ -986,8 +986,9 @@ public sealed partial class MainPage : Page
 
         if (FoldersGridView?.ItemsPanelRoot is ItemsWrapGrid foldersWrap)
         {
-            foldersWrap.ItemWidth = tileWidth <= 110 ? 180 : (tileWidth <= 140 ? 200 : (tileWidth <= 175 ? 220 : (tileWidth <= 220 ? 250 : 290)));
-            foldersWrap.ItemHeight = tileWidth <= 110 ? 46 : 50;
+            // Sized generously to guarantee zero clipping of folder name, count subtitle, or borders at any tier
+            foldersWrap.ItemWidth = tileWidth <= 110 ? 195 : (tileWidth <= 140 ? 215 : (tileWidth <= 175 ? 235 : (tileWidth <= 220 ? 260 : 300)));
+            foldersWrap.ItemHeight = tileWidth <= 110 ? 58 : (tileWidth <= 140 ? 60 : (tileWidth <= 175 ? 62 : 64));
         }
     }
 
@@ -2760,19 +2761,26 @@ public sealed partial class MainPage : Page
             BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(6, 4, 6, 4)
+            Padding = new Thickness(4, 3, 4, 3),
+            Height = 36
         };
 
-        var addressBarGrid = new Grid();
+        var addressBarGrid = new Grid { VerticalAlignment = VerticalAlignment.Center };
         addressBarGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Up button
         addressBarGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Breadcrumbs
         addressBarGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // + New Folder
 
         var upButton = new Button
         {
-            Content = new FontIcon { Glyph = "\uE74A", FontSize = 13 },
-            Padding = new Thickness(6, 4, 6, 4),
-            Margin = new Thickness(0, 0, 6, 0)
+            Content = new FontIcon { Glyph = "\uE74A", FontSize = 12 },
+            Width = 28,
+            Height = 28,
+            Padding = new Thickness(0),
+            Background = new SolidColorBrush(Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            CornerRadius = new CornerRadius(4),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 4, 0)
         };
         ToolTipService.SetToolTip(upButton, "Up to parent folder");
         Grid.SetColumn(upButton, 0);
@@ -2793,11 +2801,17 @@ public sealed partial class MainPage : Page
 
         var newFolderToggleBtn = new Button
         {
-            Content = "+ New Folder",
-            FontSize = 11,
-            Padding = new Thickness(8, 4, 8, 4),
-            Margin = new Thickness(6, 0, 0, 0)
+            Background = new SolidColorBrush(Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            CornerRadius = new CornerRadius(4),
+            Height = 28,
+            Padding = new Thickness(8, 0, 8, 0),
+            VerticalAlignment = VerticalAlignment.Center
         };
+        var nfStack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+        nfStack.Children.Add(new FontIcon { Glyph = "\uE8F4", FontSize = 11, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"], VerticalAlignment = VerticalAlignment.Center });
+        nfStack.Children.Add(new TextBlock { Text = "New Folder", FontSize = 11.5, FontWeight = FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center });
+        newFolderToggleBtn.Content = nfStack;
         Grid.SetColumn(newFolderToggleBtn, 2);
         addressBarGrid.Children.Add(newFolderToggleBtn);
 
@@ -2808,9 +2822,10 @@ public sealed partial class MainPage : Page
         // 2. Search / Quick Filter
         var filterBox = new TextBox
         {
-            PlaceholderText = "Filter subfolders or search all (e.g. Work, Q4)...",
+            PlaceholderText = "Search or filter folders (e.g. Work, Q4)...",
             FontSize = 12,
-            Height = 32
+            Height = 32,
+            Margin = new Thickness(0, 4, 0, 4)
         };
         Grid.SetRow(filterBox, 2);
         rootGrid.Children.Add(filterBox);
@@ -2891,39 +2906,60 @@ public sealed partial class MainPage : Page
             BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(10, 8, 10, 8)
+            Padding = new Thickness(12, 8, 12, 8)
         };
         var destCardGrid = new Grid();
         destCardGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         destCardGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        var destInfoStack = new StackPanel { Spacing = 2 };
-        var destTitleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        destTitleRow.Children.Add(new FontIcon { Glyph = "\uE8B7", FontSize = 12, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"] });
-        destTitleRow.Children.Add(new TextBlock { Text = "Upload Target:", FontSize = 11, FontWeight = FontWeights.SemiBold });
+        var destInfoStack = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+        var destTitleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        destTitleRow.Children.Add(new FontIcon { Glyph = "\uE8B7", FontSize = 13, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"], VerticalAlignment = VerticalAlignment.Center });
+        destTitleRow.Children.Add(new TextBlock { Text = "Upload Target:", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"], VerticalAlignment = VerticalAlignment.Center });
         destInfoStack.Children.Add(destTitleRow);
 
         var destPathText = new TextBlock
         {
-            FontSize = 12,
+            FontSize = 12.5,
             Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"],
-            FontWeight = FontWeights.Medium,
+            FontWeight = FontWeights.SemiBold,
             TextTrimming = TextTrimming.CharacterEllipsis,
-            Margin = new Thickness(18, 0, 0, 0)
+            Margin = new Thickness(19, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center
         };
         destInfoStack.Children.Add(destPathText);
         Grid.SetColumn(destInfoStack, 0);
         destCardGrid.Children.Add(destInfoStack);
 
+        var destActionContainer = new Grid { VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(destActionContainer, 1);
+        destCardGrid.Children.Add(destActionContainer);
+
         var uploadHereBtn = new Button
         {
             Content = "Select Current",
             FontSize = 11,
-            Padding = new Thickness(8, 4, 8, 4),
+            Style = (Style)Application.Current.Resources["AccentButtonStyle"],
+            Padding = new Thickness(10, 4, 10, 4),
+            CornerRadius = new CornerRadius(4),
             VerticalAlignment = VerticalAlignment.Center
         };
-        Grid.SetColumn(uploadHereBtn, 1);
-        destCardGrid.Children.Add(uploadHereBtn);
+        destActionContainer.Children.Add(uploadHereBtn);
+
+        var selectedBadge = new Border
+        {
+            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(28, 56, 189, 248)),
+            BorderBrush = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"],
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(10, 4, 10, 4),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        var badgeStack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+        badgeStack.Children.Add(new FontIcon { Glyph = "\uE73E", FontSize = 10, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"], VerticalAlignment = VerticalAlignment.Center });
+        badgeStack.Children.Add(new TextBlock { Text = "Selected", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"], VerticalAlignment = VerticalAlignment.Center });
+        selectedBadge.Child = badgeStack;
+        destActionContainer.Children.Add(selectedBadge);
 
         destCardBorder.Child = destCardGrid;
         Grid.SetRow(destCardBorder, 5);
@@ -2934,7 +2970,8 @@ public sealed partial class MainPage : Page
         {
             Content = "Open destination folder when upload starts",
             IsChecked = true,
-            FontSize = 12
+            FontSize = 12,
+            Margin = new Thickness(2, 4, 0, 2)
         };
         Grid.SetRow(navigateCheck, 6);
         rootGrid.Children.Add(navigateCheck);
@@ -2974,13 +3011,14 @@ public sealed partial class MainPage : Page
             // If currentNavId matches selectedTargetId, indicate it's already selected
             if (selectedTargetId == currentNavId)
             {
-                uploadHereBtn.IsEnabled = false;
-                uploadHereBtn.Content = "Selected \u2713";
+                uploadHereBtn.Visibility = Visibility.Collapsed;
+                selectedBadge.Visibility = Visibility.Visible;
             }
             else
             {
-                uploadHereBtn.IsEnabled = true;
+                uploadHereBtn.Visibility = Visibility.Visible;
                 uploadHereBtn.Content = $"Select {currentNavOpt.RawName}";
+                selectedBadge.Visibility = Visibility.Collapsed;
             }
         }
 
@@ -3001,15 +3039,17 @@ public sealed partial class MainPage : Page
                 {
                     Background = new SolidColorBrush(Colors.Transparent),
                     BorderThickness = new Thickness(0),
-                    Padding = new Thickness(4, 2, 4, 2),
+                    Padding = new Thickness(6, 2, 6, 2),
+                    CornerRadius = new CornerRadius(4),
                     FontSize = 12,
+                    Height = 28,
                     VerticalAlignment = VerticalAlignment.Center
                 };
 
-                var crumbStack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+                var crumbStack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
                 if (i == 0)
                 {
-                    crumbStack.Children.Add(new FontIcon { Glyph = "\uE8B7", FontSize = 12, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"] });
+                    crumbStack.Children.Add(new FontIcon { Glyph = "\uE8B7", FontSize = 12, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"], VerticalAlignment = VerticalAlignment.Center });
                 }
                 crumbStack.Children.Add(new TextBlock
                 {
@@ -3017,7 +3057,8 @@ public sealed partial class MainPage : Page
                     FontWeight = isLast ? FontWeights.SemiBold : FontWeights.Normal,
                     Foreground = isLast
                         ? (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"]
-                        : (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"]
+                        : (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"],
+                    VerticalAlignment = VerticalAlignment.Center
                 });
                 crumbBtn.Content = crumbStack;
 
@@ -3034,10 +3075,10 @@ public sealed partial class MainPage : Page
 
                 if (!isLast)
                 {
-                    breadcrumbsStack.Children.Add(new FontIcon
+                    breadcrumbsStack.Children.Add(new TextBlock
                     {
-                        Glyph = "\uE76C",
-                        FontSize = 8,
+                        Text = "\u203A",
+                        FontSize = 12,
                         Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
                         VerticalAlignment = VerticalAlignment.Center,
                         Margin = new Thickness(2, 0, 2, 0)
@@ -3132,33 +3173,34 @@ public sealed partial class MainPage : Page
                         : new SolidColorBrush(Colors.Transparent),
                     BorderThickness = new Thickness(isSelected ? 1 : 0),
                     CornerRadius = new CornerRadius(6),
-                    Padding = new Thickness(8, 6, 8, 6),
+                    Padding = new Thickness(10, 6, 10, 6),
                     Margin = new Thickness(0, 1, 0, 1)
                 };
 
-                var rowGrid = new Grid();
+                var rowGrid = new Grid { VerticalAlignment = VerticalAlignment.Center };
                 rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Folder Icon
                 rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Name + Path
-                rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Open ❯ Button
+                rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Open › Button
 
                 var icon = new FontIcon
                 {
-                    Glyph = "\uED43",
-                    FontSize = 16,
-                    Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 234, 179, 8)),
+                    Glyph = "\uE8B7",
+                    FontSize = 18,
+                    Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 245, 158, 11)), // Amber
                     Margin = new Thickness(0, 0, 10, 0),
                     VerticalAlignment = VerticalAlignment.Center
                 };
                 Grid.SetColumn(icon, 0);
                 rowGrid.Children.Add(icon);
 
-                var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 1 };
                 var nameBlock = new TextBlock
                 {
                     Text = opt.RawName,
                     FontSize = 13,
                     FontWeight = isSelected ? FontWeights.SemiBold : FontWeights.Normal,
-                    TextTrimming = TextTrimming.CharacterEllipsis
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    VerticalAlignment = VerticalAlignment.Center
                 };
                 textStack.Children.Add(nameBlock);
 
@@ -3176,15 +3218,14 @@ public sealed partial class MainPage : Page
                 Grid.SetColumn(textStack, 1);
                 rowGrid.Children.Add(textStack);
 
-                // Open ❯ Button
-                var openBtnContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
-                openBtnContent.Children.Add(new TextBlock { Text = "Open", FontSize = 11, VerticalAlignment = VerticalAlignment.Center });
-                openBtnContent.Children.Add(new FontIcon { Glyph = "\uE76C", FontSize = 9, VerticalAlignment = VerticalAlignment.Center });
-
+                // Open › Button (uses standard unicode chevron › for 100% reliable rendering)
                 var openBtn = new Button
                 {
-                    Content = openBtnContent,
-                    Padding = new Thickness(8, 3, 8, 3),
+                    Content = "Open \u203A",
+                    FontSize = 11,
+                    FontWeight = FontWeights.Medium,
+                    Padding = new Thickness(10, 4, 10, 4),
+                    CornerRadius = new CornerRadius(4),
                     VerticalAlignment = VerticalAlignment.Center
                 };
                 var targetOptId = opt.Id;
