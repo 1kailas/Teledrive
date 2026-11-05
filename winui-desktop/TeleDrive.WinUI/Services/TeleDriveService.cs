@@ -21,6 +21,7 @@ public class TeleDriveService
 
     private readonly HttpClient _http;
     public string BaseUrl { get; private set; } = "http://127.0.0.1:48291";
+    public bool LastRequestFailed { get; private set; }
 
     public event Action? OnUploadCompleted;
 
@@ -235,10 +236,12 @@ public class TeleDriveService
                 }
             }
 
+            LastRequestFailed = false;
             return (folders, files);
         }
         catch
         {
+            LastRequestFailed = true;
             return (new List<FolderModel>(), new List<FileModel>());
         }
     }

@@ -238,14 +238,14 @@ public partial class FileModel : ObservableObject
 
     public static string FormatBytes(ulong bytes)
     {
-        string[] suffixes = { "B", "KiB", "MiB", "GiB", "TiB" };
-        int counter = 0;
+        if (bytes < 1024) return $"{bytes} B";
+        string[] suffixes = { "KiB", "MiB", "GiB", "TiB" };
         decimal number = bytes;
-        while (Math.Round(number / 1024) >= 1)
+        int counter = -1;
+        while (number >= 1024 && counter < suffixes.Length - 1)
         {
             number /= 1024;
             counter++;
-            if (counter >= suffixes.Length - 1) break;
         }
         return $"{number:n1} {suffixes[counter]}";
     }

@@ -11,7 +11,7 @@ public class AppConfigModel
     public int ViewMode { get; set; } = 0;
     public string Theme { get; set; } = "Default";
     public bool IsPaneOpen { get; set; } = true;
-    public bool IsDetailsPaneVisible { get; set; } = true;
+    public bool IsDetailsPaneVisible { get; set; } = false;
     public int WindowX { get; set; } = -1;
     public int WindowY { get; set; } = -1;
     public int WindowWidth { get; set; } = 1280;
@@ -41,7 +41,7 @@ public class AppConfigTests
         Assert.Equal(0, cfg.ViewMode);
         Assert.Equal("Default", cfg.Theme);
         Assert.True(cfg.IsPaneOpen);
-        Assert.True(cfg.IsDetailsPaneVisible);
+        Assert.False(cfg.IsDetailsPaneVisible);
         Assert.Equal(1280, cfg.WindowWidth);
         Assert.Equal(820, cfg.WindowHeight);
         Assert.False(cfg.IsMaximized);
@@ -84,7 +84,7 @@ public class AppConfigTests
             ViewMode = 1,
             Theme = "Dark",
             IsPaneOpen = false,
-            IsDetailsPaneVisible = false,
+            IsDetailsPaneVisible = true,
             WindowX = 150,
             WindowY = 200,
             WindowWidth = 1440,

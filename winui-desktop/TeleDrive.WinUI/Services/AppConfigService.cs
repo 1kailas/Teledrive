@@ -17,6 +17,8 @@ public class AppConfig
     public int WindowWidth { get; set; } = 1280;
     public int WindowHeight { get; set; } = 820;
     public bool IsMaximized { get; set; } = false;
+    public string SortKey { get; set; } = "name"; // name | date | size | type
+    public bool SortDescending { get; set; } = false;
 }
 
 public static class AppConfigService

@@ -124,14 +124,26 @@ public partial class TransferTaskModel : ObservableObject
         }
     }
 
+    private static string FormatEta(ulong seconds)
+    {
+        if (seconds < 60) return $"{seconds}s";
+        if (seconds < 3600) return $"{seconds / 60}m {seconds % 60}s";
+        if (seconds < 86400) return $"{seconds / 3600}h {seconds % 3600 / 60}m";
+        return $"{seconds / 86400}d {seconds % 86400 / 3600}h";
+    }
+
     public string SpeedSummary
     {
         get
         {
             if (IsActive)
             {
+                if (Status == "queued")
+                    return "⏳ Waiting in queue...";
                 if (Speed > 0)
-                    return $"⚡ {FileModel.FormatBytes(Speed)}/s · ETA {Eta}s";
+                    return Eta > 0
+                        ? $"⚡ {FileModel.FormatBytes(Speed)}/s · {FormatEta(Eta)} left"
+                        : $"⚡ {FileModel.FormatBytes(Speed)}/s";
                 return IsUpload ? "⬆ Uploading to Telegram..." : "⬇ Downloading from Telegram...";
             }
             if (IsDone)

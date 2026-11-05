@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using Microsoft.UI;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
@@ -76,6 +77,10 @@ public sealed partial class MainPage : Page
         {
             NavView.IsPaneOpen = cfg.IsPaneOpen;
         }
+
+        _sortKey = cfg.SortKey is "date" or "size" or "type" ? cfg.SortKey : "name";
+        _sortDescending = cfg.SortDescending;
+        UpdateSortUi();
 
         // Restore view mode (0 = Grid, 1 = List)
         _viewMode = cfg.ViewMode;
@@ -154,16 +159,100 @@ public sealed partial class MainPage : Page
         });
     }
 
+    private bool _pollBusy;
+
     private async void PollTimer_Tick(object? sender, object e)
     {
-        await RefreshTransfersAsync();
+        if (_pollBusy) return;
+        _pollBusy = true;
+        try
+        {
+            await RefreshTransfersAsync();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Transfer poll failed: {ex.Message}");
+        }
+        finally
+        {
+            _pollBusy = false;
+            if (_pollTimer != null)
+            {
+                bool live = _currentPageTag is "transfers" or "recent" || Transfers.Any(t => t.IsActive);
+                var interval = TimeSpan.FromMilliseconds(live ? 350 : 1500);
+                if (_pollTimer.Interval != interval) _pollTimer.Interval = interval;
+            }
+        }
     }
 
+    private int _loadingCount;
+
     private async Task LoadContentsAsync()
+    {
+        _loadingCount++;
+        LoadingBar.Visibility = Visibility.Visible;
+        try
+        {
+            await LoadContentsCoreAsync();
+            ServiceBanner.IsOpen = _service.LastRequestFailed && InDriveFolderContext;
+        }
+        finally
+        {
+            if (--_loadingCount <= 0)
+            {
+                _loadingCount = 0;
+                LoadingBar.Visibility = Visibility.Collapsed;
+            }
+        }
+    }
+
+    private async void ServiceBannerRetry_Click(object sender, RoutedEventArgs e)
+    {
+        await _service.EnsureDaemonRunningAsync();
+        await LoadContentsAsync();
+        if (!ServiceBanner.IsOpen) ShowToast("Reconnected to the local service", InfoBarSeverity.Success);
+    }
+
+    private DispatcherTimer? _toastTimer;
+
+    private void ShowToast(string message, InfoBarSeverity severity = InfoBarSeverity.Informational)
+    {
+        ToastBar.Message = message;
+        ToastBar.Severity = severity;
+        ToastBar.IsOpen = true;
+        _toastTimer ??= new DispatcherTimer();
+        _toastTimer.Stop();
+        _toastTimer.Interval = TimeSpan.FromSeconds(severity == InfoBarSeverity.Error ? 6 : 3.5);
+        _toastTimer.Tick -= ToastTimer_Tick;
+        _toastTimer.Tick += ToastTimer_Tick;
+        _toastTimer.Start();
+    }
+
+    private void ToastTimer_Tick(object? sender, object e)
+    {
+        _toastTimer?.Stop();
+        ToastBar.IsOpen = false;
+    }
+
+    private void ToastBar_Closed(InfoBar sender, InfoBarClosedEventArgs args)
+    {
+        _toastTimer?.Stop();
+    }
+
+    private async Task StartDownloadWithToastAsync(string fileId, string fileName)
+    {
+        bool ok = await _service.StartDownloadAsync(fileId);
+        ShowToast(ok ? $"Download started: {fileName}" : $"Couldn't start the download of {fileName}",
+            ok ? InfoBarSeverity.Success : InfoBarSeverity.Error);
+    }
+
+    private async Task LoadContentsCoreAsync()
     {
         var pageAtStart = _currentPageTag;
         var folderAtStart = _currentFolderId;
         bool Stale() => pageAtStart != _currentPageTag || folderAtStart != _currentFolderId;
+
+        UpdateSelectionCommands();
 
         if (_currentPageTag == "settings") return;
 
@@ -176,7 +265,7 @@ public sealed partial class MainPage : Page
             CurrentFolderTitle.Text = "Transfers Hub";
             UpdateHeaderBreadcrumbs();
             StatusBarSelectionText.Text = "";
-            ItemCountSubtitle.Text = $"· {Transfers.Count} total";
+            ItemCountSubtitle.Text = $"{Transfers.Count} total";
             ViewModeToggleBorder.Visibility = Visibility.Collapsed;
             UploadFilesBtn.Visibility = Visibility.Visible;
             UploadFolderBtn.Visibility = Visibility.Visible;
@@ -206,7 +295,7 @@ public sealed partial class MainPage : Page
             if (Stale()) return;
             RecentFiles.Clear();
             foreach (var f in recentFiles) RecentFiles.Add(f);
-            ItemCountSubtitle.Text = $"· {RecentFiles.Count} item{(RecentFiles.Count == 1 ? "" : "s")}";
+            ItemCountSubtitle.Text = $"{RecentFiles.Count} item{(RecentFiles.Count == 1 ? "" : "s")}";
             StatusBarItemCountText.Text = $"{RecentFiles.Count} item{(RecentFiles.Count == 1 ? "" : "s")}";
             await RefreshTransfersAsync();
             if (Stale()) return;
@@ -233,7 +322,7 @@ public sealed partial class MainPage : Page
             _allFiles = files;
 
             ApplyCurrentFilterAndDisplay();
-            ItemCountSubtitle.Text = $"· {_allFiles.Count + _allFolders.Count} items in Trash ({FileModel.FormatBytes(totalSize)})";
+            ItemCountSubtitle.Text = $"{_allFiles.Count + _allFolders.Count} items in Trash ({FileModel.FormatBytes(totalSize)})";
             if (EmptyTrashBtn != null) EmptyTrashBtn.IsEnabled = _allFiles.Count + _allFolders.Count > 0;
             return;
         }
@@ -299,6 +388,9 @@ public sealed partial class MainPage : Page
             filteredFiles = filteredFiles.Where(f => f.Name.Contains(q, StringComparison.OrdinalIgnoreCase));
         }
 
+        filteredFolders = SortFolders(filteredFolders);
+        filteredFiles = SortFiles(filteredFiles);
+
         Folders.Clear();
         foreach (var f in filteredFolders) Folders.Add(f);
 
@@ -340,7 +432,7 @@ public sealed partial class MainPage : Page
         int totalItems = Folders.Count + Files.Count;
         if (_currentPageTag != "trash")
         {
-            ItemCountSubtitle.Text = $"· {totalItems} items";
+            ItemCountSubtitle.Text = $"{totalItems} items";
         }
         if (StatusBarItemCountText != null)
         {
@@ -698,6 +790,14 @@ public sealed partial class MainPage : Page
                 return;
             }
 
+            // Ctrl + L: focus the address bar to type a path
+            if (e.Key == Windows.System.VirtualKey.L)
+            {
+                BeginAddressEdit();
+                e.Handled = true;
+                return;
+            }
+
             // Ctrl + R: Refresh
             if (e.Key == Windows.System.VirtualKey.R)
             {
@@ -854,6 +954,7 @@ public sealed partial class MainPage : Page
 
         var selectedFolders = FoldersGridView?.SelectedItems.OfType<FolderModel>().ToList() ?? new List<FolderModel>();
         int totalSelected = selectedFiles.Count + selectedFolders.Count;
+        UpdateSelectionCommands();
 
         if (totalSelected == 0)
         {
@@ -997,16 +1098,163 @@ public sealed partial class MainPage : Page
         ApplyResponsiveLayout(e.NewSize.Width);
     }
 
+    private string _sortKey = "name";
+    private bool _sortDescending;
+
+    [DllImport("shlwapi.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern int StrCmpLogicalW(string x, string y);
+
+    private static int NaturalCompare(string a, string b) => StrCmpLogicalW(a ?? "", b ?? "");
+
+    private IEnumerable<FileModel> SortFiles(IEnumerable<FileModel> files)
+    {
+        IOrderedEnumerable<FileModel> ordered = _sortKey switch
+        {
+            "date" => _sortDescending ? files.OrderByDescending(f => f.UpdatedAt) : files.OrderBy(f => f.UpdatedAt),
+            "size" => _sortDescending ? files.OrderByDescending(f => f.Size) : files.OrderBy(f => f.Size),
+            "type" => _sortDescending
+                ? files.OrderByDescending(f => f.Category, StringComparer.OrdinalIgnoreCase)
+                : files.OrderBy(f => f.Category, StringComparer.OrdinalIgnoreCase),
+            _ => _sortDescending
+                ? files.OrderByDescending(f => f.Name, Comparer<string>.Create(NaturalCompare))
+                : files.OrderBy(f => f.Name, Comparer<string>.Create(NaturalCompare)),
+        };
+        return ordered.ThenBy(f => f.Name, Comparer<string>.Create(NaturalCompare)).ToList();
+    }
+
+    private IEnumerable<FolderModel> SortFolders(IEnumerable<FolderModel> folders)
+    {
+        IOrderedEnumerable<FolderModel> ordered = _sortKey == "date"
+            ? (_sortDescending ? folders.OrderByDescending(f => f.UpdatedAt) : folders.OrderBy(f => f.UpdatedAt))
+            : (_sortDescending
+                ? folders.OrderByDescending(f => f.Name, Comparer<string>.Create(NaturalCompare))
+                : folders.OrderBy(f => f.Name, Comparer<string>.Create(NaturalCompare)));
+        return ordered.ToList();
+    }
+
+    private void UpdateSortUi()
+    {
+        SortBtnLabel.Text = _sortKey switch { "date" => "Date modified", "size" => "Size", "type" => "Type", _ => "Name" };
+        SortNameItem.IsChecked = _sortKey == "name";
+        SortDateItem.IsChecked = _sortKey == "date";
+        SortSizeItem.IsChecked = _sortKey == "size";
+        SortTypeItem.IsChecked = _sortKey == "type";
+        SortAscItem.IsChecked = !_sortDescending;
+        SortDescItem.IsChecked = _sortDescending;
+
+        string arrow = _sortDescending ? " \u25BC" : " \u25B2";
+        ListHeaderName.Content = "Name" + (_sortKey == "name" ? arrow : "");
+        ListHeaderDate.Content = "Modified" + (_sortKey == "date" ? arrow : "");
+        ListHeaderType.Content = "Type" + (_sortKey == "type" ? arrow : "");
+        ListHeaderSize.Content = "Size" + (_sortKey == "size" ? arrow : "");
+    }
+
+    private void ListHeader_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is string key)
+        {
+            if (_sortKey == key) _sortDescending = !_sortDescending;
+            else { _sortKey = key; _sortDescending = key is "date" or "size"; }
+            PersistSortAndRefresh();
+        }
+    }
+
+    private void SortKey_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is RadioMenuFlyoutItem item && item.Tag is string key)
+        {
+            _sortKey = key;
+            PersistSortAndRefresh();
+        }
+    }
+
+    private void SortDir_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is RadioMenuFlyoutItem item)
+        {
+            _sortDescending = (item.Tag as string) == "desc";
+            PersistSortAndRefresh();
+        }
+    }
+
+    private void PersistSortAndRefresh()
+    {
+        UpdateSortUi();
+        AppConfigService.Current.SortKey = _sortKey;
+        AppConfigService.Current.SortDescending = _sortDescending;
+        AppConfigService.Save();
+        ApplyCurrentFilterAndDisplay();
+    }
+
+    /// <summary>
+    /// Command row density: labelled buttons when there is room, icon-only otherwise. The address bar
+    /// always owns the full width of its own row, so the path is never squeezed by the toolbar.
+    /// </summary>
+    private void UpdateToolbarDensity()
+    {
+        if (ContentRoot == null || UploadFilesLabel == null) return;
+        double available = ContentRoot.ActualWidth - ContentRoot.Padding.Left - ContentRoot.Padding.Right;
+        if (available <= 0) return;
+
+        bool selection = SelectionCommands.Visibility == Visibility.Visible;
+        var v = available >= (selection ? 1060 : 660) ? Visibility.Visible : Visibility.Collapsed;
+        UploadFilesLabel.Visibility = v;
+        UploadFolderLabel.Visibility = v;
+        NewFolderLabel.Visibility = v;
+        EmptyTrashLabel.Visibility = v;
+        SelRenameLabel.Visibility = v;
+        SelMoveLabel.Visibility = v;
+        SelDownloadLabel.Visibility = v;
+        SelTrashLabel.Visibility = v;
+        SelRestoreLabel.Visibility = v;
+        SelDeleteLabel.Visibility = v;
+
+        SearchBox.Width = available >= 900 ? 260 : (available >= 640 ? 200 : 150);
+        ItemCountSubtitle.Visibility = available >= 760 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private (List<FileModel> Files, List<FolderModel> Folders) GetCurrentSelection()
+    {
+        bool listPage = InDriveFolderContext || _currentPageTag is "starred" or "trash";
+        if (!listPage) return (new List<FileModel>(), new List<FolderModel>());
+        var files = _viewMode == 0
+            ? (FilesGridView?.SelectedItems.OfType<FileModel>().ToList() ?? new List<FileModel>())
+            : (FilesListView?.SelectedItems.OfType<FileModel>().ToList() ?? new List<FileModel>());
+        var folders = FoldersGridView?.SelectedItems.OfType<FolderModel>().ToList() ?? new List<FolderModel>();
+        return (files, folders);
+    }
+
+    /// <summary>Shows the command-bar actions that apply to whatever is currently selected.</summary>
+    private void UpdateSelectionCommands()
+    {
+        if (SelectionCommands == null) return;
+        var (files, folders) = GetCurrentSelection();
+        int total = files.Count + folders.Count;
+        bool inTrash = _currentPageTag == "trash";
+
+        var show = total > 0 ? Visibility.Visible : Visibility.Collapsed;
+        SelectionSeparator.Visibility = show;
+        SelectionCommands.Visibility = show;
+        RenameSelBtn.Visibility = !inTrash && total == 1 ? Visibility.Visible : Visibility.Collapsed;
+        MoveSelBtn.Visibility = !inTrash ? Visibility.Visible : Visibility.Collapsed;
+        DownloadSelBtn.Visibility = !inTrash && files.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        TrashSelBtn.Visibility = !inTrash ? Visibility.Visible : Visibility.Collapsed;
+        RestoreSelBtn.Visibility = inTrash ? Visibility.Visible : Visibility.Collapsed;
+        DeleteForeverSelBtn.Visibility = inTrash ? Visibility.Visible : Visibility.Collapsed;
+        UpdateToolbarDensity();
+    }
+
+    private void RenameSelected_Click(object sender, RoutedEventArgs e)
+    {
+        var (files, folders) = GetCurrentSelection();
+        if (files.Count == 1 && folders.Count == 0) PromptRename(files[0].Id, false, files[0].Name);
+        else if (folders.Count == 1 && files.Count == 0) PromptRename(folders[0].Id, true, folders[0].Name);
+    }
+
     private void ApplyResponsiveLayout(double w)
     {
         if (w <= 0 || UploadFilesLabel == null) return;
-        var labels = w < 940 ? Visibility.Collapsed : Visibility.Visible;
-        UploadFilesLabel.Visibility = labels;
-        UploadFolderLabel.Visibility = labels;
-        NewFolderLabel.Visibility = labels;
-        EmptyTrashLabel.Visibility = labels;
-        SearchBox.Width = w < 640 ? 130 : (w < 1000 ? 170 : 200);
-        ItemCountSubtitle.Visibility = w < 700 ? Visibility.Collapsed : Visibility.Visible;
+        UpdateToolbarDensity();
 
         bool overlay = w < 880;
         FileDetailsPane.Width = w < 1100 ? 280 : 320;
@@ -1306,13 +1554,14 @@ public sealed partial class MainPage : Page
         {
             foreach (var file in selectedFiles)
             {
-                await _service.StartDownloadAsync(file.Id);
+                await StartDownloadWithToastAsync(file.Id, file.Name);
             }
+            ShowToast(selectedFiles.Count == 1 ? $"Download started: {selectedFiles[0].Name}" : $"Started {selectedFiles.Count} downloads", InfoBarSeverity.Success);
             await RefreshTransfersAsync();
         }
         else if (_selectedFileForDetails != null)
         {
-            await _service.StartDownloadAsync(_selectedFileForDetails.Id);
+            await StartDownloadWithToastAsync(_selectedFileForDetails.Id, _selectedFileForDetails.Name);
             await RefreshTransfersAsync();
         }
     }
@@ -1355,7 +1604,10 @@ public sealed partial class MainPage : Page
 
         if (fileIds.Count > 0 || folderIds.Count > 0)
         {
-            await _service.TrashItemsAsync(fileIds, folderIds);
+            bool trashed = await _service.TrashItemsAsync(fileIds, folderIds);
+            int trashCount = fileIds.Count + folderIds.Count;
+            ShowToast(trashed ? $"Moved {trashCount} item{(trashCount == 1 ? "" : "s")} to Trash" : "Couldn't move the items to Trash",
+                trashed ? InfoBarSeverity.Success : InfoBarSeverity.Error);
             _selectedFileForDetails = null;
             await LoadContentsAsync();
         }
@@ -1848,97 +2100,318 @@ public sealed partial class MainPage : Page
         UpdateHeaderBreadcrumbs();
     }
 
+    private List<(string? Id, string Name)> _crumbs = new();
+    private bool _crumbsIsDrive;
+
     private void UpdateHeaderBreadcrumbs()
     {
         if (BreadcrumbsBarStack == null) return;
+        _crumbs = new List<(string? Id, string Name)>();
+        _crumbsIsDrive = _currentPageTag == "drive";
+
+        if (!_crumbsIsDrive)
+        {
+            _crumbs.Add((null, CurrentFolderTitle?.Text ?? "My Drive"));
+        }
+        else
+        {
+            _crumbs.Add((null, "My Drive"));
+            foreach (var h in _navHistory.Reverse())
+            {
+                if (!string.IsNullOrEmpty(h.FolderId) && !_crumbs.Any(c => c.Id == h.FolderId))
+                {
+                    _crumbs.Add((h.FolderId, h.Title));
+                }
+            }
+            if (!string.IsNullOrEmpty(_currentFolderId) && !_crumbs.Any(c => c.Id == _currentFolderId))
+            {
+                _crumbs.Add((_currentFolderId, CurrentFolderTitle?.Text ?? "Folder"));
+            }
+        }
+
+        EndAddressEdit();
+        RenderBreadcrumbs();
+    }
+
+    private void AddressCrumbsHost_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (Math.Abs(e.NewSize.Width - e.PreviousSize.Width) > 1) RenderBreadcrumbs();
+    }
+
+    /// <summary>
+    /// Explorer-style path: every segment is clickable, every chevron lists that folder's subfolders, and when the
+    /// path doesn't fit the leading segments collapse into a "..." menu while the current folder stays visible.
+    /// </summary>
+    private void RenderBreadcrumbs()
+    {
+        if (BreadcrumbsBarStack == null || _crumbs.Count == 0) return;
         BreadcrumbsBarStack.Children.Clear();
 
-        if (_currentPageTag != "drive" || (string.IsNullOrEmpty(_currentFolderId) && _navHistory.Count == 0))
+        if (!_crumbsIsDrive)
         {
             BreadcrumbsBarStack.Children.Add(new TextBlock
             {
-                Text = CurrentFolderTitle?.Text ?? "My Drive",
-                FontSize = 20,
+                Text = _crumbs[0].Name,
+                FontSize = 14,
                 FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(8, 0, 8, 0),
+                MaxWidth = 420,
+                TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center
             });
             return;
         }
 
-        var crumbs = new List<(string? Id, string Name)>();
-        crumbs.Add((null, "My Drive"));
-
-        var historyList = _navHistory.Reverse().ToList();
-        foreach (var h in historyList)
+        for (int i = 0; i < _crumbs.Count; i++)
         {
-            if (!string.IsNullOrEmpty(h.FolderId) && !crumbs.Any(c => c.Id == h.FolderId))
-            {
-                crumbs.Add((h.FolderId, h.Title));
-            }
+            BreadcrumbsBarStack.Children.Add(CreateCrumbButton(i));
+            BreadcrumbsBarStack.Children.Add(CreateChevronButton(i));
         }
 
-        if (!string.IsNullOrEmpty(_currentFolderId) && !crumbs.Any(c => c.Id == _currentFolderId))
+        double host = AddressCrumbsHost.ActualWidth;
+        if (host <= 0) return;
+
+        BreadcrumbsBarStack.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+        var widths = BreadcrumbsBarStack.Children.Select(c => c.DesiredSize.Width).ToList();
+        double remaining = widths.Sum();
+        const double overflowWidth = 40;
+        int hidden = 0;
+        while (hidden < _crumbs.Count - 1 && remaining + (hidden > 0 || remaining > host ? overflowWidth : 0) > host)
         {
-            crumbs.Add((_currentFolderId, CurrentFolderTitle?.Text ?? "Folder"));
+            remaining -= widths[hidden * 2] + widths[hidden * 2 + 1];
+            hidden++;
+        }
+        if (hidden == 0) return;
+
+        for (int k = 0; k < hidden * 2; k++) BreadcrumbsBarStack.Children.RemoveAt(0);
+        BreadcrumbsBarStack.Children.Insert(0, CreateOverflowButton(hidden));
+    }
+
+    private Button CreateCrumbButton(int index)
+    {
+        var crumb = _crumbs[index];
+        bool isLast = index == _crumbs.Count - 1;
+        var btn = new Button
+        {
+            Content = new TextBlock
+            {
+                Text = crumb.Name,
+                MaxWidth = 200,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                FontWeight = isLast ? FontWeights.SemiBold : FontWeights.Normal
+            },
+            Background = new SolidColorBrush(Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(8, 4, 8, 4),
+            Height = 30,
+            FontSize = 13,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        ToolTipService.SetToolTip(btn, crumb.Name);
+        btn.Click += async (s, e) =>
+        {
+            if (isLast) await LoadContentsAsync();
+            else await NavigateToCrumbAsync(index);
+        };
+        return btn;
+    }
+
+    private Button CreateChevronButton(int index)
+    {
+        var parentId = _crumbs[index].Id;
+        var btn = new Button
+        {
+            Content = new FontIcon { Glyph = "\uE76C", FontSize = 9 },
+            Background = new SolidColorBrush(Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
+            Width = 22,
+            Height = 30,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        ToolTipService.SetToolTip(btn, "Show subfolders");
+        AutomationProperties.SetName(btn, $"Subfolders of {_crumbs[index].Name}");
+        btn.Click += async (s, e) => await ShowChildrenFlyoutAsync(btn, parentId);
+        return btn;
+    }
+
+    private Button CreateOverflowButton(int hiddenCount)
+    {
+        var flyout = new MenuFlyout();
+        for (int i = 0; i < hiddenCount; i++)
+        {
+            int index = i;
+            var item = new MenuFlyoutItem
+            {
+                Text = _crumbs[i].Name,
+                Icon = new FontIcon { Glyph = i == 0 ? "\uE80F" : "\uE8B7" }
+            };
+            item.Click += async (s, e) => await NavigateToCrumbAsync(index);
+            flyout.Items.Add(item);
+        }
+        var btn = new Button
+        {
+            Content = new FontIcon { Glyph = "\uE712", FontSize = 12 },
+            Background = new SolidColorBrush(Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
+            Width = 32,
+            Height = 30,
+            Flyout = flyout,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        ToolTipService.SetToolTip(btn, "Earlier folders in the path");
+        AutomationProperties.SetName(btn, "Earlier folders in the path");
+        return btn;
+    }
+
+    private async Task NavigateToCrumbAsync(int index)
+    {
+        if (index < 0 || index >= _crumbs.Count) return;
+        var target = _crumbs[index];
+        while (_navHistory.Count > index) _navHistory.Pop();
+        _currentFolderId = target.Id;
+        _currentPageTag = "drive";
+        CurrentFolderTitle.Text = target.Name;
+        UpdateNavBackButton();
+        await LoadContentsAsync();
+    }
+
+    private async Task ShowChildrenFlyoutAsync(FrameworkElement anchor, string? parentId)
+    {
+        var tree = await _service.GetFolderTreeAsync();
+        var children = tree
+            .Where(f => parentId == null
+                ? string.IsNullOrEmpty(f.ParentId) && !SpecialSidebarFolderNames.Contains(f.Name)
+                : string.Equals(f.ParentId, parentId, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(f => f.Name, Comparer<string>.Create(NaturalCompare))
+            .ToList();
+
+        var flyout = new MenuFlyout();
+        if (children.Count == 0)
+        {
+            flyout.Items.Add(new MenuFlyoutItem { Text = "No subfolders", IsEnabled = false });
+        }
+        else
+        {
+            foreach (var child in children.Take(60))
+            {
+                var id = child.Id;
+                var item = new MenuFlyoutItem
+                {
+                    Text = child.Name,
+                    Icon = new FontIcon { Glyph = "\uE8B7", Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 245, 158, 11)) }
+                };
+                item.Click += async (s, e) => await NavigateToFolderPathAsync(id);
+                flyout.Items.Add(item);
+            }
+            if (children.Count > 60)
+            {
+                flyout.Items.Add(new MenuFlyoutItem { Text = $"{children.Count - 60} more… (type a path to reach them)", IsEnabled = false });
+            }
+        }
+        flyout.ShowAt(anchor);
+    }
+
+    /// <summary>Navigates to any folder and rebuilds the history so the path shows its real ancestors.</summary>
+    private async Task NavigateToFolderPathAsync(string? folderId)
+    {
+        var tree = await _service.GetFolderTreeAsync();
+        var byId = new Dictionary<string, FolderModel>(StringComparer.OrdinalIgnoreCase);
+        foreach (var f in tree) byId.TryAdd(f.Id, f);
+
+        var chain = new List<FolderModel>();
+        var cursor = folderId;
+        int guard = 0;
+        while (!string.IsNullOrEmpty(cursor) && byId.TryGetValue(cursor, out var node) && guard++ < 64)
+        {
+            chain.Insert(0, node);
+            cursor = node.ParentId;
+        }
+        if (!string.IsNullOrEmpty(folderId) && chain.Count == 0)
+        {
+            ShowToast("That folder no longer exists", InfoBarSeverity.Warning);
+            return;
         }
 
-        for (int i = 0; i < crumbs.Count; i++)
+        _navHistory.Clear();
+        if (chain.Count > 0)
         {
-            var crumb = crumbs[i];
-            bool isLast = (i == crumbs.Count - 1);
+            _navHistory.Push((null, "My Drive"));
+            for (int i = 0; i < chain.Count - 1; i++) _navHistory.Push((chain[i].Id, chain[i].Name));
+        }
+        _currentPageTag = "drive";
+        _currentFolderId = chain.Count > 0 ? chain[^1].Id : null;
+        CurrentFolderTitle.Text = chain.Count > 0 ? chain[^1].Name : "My Drive";
+        UpdateNavBackButton();
+        await LoadContentsAsync();
+    }
 
-            if (isLast)
-            {
-                BreadcrumbsBarStack.Children.Add(new TextBlock
-                {
-                    Text = crumb.Name,
-                    FontSize = 20,
-                    FontWeight = FontWeights.SemiBold,
-                    VerticalAlignment = VerticalAlignment.Center
-                });
-            }
-            else
-            {
-                var btn = new Button
-                {
-                    Content = crumb.Name,
-                    Background = new SolidColorBrush(Colors.Transparent),
-                    BorderThickness = new Thickness(0),
-                    Padding = new Thickness(4, 2, 4, 2),
-                    FontSize = 18,
-                    Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"],
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-                var targetId = crumb.Id;
-                var targetTitle = crumb.Name;
-                int targetIndex = i;
-                btn.Click += async (s, e) =>
-                {
-                    while (_navHistory.Count > targetIndex)
-                    {
-                        _navHistory.Pop();
-                    }
-                    _currentFolderId = targetId;
-                    if (CurrentFolderTitle != null)
-                    {
-                        CurrentFolderTitle.Text = targetTitle;
-                    }
-                    UpdateNavBackButton();
-                    await LoadContentsAsync();
-                };
-                BreadcrumbsBarStack.Children.Add(btn);
+    private async Task NavigateToTypedPathAsync(string text)
+    {
+        var segments = text.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        if (segments.Count > 0 && segments[0].Equals("My Drive", StringComparison.OrdinalIgnoreCase)) segments.RemoveAt(0);
 
-                BreadcrumbsBarStack.Children.Add(new FontIcon
-                {
-                    Glyph = "\uE76C",
-                    FontSize = 9,
-                    Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(2, 0, 2, 0)
-                });
+        var tree = await _service.GetFolderTreeAsync();
+        string? parent = null;
+        foreach (var segment in segments)
+        {
+            var match = tree.FirstOrDefault(f =>
+                f.Name.Equals(segment, StringComparison.OrdinalIgnoreCase) &&
+                (parent == null ? string.IsNullOrEmpty(f.ParentId) : string.Equals(f.ParentId, parent, StringComparison.OrdinalIgnoreCase)));
+            if (match == null)
+            {
+                ShowToast($"Can't find the folder \"{segment}\"", InfoBarSeverity.Warning);
+                return;
             }
+            parent = match.Id;
+        }
+        await NavigateToFolderPathAsync(parent);
+    }
+
+    private void BeginAddressEdit()
+    {
+        if (_currentPageTag != "drive" || AddressEditBox.Visibility == Visibility.Visible) return;
+        AddressEditBox.Text = string.Join("/", _crumbs.Select(c => c.Name));
+        BreadcrumbsBarStack.Visibility = Visibility.Collapsed;
+        AddressEditBox.Visibility = Visibility.Visible;
+        AddressEditBox.Focus(FocusState.Programmatic);
+        AddressEditBox.SelectAll();
+    }
+
+    private void EndAddressEdit()
+    {
+        if (AddressEditBox == null) return;
+        AddressEditBox.Visibility = Visibility.Collapsed;
+        BreadcrumbsBarStack.Visibility = Visibility.Visible;
+    }
+
+    private void AddressBar_Tapped(object sender, TappedRoutedEventArgs e)
+    {
+        for (var node = e.OriginalSource as DependencyObject; node != null && node != AddressBar; node = VisualTreeHelper.GetParent(node))
+        {
+            if (node is Button) return;
+        }
+        BeginAddressEdit();
+    }
+
+    private async void AddressEditBox_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == Windows.System.VirtualKey.Enter)
+        {
+            e.Handled = true;
+            var text = AddressEditBox.Text;
+            EndAddressEdit();
+            await NavigateToTypedPathAsync(text);
+        }
+        else if (e.Key == Windows.System.VirtualKey.Escape)
+        {
+            e.Handled = true;
+            EndAddressEdit();
         }
     }
+
+    private void AddressEditBox_LostFocus(object sender, RoutedEventArgs e) => EndAddressEdit();
 
     private async void NavBackBtn_Click(object sender, RoutedEventArgs e)
     {
@@ -2092,7 +2565,7 @@ public sealed partial class MainPage : Page
                    ?? FilesGridView.SelectedItem as FileModel;
         if (file != null)
         {
-            await _service.StartDownloadAsync(file.Id);
+            await StartDownloadWithToastAsync(file.Id, file.Name);
             await RefreshTransfersAsync();
         }
     }
@@ -2103,7 +2576,7 @@ public sealed partial class MainPage : Page
                    ?? FilesListView.SelectedItem as FileModel;
         if (file != null)
         {
-            await _service.StartDownloadAsync(file.Id);
+            await StartDownloadWithToastAsync(file.Id, file.Name);
             await RefreshTransfersAsync();
         }
     }
@@ -2136,7 +2609,7 @@ public sealed partial class MainPage : Page
     {
         if (sender is Button btn && btn.DataContext is FileModel file)
         {
-            await _service.StartDownloadAsync(file.Id);
+            await StartDownloadWithToastAsync(file.Id, file.Name);
             await RefreshTransfersAsync();
         }
     }
@@ -2460,7 +2933,7 @@ public sealed partial class MainPage : Page
         var file = (sender as FrameworkElement)?.DataContext as FileModel;
         if (file != null)
         {
-            await _service.StartDownloadAsync(file.Id);
+            await StartDownloadWithToastAsync(file.Id, file.Name);
             await RefreshTransfersAsync();
         }
     }
@@ -2473,6 +2946,7 @@ public sealed partial class MainPage : Page
             var dp = new Windows.ApplicationModel.DataTransfer.DataPackage();
             dp.SetText(file.Id);
             Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
+            ShowToast("File ID copied to the clipboard", InfoBarSeverity.Success);
         }
     }
 
@@ -2501,7 +2975,8 @@ public sealed partial class MainPage : Page
         var file = (sender as FrameworkElement)?.DataContext as FileModel;
         if (file != null)
         {
-            await _service.TrashAsync(file.Id, false);
+            bool trashed = await _service.TrashAsync(file.Id, false);
+            ShowToast(trashed ? $"Moved {file.Name} to Trash" : $"Couldn't move {file.Name} to Trash", trashed ? InfoBarSeverity.Success : InfoBarSeverity.Error);
             await LoadContentsAsync();
         }
     }
@@ -2538,7 +3013,8 @@ public sealed partial class MainPage : Page
         var folder = (sender as FrameworkElement)?.DataContext as FolderModel;
         if (folder != null)
         {
-            await _service.TrashAsync(folder.Id, true);
+            bool trashed = await _service.TrashAsync(folder.Id, true);
+            ShowToast(trashed ? $"Moved {folder.Name} to Trash" : $"Couldn't move {folder.Name} to Trash", trashed ? InfoBarSeverity.Success : InfoBarSeverity.Error);
             await LoadContentsAsync();
         }
     }
@@ -3610,6 +4086,7 @@ public sealed partial class MainPage : Page
             {
                 StatusBarSelectionText.Text = $"• Uploading {itemCount} item{(itemCount == 1 ? "" : "s")} to {targetFolderName}";
             }
+            ShowToast($"Uploading {itemCount} item{(itemCount == 1 ? "" : "s")} to {targetFolderName}", InfoBarSeverity.Informational);
 
             if (filePaths.Count > 0)
             {
