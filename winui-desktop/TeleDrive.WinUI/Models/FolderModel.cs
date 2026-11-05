@@ -33,7 +33,7 @@ public partial class FolderModel : ObservableObject
         ? _selectedBgBrush
         : (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"];
 
-    public Thickness SelectionBorderThickness => IsSelected ? new Thickness(1.5) : new Thickness(1);
+    public Thickness SelectionBorderThickness => new Thickness(1);
 
     public Visibility SelectionCheckmarkVisibility => IsSelected ? Visibility.Visible : Visibility.Collapsed;
 

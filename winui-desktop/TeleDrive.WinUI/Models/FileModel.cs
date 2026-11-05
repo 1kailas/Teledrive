@@ -49,7 +49,7 @@ public partial class FileModel : ObservableObject
         ? _selectedBgBrush
         : (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"];
 
-    public Thickness SelectionBorderThickness => IsSelected ? new Thickness(1.5) : new Thickness(1);
+    public Thickness SelectionBorderThickness => new Thickness(1);
 
     public Visibility SelectionCheckmarkVisibility => IsSelected ? Visibility.Visible : Visibility.Collapsed;
 
@@ -78,9 +78,16 @@ public partial class FileModel : ObservableObject
     {
         get
         {
-            var fallback = ThumbnailUrl ?? $"{TeleDriveService.Instance.BaseUrl}/api/thumbnails/{Id}";
+            string? fallback = (HasThumbnail || Category is "image" or "video")
+                ? (ThumbnailUrl ?? $"{TeleDriveService.Instance.BaseUrl}/api/thumbnails/{Id}")
+                : null;
             return ThumbnailCacheService.Instance.ResolveThumbnailUrl(Id, Extension, Name, fallback);
         }
+    }
+
+    public void NotifyThumbnailChanged()
+    {
+        OnPropertyChanged(nameof(EffectiveThumbnailUrl));
     }
 
     public string FormattedDate

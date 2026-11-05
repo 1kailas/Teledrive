@@ -377,41 +377,37 @@ public class TeleDriveService
                         speed = 0;
                         eta = 0;
                     }
-                    else if (status == "downloading")
+                    else if (status == "queued")
                     {
+                        dl = 0;
+                        speed = 0;
+                        eta = 0;
+                        _lastDownloadProgress.TryRemove(id, out _);
+                    }
+                    else if (status == "downloading" || status == "finalizing")
+                    {
+                        // Progress is whatever the server measured; only guard against going backwards.
                         ulong prevDl = _lastDownloadProgress.TryGetValue(id, out var lastDl) ? lastDl.Bytes : 0;
-                        if (dl < prevDl)
+                        if (dl < prevDl) dl = prevDl;
+                        if (size > 0 && dl >= size && status != "done")
                         {
-                            dl = prevDl;
-                        }
-                        else if (dl == prevDl && size > 0 && dl < size)
-                        {
-                            // Smooth forward motion so it doesn't freeze at start or between parts
-                            ulong remaining = size - dl;
-                            ulong step = Math.Max(64 * 1024, (ulong)(remaining * 0.12));
-                            dl = Math.Min((ulong)(size * 0.99), dl + step);
+                            dl = Math.Min(dl, (ulong)(size * 0.99));
                         }
 
-                        if (_lastDownloadProgress.TryGetValue(id, out var lastInfo))
+                        // If server hasn't calculated speed yet, derive smooth speed from delta
+                        if (speed == 0 && _lastDownloadProgress.TryGetValue(id, out var lastInfo))
                         {
                             var elapsed = (now - lastInfo.Time).TotalSeconds;
-                            if (elapsed >= 0.15)
+                            if (elapsed >= 0.2 && dl > lastInfo.Bytes)
                             {
-                                if (dl > lastInfo.Bytes)
-                                {
-                                    speed = (ulong)((dl - lastInfo.Bytes) / elapsed);
-                                }
-                                else if (lastInfo.Speed > 0)
-                                {
-                                    speed = (ulong)(lastInfo.Speed * 0.95);
-                                }
-
+                                speed = (ulong)((dl - lastInfo.Bytes) / elapsed);
                                 if (speed > 0 && size > dl)
                                 {
                                     eta = (size - dl) / speed;
                                 }
                             }
                         }
+
                         _lastDownloadProgress[id] = (dl, now, speed);
                     }
 
@@ -451,88 +447,138 @@ public class TeleDriveService
 
             if (doc.RootElement.TryGetProperty("uploads", out var arr))
             {
-                foreach (var u in arr.EnumerateArray())
+                var rawUploads = arr.EnumerateArray().ToList();
+                long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+                var queryTasks = rawUploads.Select(async u =>
                 {
                     var id = u.GetProperty("id").GetString() ?? "";
                     var size = u.TryGetProperty("size", out var sz) ? sz.GetUInt64() : 0;
                     var name = u.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
-                    var status = u.TryGetProperty("status", out var st) ? st.GetString() ?? "uploading" : "uploading";
+                    var fileId = u.TryGetProperty("fileId", out var fid) ? fid.GetString() ?? "" : "";
                     var createdAt = u.TryGetProperty("createdAt", out var ca) ? ca.GetInt64() : 0;
 
-                    ulong partsReceived = 0;
-                    ulong partsTotal = 0;
-                    ulong bytesStored = 0;
-
-                    if (u.TryGetProperty("progress", out var pr))
-                    {
-                        partsReceived = pr.TryGetProperty("partsReceived", out var pRec) ? pRec.GetUInt64() : 0;
-                        partsTotal = pr.TryGetProperty("partsTotal", out var pTot) ? pTot.GetUInt64() : 0;
-                        bytesStored = pr.TryGetProperty("bytesStored", out var bs) ? bs.GetUInt64() : 0;
-                    }
-
                     ulong transferred = 0;
-
-                    if (status == "done" || status == "stored" || status == "complete" || (partsTotal > 0 && partsReceived >= partsTotal))
-                    {
-                        transferred = size;
-                        status = "done";
-                    }
-                    else
-                    {
-                        // Base bytes confirmed in cloud
-                        ulong baseBytes = bytesStored > 0
-                            ? bytesStored
-                            : (partsTotal > 0 ? (ulong)((double)partsReceived / partsTotal * size) : 0);
-
-                        ulong prevBytes = _lastUploadProgress.TryGetValue(id, out var last) ? last.Bytes : 0;
-                        transferred = Math.Max(baseBytes, prevBytes);
-
-                        // Calculate in-flight ceiling
-                        ulong partSize = partsTotal > 0 ? Math.Max(1024, size / partsTotal) : size;
-                        ulong currentPartCap = Math.Min(size, baseBytes + partSize);
-
-                        if (transferred < currentPartCap)
-                        {
-                            ulong remaining = currentPartCap - transferred;
-                            // Smooth forward progression (never stuck at start or between parts)
-                            ulong step = Math.Max(64 * 1024, (ulong)(remaining * 0.15));
-                            ulong maxSafeActive = (ulong)(size * 0.992);
-                            transferred = Math.Min(maxSafeActive, transferred + step);
-                        }
-                    }
-
-                    // Calculate instantaneous upload speed & ETA
                     ulong speed = 0;
                     ulong eta = 0;
-                    if (status != "done")
-                    {
-                        if (_lastUploadProgress.TryGetValue(id, out var last))
-                        {
-                            var elapsed = (now - last.Time).TotalSeconds;
-                            if (elapsed >= 0.15)
-                            {
-                                if (transferred > last.Bytes)
-                                {
-                                    speed = (ulong)((transferred - last.Bytes) / elapsed);
-                                }
-                                else if (last.Speed > 0)
-                                {
-                                    speed = (ulong)(last.Speed * 0.95);
-                                }
+                    string status = "uploading";
+                    string phase = "uploading";
 
-                                if (speed > 0 && size > transferred)
+                    try
+                    {
+                        var detailJson = await _http.GetStringAsync($"{BaseUrl}/api/uploads/{id}/progress");
+                        using var detailDoc = JsonDocument.Parse(detailJson);
+                        var root = detailDoc.RootElement;
+                        long serverNow = root.TryGetProperty("serverNow", out var sn) ? sn.GetInt64() : nowMs;
+
+                        if (root.TryGetProperty("parts", out var partsArr))
+                        {
+                            ulong doneBytes = 0;
+                            ulong activeSpeed = 0;
+                            ulong activeEta = 0;
+                            bool hasSending = false;
+                            bool allStored = true;
+
+                            foreach (var p in partsArr.EnumerateArray())
+                            {
+                                var pStatus = p.TryGetProperty("status", out var ps) ? ps.GetString() : "pending";
+                                var pPhase = p.TryGetProperty("phase", out var ph) ? ph.GetString() : null;
+                                var pSize = p.TryGetProperty("size", out var pSz) ? pSz.GetUInt64() : 0;
+                                long? startedAt = p.TryGetProperty("startedAt", out var sa) && sa.ValueKind == JsonValueKind.Number ? sa.GetInt64() : null;
+                                ulong estRate = p.TryGetProperty("estRate", out var er) && er.ValueKind == JsonValueKind.Number ? er.GetUInt64() : 8 * 1024 * 1024;
+
+                                if (pStatus == "stored")
                                 {
-                                    eta = (size - transferred) / speed;
+                                    doneBytes += pSize;
                                 }
+                                else
+                                {
+                                    allStored = false;
+                                    if (pPhase == "sending" && startedAt.HasValue && startedAt.Value > 0)
+                                    {
+                                        hasSending = true;
+                                        double rate = estRate > 0 ? estRate : 8.0 * 1024 * 1024;
+                                        double elapsedSec = Math.Max(0.0, (serverNow - startedAt.Value) / 1000.0);
+                                        double expectedSec = Math.Max(0.5, pSize / rate);
+
+                                        double fraction;
+                                        if (elapsedSec < expectedSec)
+                                        {
+                                            fraction = Math.Min(0.98, elapsedSec / expectedSec);
+                                            ulong partEta = (ulong)Math.Max(1.0, Math.Ceiling(expectedSec - elapsedSec));
+                                            activeEta = Math.Max(activeEta, partEta);
+                                        }
+                                        else
+                                        {
+                                            fraction = 0.99;
+                                            activeEta = Math.Max(activeEta, 1);
+                                        }
+
+                                        doneBytes += (ulong)(pSize * fraction);
+                                        activeSpeed += (ulong)rate;
+                                    }
+                                }
+                            }
+
+                            if (allStored && partsArr.GetArrayLength() > 0)
+                            {
+                                phase = "finalizing";
+                                status = "finalizing";
+                                transferred = size;
+                                speed = 0;
+                                eta = 0;
+                            }
+                            else if (hasSending)
+                            {
+                                phase = "uploading";
+                                status = "uploading";
+                                transferred = Math.Min(doneBytes, size > 0 ? (ulong)(size * 0.99) : doneBytes);
+                                speed = activeSpeed;
+                                eta = activeEta;
+                            }
+                            else
+                            {
+                                // Waiting for Telegram bot upload slot
+                                phase = "queued";
+                                status = "queued";
+                                transferred = doneBytes;
+                                speed = 0;
+                                eta = 0;
                             }
                         }
                     }
-                    _lastUploadProgress[id] = (transferred, now, speed);
+                    catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    {
+                        // Upload completed on daemon and dropped from active_uploads
+                        status = "done";
+                        phase = "done";
+                        transferred = size;
+                        speed = 0;
+                        eta = 0;
+                    }
+                    catch
+                    {
+                        ulong bytesStored = 0;
+                        if (u.TryGetProperty("bytesStored", out var bs)) bytesStored = bs.GetUInt64();
+                        transferred = bytesStored;
+                        status = "uploading";
+                        phase = "uploading";
+                        speed = 8 * 1024 * 1024;
+                        eta = size > transferred && speed > 0 ? (size - transferred) / speed : 0;
+                    }
+
+                    // Monotonic forward progress guard: never step backwards during active upload
+                    if (status == "uploading")
+                    {
+                        ulong prevBytes = _lastUploadProgress.TryGetValue(id, out var last) ? last.Bytes : 0;
+                        if (transferred < prevBytes) transferred = prevBytes;
+                        _lastUploadProgress[id] = (transferred, now, speed);
+                    }
 
                     var task = new TransferTaskModel
                     {
                         Id = id,
-                        FileId = u.TryGetProperty("fileId", out var fid) ? fid.GetString() ?? "" : "",
+                        FileId = fileId,
                         Name = name,
                         Type = "upload",
                         Size = size,
@@ -540,14 +586,16 @@ public class TeleDriveService
                         Status = status,
                         Speed = speed,
                         Eta = eta,
+                        Phase = phase,
                         CreatedAt = createdAt
                     };
 
-                    tasks.Add(task);
-
-                    // Cache in history so when it completes and drops from active_uploads, it's remembered
                     _completedTransfers[id] = task;
-                }
+                    return task;
+                });
+
+                var results = await Task.WhenAll(queryTasks);
+                tasks.AddRange(results);
             }
 
             return tasks;
@@ -571,6 +619,7 @@ public class TeleDriveService
             if (kvp.Value.Status != "done")
             {
                 kvp.Value.Status = "done";
+                kvp.Value.Phase = "done";
                 kvp.Value.Transferred = kvp.Value.Size;
                 kvp.Value.Speed = 0;
                 kvp.Value.Eta = 0;
@@ -594,6 +643,7 @@ public class TeleDriveService
             if (!activeIds.Contains(past.Id))
             {
                 past.Status = "done";
+                past.Phase = "done";
                 past.Transferred = past.Size;
                 past.Speed = 0;
                 past.Eta = 0;
@@ -719,6 +769,8 @@ public class TeleDriveService
         {
             var validPaths = filePaths.Where(p => !string.IsNullOrWhiteSpace(p) && File.Exists(p)).ToList();
             if (validPaths.Count == 0) return false;
+
+            ThumbnailCacheService.Instance.PrecacheLocalUploads(validPaths);
 
             var payload = new
             {

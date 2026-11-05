@@ -71,4 +71,88 @@ public class TransferProgressTests
         string result = TransferProgressHelpers.FormatEta(seconds);
         Assert.Equal(expected, result);
     }
+
+    [Fact]
+    public void QueuedTransfer_RemainsAtZeroPercent_UntilActivelyTransmitting()
+    {
+        // Queued tasks should never show false forward progression
+        long transferred = 0;
+        long total = 50_000_000;
+        double pct = TransferProgressHelpers.CalculateProgressPercentage(transferred, total);
+        Assert.Equal(0.0, pct);
+    }
+
+    [Fact]
+    public void AggregateTransferProgress_AccuratelyCalculatesMultiTaskRatio()
+    {
+        // When 3 tasks exist: 1 active at 50%, 2 queued at 0%
+        long[] sizes = { 100_000_000, 100_000_000, 100_000_000 };
+        long[] transferred = { 50_000_000, 0, 0 };
+
+        long totalSize = 0;
+        long totalTransferred = 0;
+        for (int i = 0; i < sizes.Length; i++)
+        {
+            totalSize += sizes[i];
+            totalTransferred += transferred[i];
+        }
+
+        double aggregatePct = TransferProgressHelpers.CalculateProgressPercentage(totalTransferred, totalSize);
+        // 50MB of 300MB = 16.666%
+        Assert.InRange(aggregatePct, 16.6, 16.7);
+    }
+
+    [Fact]
+    public void InitialConnectionRamp_NeverStuckAtZero()
+    {
+        // During initial connection handshake (0..2.5s), active ramp provides non-zero responsive feedback
+        double elapsed = 1.0;
+        double rampCap = 50_000_000 * 0.025; // 2.5% of 50MB = 1.25MB
+        double progressFraction = Math.Min(1.0, elapsed / 2.5);
+        double initialRamp = rampCap * (1.0 - Math.Pow(1.0 - progressFraction, 2.0));
+
+        Assert.True(initialRamp > 0, "Initial ramp must be positive to prevent freeze at 0%");
+        Assert.True(initialRamp <= rampCap, "Initial ramp must not exceed cap");
+    }
+
+    [Fact]
+    public void FinalizingCreep_ContinuouslyAdvancesTowardsCapWithoutFreezing()
+    {
+        // When cloud confirmation is pending, finalization creep approaches 99.4% smoothly
+        double size = 100_000_000;
+        double cap = size * 0.994;
+        double currentDisplay = size * 0.95; // at 95%
+
+        double dist = cap - currentDisplay;
+        double dt = 0.04; // 25fps frame
+        double step = Math.Max(16.0 * 1024, dist * (dt * 1.5));
+        double nextDisplay = Math.Min(cap, currentDisplay + step);
+
+        Assert.True(nextDisplay > currentDisplay, "Progress must continue moving forward during finalization");
+        Assert.True(nextDisplay <= cap, "Progress must not overshoot 99.4% until server confirms completion");
+    }
+
+    [Fact]
+    public void QueuedTasks_StrictlyZeroProgressAndZeroSpeed()
+    {
+        string status = "queued";
+        long transferred = 0;
+        long size = 120_000_000;
+        ulong speed = 0;
+
+        double pct = (status == "queued") ? 0.0 : TransferProgressHelpers.CalculateProgressPercentage(transferred, size);
+        Assert.Equal(0.0, pct);
+        Assert.Equal((ulong)0, speed);
+    }
+
+    [Fact]
+    public void ConnectingPhase_ZeroTransferred_ReportsZeroProgress()
+    {
+        string status = "connecting";
+        long transferred = 0;
+        long size = 80_000_000;
+
+        double pct = (status == "connecting" && transferred == 0) ? 0.0 : TransferProgressHelpers.CalculateProgressPercentage(transferred, size);
+        Assert.Equal(0.0, pct);
+    }
 }

@@ -13,6 +13,7 @@ public partial class TransferTaskModel : ObservableObject
     private static readonly SolidColorBrush GreenBrush = new(ColorHelper.FromArgb(255, 16, 185, 129));
     private static readonly SolidColorBrush RedBrush = new(ColorHelper.FromArgb(255, 244, 63, 94));
     private static readonly SolidColorBrush AmberBrush = new(ColorHelper.FromArgb(255, 245, 158, 11));
+    private static readonly SolidColorBrush SlateBrush = new(ColorHelper.FromArgb(255, 148, 163, 184));
 
     public string Id { get; set; } = string.Empty;
     public string FileId { get; set; } = string.Empty;
@@ -33,6 +34,7 @@ public partial class TransferTaskModel : ObservableObject
     }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayStatus))]
     [NotifyPropertyChangedFor(nameof(IsDone))]
     [NotifyPropertyChangedFor(nameof(IsActive))]
     [NotifyPropertyChangedFor(nameof(IsPaused))]
@@ -55,6 +57,20 @@ public partial class TransferTaskModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SpeedSummary))]
     private string _status = "queued"; // "downloading" | "finalizing" | "uploading" | "pending" | "paused" | "done" | "failed" | "cancelled"
 
+    public string DisplayStatus => Status switch
+    {
+        "queued" => "Queued",
+        "connecting" or "preparing" => "Connecting",
+        "finalizing" => "Finalizing",
+        "downloading" => "Downloading",
+        "uploading" => "Uploading",
+        "done" or "stored" or "complete" => "Completed",
+        "paused" => "Paused",
+        "failed" or "error" => "Failed",
+        "cancelled" => "Cancelled",
+        _ => string.IsNullOrEmpty(Status) ? "Active" : char.ToUpper(Status[0]) + Status.Substring(1)
+    };
+
     partial void OnStatusChanged(string value)
     {
         if (value == "done" || value == "stored" || value == "complete")
@@ -76,6 +92,10 @@ public partial class TransferTaskModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SpeedSummary))]
     private ulong _eta;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpeedSummary))]
+    private string _phase = "";
+
     public string? Error { get; set; }
     public long CreatedAt { get; set; }
 
@@ -83,7 +103,7 @@ public partial class TransferTaskModel : ObservableObject
     public bool IsDownload => !IsUpload;
 
     public bool IsDone => Status == "done" || Status == "stored" || Status == "complete";
-    public bool IsActive => Status == "downloading" || Status == "finalizing" || Status == "uploading" || Status == "pending" || Status == "active" || Status == "queued";
+    public bool IsActive => Status == "downloading" || Status == "finalizing" || Status == "uploading" || Status == "pending" || Status == "active" || Status == "queued" || Status == "connecting" || Status == "preparing";
     public bool IsPaused => Status == "paused";
     public bool IsFailed => Status == "failed" || Status == "error";
 
@@ -91,6 +111,8 @@ public partial class TransferTaskModel : ObservableObject
     {
         get
         {
+            if (Status == "queued") return 0.0;
+            if (Status == "connecting" && Transferred == 0) return 0.0;
             if (IsDone || Status == "finalizing") return 1.0;
             if (Size == 0) return 0.0;
             double ratio = Math.Clamp((double)Transferred / Size, 0.0, 1.0);
@@ -112,8 +134,17 @@ public partial class TransferTaskModel : ObservableObject
                     ? $"{FileModel.FormatBytes(Size)} (Uploaded to Telegram)"
                     : $"{FileModel.FormatBytes(Size)} (Saved to disk)";
             }
-            if (Status == "finalizing")
-                return "100% · Finalizing & verifying on disk...";
+
+            if (Status == "queued")
+                return $"0% of {FileModel.FormatBytes(Size)} (Waiting in queue)";
+
+            if (Status == "connecting" || Phase == "connecting")
+                return $"{FileModel.FormatBytes(Transferred)} of {FileModel.FormatBytes(Size)} (Connecting to Telegram...)";
+
+            if (Status == "finalizing" || Phase == "finalizing")
+                return IsUpload
+                    ? $"{FileModel.FormatBytes(Transferred)} of {FileModel.FormatBytes(Size)} (Finalizing & saving in Telegram...)"
+                    : $"{FileModel.FormatBytes(Transferred)} of {FileModel.FormatBytes(Size)} (Verifying & saving to disk...)";
 
             ulong displayTransferred = Transferred;
             if (IsActive && displayTransferred >= Size && Size > 0)
@@ -136,23 +167,28 @@ public partial class TransferTaskModel : ObservableObject
     {
         get
         {
-            if (IsActive)
-            {
-                if (Status == "queued")
-                    return "⏳ Waiting in queue...";
-                if (Speed > 0)
-                    return Eta > 0
-                        ? $"⚡ {FileModel.FormatBytes(Speed)}/s · {FormatEta(Eta)} left"
-                        : $"⚡ {FileModel.FormatBytes(Speed)}/s";
-                return IsUpload ? "⬆ Uploading to Telegram..." : "⬇ Downloading from Telegram...";
-            }
             if (IsDone)
                 return IsUpload ? "✓ Stored in Telegram" : "✓ Saved to disk";
             if (IsPaused)
                 return "⏸ Paused";
             if (IsFailed)
                 return $"⚠ {Error ?? "Transfer failed"}";
-            return "⏳ Queued...";
+
+            if (Status == "queued")
+                return "⏳ Waiting in queue...";
+            if (Status == "connecting" || Phase == "connecting" || Status == "preparing")
+                return "⚡ Connecting to Telegram...";
+            if (Status == "finalizing" || Phase == "finalizing")
+                return IsUpload ? "⚡ Finalizing in Telegram..." : "⚡ Verifying on disk...";
+
+            if (Speed > 0)
+            {
+                return Eta > 0
+                    ? $"⚡ {FileModel.FormatBytes(Speed)}/s · {FormatEta(Eta)} left"
+                    : $"⚡ {FileModel.FormatBytes(Speed)}/s";
+            }
+
+            return IsUpload ? "⬆ Uploading..." : "⬇ Downloading...";
         }
     }
 
@@ -167,6 +203,9 @@ public partial class TransferTaskModel : ObservableObject
             if (IsDone) return "\uE73E";
             if (IsFailed) return "\uEA39";
             if (IsPaused) return "\uE769";
+            if (Status == "queued") return "\uE823";
+            if (Status == "connecting" || Phase == "connecting" || Status == "finalizing" || Phase == "finalizing")
+                return "\uE768";
             return IsUpload ? "\uE898" : "\uE896";
         }
     }
@@ -178,6 +217,7 @@ public partial class TransferTaskModel : ObservableObject
             if (IsDone) return "#10B981";
             if (IsFailed) return "#F43F5E";
             if (IsPaused) return "#F59E0B";
+            if (Status == "queued") return "#94A3B8";
             return IsUpload ? "#A855F7" : "#2DD4BF";
         }
     }
@@ -189,6 +229,7 @@ public partial class TransferTaskModel : ObservableObject
             if (IsDone) return GreenBrush;
             if (IsFailed) return RedBrush;
             if (IsPaused) return AmberBrush;
+            if (Status == "queued") return SlateBrush;
             return IsUpload ? PurpleBrush : TealBrush;
         }
     }

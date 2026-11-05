@@ -21,6 +21,10 @@ public class ThumbnailCacheService
     private readonly HttpClient _http = new();
     private readonly ConcurrentDictionary<string, Task<string?>> _activeDownloads = new();
     private readonly ConcurrentDictionary<string, string> _memoryCache = new();
+    private readonly ConcurrentDictionary<string, string> _memoryCacheByFileName = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, string> _knownLocalFiles = new(StringComparer.OrdinalIgnoreCase);
+
+    public event Action<string, string>? OnThumbnailResolved;
 
     public ThumbnailCacheService()
     {
@@ -78,31 +82,91 @@ public class ThumbnailCacheService
         return null;
     }
 
+    private static string GetSafeCacheKey(string key)
+    {
+        var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Eagerly precaches authentic Windows Shell thumbnails for files selected for upload.
+    /// Ensures executables (.exe), archives, media, and documents show rich icons immediately on upload.
+    /// </summary>
+    public void PrecacheLocalUploads(IEnumerable<string> paths)
+    {
+        foreach (var path in paths)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) continue;
+            var fileName = Path.GetFileName(path);
+            _knownLocalFiles[fileName] = path;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var hashKey = GetSafeCacheKey(fileName);
+                    var cachedPath = Path.Combine(_localCacheThumbsDir, $"local_{hashKey}.png");
+
+                    if (!File.Exists(cachedPath))
+                    {
+                        var storageFile = await StorageFile.GetFileFromPathAsync(path);
+                        using var thumb = await storageFile.GetThumbnailAsync(ThumbnailMode.SingleItem, 256, ThumbnailOptions.ResizeThumbnail);
+                        if (thumb != null && thumb.Size > 0)
+                        {
+                            using var outStream = File.Create(cachedPath);
+                            using var stream = thumb.AsStream();
+                            await stream.CopyToAsync(outStream);
+                            outStream.Flush();
+                        }
+                    }
+
+                    if (File.Exists(cachedPath))
+                    {
+                        _memoryCacheByFileName[fileName] = cachedPath;
+                        OnThumbnailResolved?.Invoke(fileName, cachedPath);
+                    }
+                }
+                catch { }
+            });
+        }
+    }
+
     /// <summary>
     /// Returns a direct file:/// URI for the file thumbnail or authentic Windows File Explorer shell icon.
     /// </summary>
-    public string ResolveThumbnailUrl(string fileId, string extension, string fileName, string fallbackHttpUrl)
+    public string ResolveThumbnailUrl(string fileId, string extension, string fileName, string? fallbackHttpUrl)
     {
-        if (string.IsNullOrEmpty(fileId)) return fallbackHttpUrl;
-
-        // 0. Memory cache hit
-        if (_memoryCache.TryGetValue(fileId, out var memHit) && File.Exists(memHit))
+        // 0. Memory cache hit by fileId
+        if (!string.IsNullOrEmpty(fileId) && _memoryCache.TryGetValue(fileId, out var memHit) && File.Exists(memHit))
         {
             return new Uri(memHit).AbsoluteUri;
         }
 
-        // 1. Check existing custom thumbnail on disk
-        var local = GetExistingLocalThumbnailPath(fileId);
-        if (!string.IsNullOrEmpty(local))
+        // 1. Memory cache hit by fileName (e.g. from local upload precache)
+        if (!string.IsNullOrEmpty(fileName) && _memoryCacheByFileName.TryGetValue(fileName, out var memNameHit) && File.Exists(memNameHit))
         {
-            _memoryCache[fileId] = local;
-            return new Uri(local).AbsoluteUri;
+            if (!string.IsNullOrEmpty(fileId)) _memoryCache[fileId] = memNameHit;
+            return new Uri(memNameHit).AbsoluteUri;
         }
 
-        // 2. Check if local copy exists in Downloads or Desktop to extract real thumbnail
-        _ = TryExtractFromLocalFileAsync(fileId, fileName);
+        // 2. Check existing custom thumbnail on disk
+        if (!string.IsNullOrEmpty(fileId))
+        {
+            var local = GetExistingLocalThumbnailPath(fileId);
+            if (!string.IsNullOrEmpty(local))
+            {
+                _memoryCache[fileId] = local;
+                return new Uri(local).AbsoluteUri;
+            }
+        }
 
-        // 3. Check for pre-cached Windows Shell icon for this extension
+        // 3. Trigger extraction from local disk (known uploads, Downloads, Desktop)
+        if (!string.IsNullOrEmpty(fileName))
+        {
+            _ = TryExtractFromLocalFileAsync(fileId, fileName);
+        }
+
+        // 4. Check for pre-cached Windows Shell icon for this extension
         var ext = (extension ?? "").Trim().TrimStart('.').ToLowerInvariant();
         if (string.IsNullOrEmpty(ext)) ext = "bin";
 
@@ -112,25 +176,26 @@ public class ThumbnailCacheService
             return new Uri(shellIconPath).AbsoluteUri;
         }
 
-        // 4. Trigger background generation of shell icon for this extension
+        // 5. Trigger background generation of shell icon for this extension
         _ = GetShellIconForExtensionAsync(ext);
 
-        // 5. Trigger loopback background fetch if fallback URL is provided
-        if (!string.IsNullOrEmpty(fallbackHttpUrl))
+        // 6. Trigger loopback background fetch if fallback URL is provided
+        if (!string.IsNullOrEmpty(fallbackHttpUrl) && !string.IsNullOrEmpty(fileId))
         {
             _ = CacheThumbnailFromHttpAsync(fileId, fallbackHttpUrl);
+            return fallbackHttpUrl;
         }
 
-        return fallbackHttpUrl;
+        return new Uri(shellIconPath).AbsoluteUri;
     }
 
-    public string ResolveThumbnailUrl(string fileId, string fallbackHttpUrl)
+    public string ResolveThumbnailUrl(string fileId, string? fallbackHttpUrl)
     {
         return ResolveThumbnailUrl(fileId, "", "", fallbackHttpUrl);
     }
 
     /// <summary>
-    /// Checks user's Downloads and Desktop folders for a matching file name, and extracts
+    /// Checks known upload paths, user's Downloads and Desktop folders for a matching file name, and extracts
     /// the authentic Windows Shell thumbnail / embedded icon directly.
     /// </summary>
     private async Task TryExtractFromLocalFileAsync(string fileId, string fileName)
@@ -139,6 +204,20 @@ public class ThumbnailCacheService
 
         try
         {
+            // 0. Check known upload paths from current session
+            if (_knownLocalFiles.TryGetValue(fileName, out var knownPath) && File.Exists(knownPath))
+            {
+                var extracted = await GenerateAndUploadNativeThumbnailAsync(fileId, knownPath);
+                if (!string.IsNullOrEmpty(extracted))
+                {
+                    _memoryCache[fileId] = extracted;
+                    _memoryCacheByFileName[fileName] = extracted;
+                    OnThumbnailResolved?.Invoke(fileId, extracted);
+                    OnThumbnailResolved?.Invoke(fileName, extracted);
+                    return;
+                }
+            }
+
             // 1. Check Downloads
             var dlPath = Path.Combine(_downloadsDir, fileName);
             if (File.Exists(dlPath))
@@ -147,6 +226,9 @@ public class ThumbnailCacheService
                 if (!string.IsNullOrEmpty(extracted))
                 {
                     _memoryCache[fileId] = extracted;
+                    _memoryCacheByFileName[fileName] = extracted;
+                    OnThumbnailResolved?.Invoke(fileId, extracted);
+                    OnThumbnailResolved?.Invoke(fileName, extracted);
                     return;
                 }
             }
@@ -160,6 +242,9 @@ public class ThumbnailCacheService
                 if (!string.IsNullOrEmpty(extracted))
                 {
                     _memoryCache[fileId] = extracted;
+                    _memoryCacheByFileName[fileName] = extracted;
+                    OnThumbnailResolved?.Invoke(fileId, extracted);
+                    OnThumbnailResolved?.Invoke(fileName, extracted);
                     return;
                 }
             }
@@ -197,6 +282,7 @@ public class ThumbnailCacheService
                 var stream = thumb.AsStream();
                 await stream.CopyToAsync(outFs);
                 outFs.Flush();
+                OnThumbnailResolved?.Invoke(ext, targetFile);
                 return targetFile;
             }
         }
@@ -241,6 +327,7 @@ public class ThumbnailCacheService
                         var targetFile = Path.Combine(_localCacheThumbsDir, $"{id}.jpg");
                         await File.WriteAllBytesAsync(targetFile, bytes);
                         _memoryCache[id] = targetFile;
+                        OnThumbnailResolved?.Invoke(id, targetFile);
                         return targetFile;
                     }
                 }
@@ -275,6 +362,11 @@ public class ThumbnailCacheService
                 outStream.Flush();
 
                 _memoryCache[fileId] = targetFile;
+                var fileName = Path.GetFileName(localFilePath);
+                _memoryCacheByFileName[fileName] = targetFile;
+
+                OnThumbnailResolved?.Invoke(fileId, targetFile);
+                OnThumbnailResolved?.Invoke(fileName, targetFile);
 
                 // Sync to daemon in background
                 _ = SyncThumbnailToServerAsync(fileId, targetFile);

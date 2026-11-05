@@ -70,6 +70,41 @@ public sealed partial class MainPage : Page
     {
         _service.OnUploadCompleted += Service_OnUploadCompleted;
 
+        // Initialize dedicated high-precision physics progress engine
+        TransferProgressEngine.Instance.Initialize(DispatcherQueue);
+        TransferProgressEngine.Instance.OnProgressUpdated += () =>
+        {
+            var activeTasks = Transfers.Where(t => t.IsActive && !t.IsDone).ToList();
+            if (activeTasks.Count > 0)
+            {
+                double agg = TransferProgressEngine.Instance.GetAggregatePercentage();
+                StatusBarTransferProgress.Value = agg;
+                TaskbarProgressService.SetProgress(MainWindow.WindowHandle, (ulong)(agg * 100), 10000);
+            }
+        };
+
+        // Live icon & thumbnail resolution listener: updates file cards dynamically without tab switching
+        ThumbnailCacheService.Instance.OnThumbnailResolved += (idOrNameOrExt, uri) =>
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                var file = Files.FirstOrDefault(f => f.Id == idOrNameOrExt || string.Equals(f.Name, idOrNameOrExt, StringComparison.OrdinalIgnoreCase))
+                        ?? RecentFiles.FirstOrDefault(f => f.Id == idOrNameOrExt || string.Equals(f.Name, idOrNameOrExt, StringComparison.OrdinalIgnoreCase))
+                        ?? _allFiles.FirstOrDefault(f => f.Id == idOrNameOrExt || string.Equals(f.Name, idOrNameOrExt, StringComparison.OrdinalIgnoreCase));
+                file?.NotifyThumbnailChanged();
+
+                // If an extension icon was resolved (e.g. "exe", "msi"), notify all files with that extension immediately
+                foreach (var f in Files.Where(x => string.Equals(x.Extension, idOrNameOrExt, StringComparison.OrdinalIgnoreCase)))
+                {
+                    f.NotifyThumbnailChanged();
+                }
+                foreach (var f in RecentFiles.Where(x => string.Equals(x.Extension, idOrNameOrExt, StringComparison.OrdinalIgnoreCase)))
+                {
+                    f.NotifyThumbnailChanged();
+                }
+            });
+        };
+
         var cfg = AppConfigService.Current;
 
         // Restore navigation sidebar pane state (expanded vs compact icon rail)
@@ -467,6 +502,7 @@ public sealed partial class MainPage : Page
                 existing.Transferred = task.Transferred;
                 existing.Speed = task.Speed;
                 existing.Eta = task.Eta;
+                existing.Phase = task.Phase;
                 existing.Error = task.Error;
             }
             else
@@ -483,7 +519,10 @@ public sealed partial class MainPage : Page
             }
         }
 
-        // 2. Filter transfers for the UI
+        // 2. Feed the LIVE UI collection directly to TransferProgressEngine for smooth 30fps animation
+        TransferProgressEngine.Instance.SyncLiveTasks(Transfers);
+
+        // 3. Filter transfers for the UI
         var filteredList = ApplyTransferFilter(Transfers);
         UpdateFilteredTransfers(filteredList);
 
@@ -504,14 +543,27 @@ public sealed partial class MainPage : Page
         // 4. Update Integrated Status Bar Transfer Widget
         if (activeCount > 0)
         {
+            ulong totalTransferred = 0;
+            ulong totalSize = 0;
+            foreach (var t in activeTasks)
+            {
+                totalTransferred += t.Transferred;
+                totalSize += t.Size;
+            }
+
             StatusBarTransferBtn.Visibility = Visibility.Visible;
             StatusBarTransferText.Text = $"{activeCount} transfer{(activeCount == 1 ? "" : "s")}";
+            StatusBarTransferProgress.Value = totalSize > 0
+                ? Math.Clamp((double)totalTransferred / totalSize * 100.0, 0.0, 100.0)
+                : 0.0;
             var first = activeTasks[0];
-            StatusBarTransferProgress.Value = first.ProgressPercentage;
             StatusBarTransferIcon.Glyph = first.IsUpload ? "\uE898" : "\uE896";
-            StatusBarTransferIcon.Foreground = new SolidColorBrush(first.IsUpload
+            var colorBrush = new SolidColorBrush(first.IsUpload
                 ? ColorHelper.FromArgb(255, 168, 85, 247)
                 : ColorHelper.FromArgb(255, 45, 212, 191));
+            StatusBarTransferIcon.Foreground = colorBrush;
+            StatusBarTransferText.Foreground = colorBrush;
+            StatusBarTransferProgress.Foreground = colorBrush;
         }
         else
         {
@@ -1196,21 +1248,15 @@ public sealed partial class MainPage : Page
         double available = ContentRoot.ActualWidth - ContentRoot.Padding.Left - ContentRoot.Padding.Right;
         if (available <= 0) return;
 
-        bool selection = SelectionCommands.Visibility == Visibility.Visible;
-        var v = available >= (selection ? 1060 : 660) ? Visibility.Visible : Visibility.Collapsed;
+        var v = available >= 720 ? Visibility.Visible : Visibility.Collapsed;
         UploadFilesLabel.Visibility = v;
         UploadFolderLabel.Visibility = v;
         NewFolderLabel.Visibility = v;
         EmptyTrashLabel.Visibility = v;
-        SelRenameLabel.Visibility = v;
-        SelMoveLabel.Visibility = v;
-        SelDownloadLabel.Visibility = v;
-        SelTrashLabel.Visibility = v;
-        SelRestoreLabel.Visibility = v;
-        SelDeleteLabel.Visibility = v;
 
         SearchBox.Width = available >= 900 ? 260 : (available >= 640 ? 200 : 150);
-        ItemCountSubtitle.Visibility = available >= 760 ? Visibility.Visible : Visibility.Collapsed;
+        bool countIsRedundant = _currentPageTag is "drive" or "starred" || _currentPageTag.StartsWith("folder_");
+        ItemCountSubtitle.Visibility = available >= 760 && !countIsRedundant ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private (List<FileModel> Files, List<FolderModel> Folders) GetCurrentSelection()
@@ -1475,11 +1521,6 @@ public sealed partial class MainPage : Page
 
         DetailsEmptyPlaceholder.Visibility = Visibility.Collapsed;
         DetailsContentStack.Visibility = Visibility.Visible;
-        FileDetailsPane.Visibility = Visibility.Visible;
-        if (ToggleDetailsPaneBtn != null)
-        {
-            ToggleDetailsPaneBtn.Background = (Brush)Application.Current.Resources["LayerFillColorDefaultBrush"];
-        }
         if (StatusBarSelectionText != null)
         {
             StatusBarSelectionText.Text = $"| 1 item selected ({target.FormattedSize})";
@@ -1755,6 +1796,9 @@ public sealed partial class MainPage : Page
         {
             var validPaths = filePaths.Where(p => !string.IsNullOrWhiteSpace(p) && File.Exists(p)).ToList();
             if (validPaths.Count == 0) return;
+
+            // Eagerly precache authentic Windows Shell icons for all selected files (.exe, etc.)
+            ThumbnailCacheService.Instance.PrecacheLocalUploads(validPaths);
 
             // 1. Fetch current files in destination folder to accurately detect duplicates
             var (_, existingFiles) = await _service.GetDriveAsync(targetFolderId);
@@ -2202,8 +2246,8 @@ public sealed partial class MainPage : Page
             },
             Background = new SolidColorBrush(Colors.Transparent),
             BorderThickness = new Thickness(0),
-            Padding = new Thickness(8, 4, 8, 4),
-            Height = 30,
+            Padding = new Thickness(8, 0, 8, 0),
+            Height = 28,
             FontSize = 13,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -2226,7 +2270,7 @@ public sealed partial class MainPage : Page
             BorderThickness = new Thickness(0),
             Padding = new Thickness(0),
             Width = 22,
-            Height = 30,
+            Height = 28,
             VerticalAlignment = VerticalAlignment.Center
         };
         ToolTipService.SetToolTip(btn, "Show subfolders");
@@ -2256,7 +2300,7 @@ public sealed partial class MainPage : Page
             BorderThickness = new Thickness(0),
             Padding = new Thickness(0),
             Width = 32,
-            Height = 30,
+            Height = 28,
             Flyout = flyout,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -2987,6 +3031,17 @@ public sealed partial class MainPage : Page
         if (file != null)
         {
             ShowFileDetails(file);
+            if (_overlayDetails != true)
+            {
+                FileDetailsPane.Visibility = Visibility.Visible;
+                ToggleDetailsPaneBtn.Background = (Brush)Application.Current.Resources["LayerFillColorDefaultBrush"];
+                AppConfigService.Current.IsDetailsPaneVisible = true;
+                AppConfigService.Save();
+            }
+            else
+            {
+                FileDetailsPane.Visibility = Visibility.Visible;
+            }
         }
     }
 
@@ -3998,6 +4053,12 @@ public sealed partial class MainPage : Page
 
             if (filePaths.Count == 0 && folderPaths.Count == 0) return;
 
+            // Precache Windows Shell icons immediately for all incoming file paths
+            if (filePaths.Count > 0)
+            {
+                ThumbnailCacheService.Instance.PrecacheLocalUploads(filePaths);
+            }
+
             // Determine active folder context
             string? targetFolderId;
             string targetFolderName;
@@ -4005,7 +4066,7 @@ public sealed partial class MainPage : Page
             if (_currentPageTag == "drive" || _currentPageTag.StartsWith("folder_"))
             {
                 targetFolderId = _currentFolderId;
-                targetFolderName = string.IsNullOrEmpty(_currentFolderId) ? "My Drive" : (CurrentFolderTitle?.Text ?? "this folder");
+                targetFolderName = string.IsNullOrEmpty(_currentFolderId) ? "My Drive" : CurrentFolderTitle.Text;
             }
             else
             {
