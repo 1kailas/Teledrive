@@ -2778,7 +2778,7 @@ public sealed partial class MainPage : Page
     }
 
     private async Task<(bool Confirmed, string? TargetFolderId, string TargetFolderName, bool NavigateToDestination)> ShowUploadDestinationDialogAsync(
-        IReadOnlyList<string> filePaths, IReadOnlyList<string> folderPaths, long totalBytes)
+        IReadOnlyList<string> filePaths, IReadOnlyList<string> folderPaths, long totalBytes, string? defaultFolderId = null)
     {
         var xamlRoot = this.XamlRoot ?? App.CurrentWindow?.Content?.XamlRoot;
         if (xamlRoot == null)
@@ -2793,15 +2793,15 @@ public sealed partial class MainPage : Page
         }
         if (xamlRoot == null)
         {
-            return (true, _currentFolderId, CurrentFolderTitle?.Text ?? "My Drive", false);
+            return (true, defaultFolderId ?? _currentFolderId, CurrentFolderTitle?.Text ?? "My Drive", false);
         }
 
         var folderTree = await _service.GetFolderTreeAsync();
         var options = FolderPickerOption.BuildFlattenedFolderList(folderTree);
 
-        // State tracking
-        string? currentNavId = _currentFolderId;
-        string? selectedTargetId = _currentFolderId;
+        // State tracking: initialize at defaultFolderId if provided, else _currentFolderId
+        string? currentNavId = defaultFolderId ?? _currentFolderId;
+        string? selectedTargetId = defaultFolderId ?? _currentFolderId;
 
         // Verify initial folder exists in options; if not fallback to root
         var initialMatch = options.FirstOrDefault(o => o.Id == currentNavId) ?? options[0];
@@ -3522,12 +3522,29 @@ public sealed partial class MainPage : Page
 
             if (filePaths.Count == 0 && folderPaths.Count == 0) return;
 
-            bool prompt = promptForDestination || !InDriveFolderContext;
-            string? targetFolderId = _currentFolderId;
-            string targetFolderName = string.IsNullOrEmpty(_currentFolderId) ? "My Drive" : (CurrentFolderTitle?.Text ?? "this folder");
+            // Determine active folder context
+            string? targetFolderId;
+            string targetFolderName;
+
+            if (_currentPageTag == "drive" || _currentPageTag.StartsWith("folder_"))
+            {
+                targetFolderId = _currentFolderId;
+                targetFolderName = string.IsNullOrEmpty(_currentFolderId) ? "My Drive" : (CurrentFolderTitle?.Text ?? "this folder");
+            }
+            else
+            {
+                // In Recent, Starred, Transfers, or Settings: default to Root My Drive
+                targetFolderId = null;
+                targetFolderName = "My Drive";
+            }
+
             bool navigateToDest = false;
 
-            if (prompt)
+            // If the upload was initiated through an external app (File Explorer context menu, Send To, CLI args),
+            // ALWAYS show the destination picker, pre-selecting the current folder context so the user knows where it's going!
+            // When initiated inside TeleDrive (Upload Files / Upload Folder / Drag & Drop), promptForDestination is false,
+            // so it uploads directly into the current folder without any prompt, exactly like Google Drive!
+            if (promptForDestination)
             {
                 long totalBytes = await Task.Run(() =>
                 {
@@ -3550,10 +3567,12 @@ public sealed partial class MainPage : Page
                     return total;
                 });
 
+                MainWindow.BringToForeground();
                 App.CurrentWindow?.Activate();
+
                 bool confirmed;
                 (confirmed, targetFolderId, targetFolderName, navigateToDest) =
-                    await ShowUploadDestinationDialogAsync(filePaths, folderPaths, totalBytes);
+                    await ShowUploadDestinationDialogAsync(filePaths, folderPaths, totalBytes, defaultFolderId: targetFolderId);
 
                 if (!confirmed)
                 {
