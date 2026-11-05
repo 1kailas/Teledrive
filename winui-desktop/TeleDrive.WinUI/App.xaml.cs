@@ -111,7 +111,8 @@ public partial class App : Application
         var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
         ShellIntegrationService.StartPipeServer(dispatcher, (paths) =>
         {
-            _ = MainPage.Current?.HandleIncomingPathsAsync(paths);
+            if (MainPage.Current != null) MainPage.Current.QueueExternalPaths(paths);
+            else InitialLaunchPaths.AddRange(paths);
         });
 
         _window.Closed += (s, e) =>

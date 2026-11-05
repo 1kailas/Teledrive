@@ -135,7 +135,7 @@ public sealed partial class MainPage : Page
         {
             var initial = App.InitialLaunchPaths.ToList();
             App.InitialLaunchPaths.Clear();
-            _ = HandleIncomingPathsAsync(initial);
+            QueueExternalPaths(initial);
         }
 
         _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
@@ -1483,7 +1483,7 @@ public sealed partial class MainPage : Page
                 if (items != null && items.Count > 0)
                 {
                     var paths = items.Select(it => it.Path).Where(p => !string.IsNullOrEmpty(p)).ToList();
-                    await HandleIncomingPathsAsync(paths);
+                    await HandleIncomingPathsAsync(paths, promptForDestination: false);
                 }
             }
             catch (Exception ex)
@@ -2177,7 +2177,7 @@ public sealed partial class MainPage : Page
             if (files != null && files.Count > 0)
             {
                 var paths = files.Select(f => f.Path).ToList();
-                await HandleIncomingPathsAsync(paths);
+                await HandleIncomingPathsAsync(paths, promptForDestination: false);
             }
         }
         catch (Exception ex)
@@ -2202,7 +2202,7 @@ public sealed partial class MainPage : Page
             var folder = await picker.PickSingleFolderAsync();
             if (folder != null && Directory.Exists(folder.Path))
             {
-                await HandleIncomingPathsAsync(new[] { folder.Path });
+                await HandleIncomingPathsAsync(new[] { folder.Path }, promptForDestination: false);
             }
         }
         catch (Exception ex)
@@ -3461,7 +3461,45 @@ public sealed partial class MainPage : Page
         return (false, null, "", false);
     }
 
-    public async Task HandleIncomingPathsAsync(IEnumerable<string> paths)
+    private bool InDriveFolderContext =>
+        _currentPageTag is "drive" or "folder_documents" or "folder_pictures" or "folder_videos" or "folder_music";
+
+    private readonly List<string> _externalBatch = new();
+    private DispatcherTimer? _externalTimer;
+    private bool _externalBusy;
+
+    /// <summary>
+    /// Paths that arrive from outside the app (Explorer context menu, Send To, drag onto the exe).
+    /// Explorer launches one process per selected item, so paths trickle in one by one; collect them
+    /// briefly and show a single destination prompt for the whole selection.
+    /// </summary>
+    public void QueueExternalPaths(IEnumerable<string> paths)
+    {
+        lock (_externalBatch) { _externalBatch.AddRange(paths); }
+        if (_externalTimer == null)
+        {
+            _externalTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
+            _externalTimer.Tick += async (_, _) =>
+            {
+                _externalTimer!.Stop();
+                if (_externalBusy) { _externalTimer.Start(); return; }
+                List<string> batch;
+                lock (_externalBatch) { batch = _externalBatch.Distinct(StringComparer.OrdinalIgnoreCase).ToList(); _externalBatch.Clear(); }
+                if (batch.Count == 0) return;
+                _externalBusy = true;
+                try { await HandleIncomingPathsAsync(batch, promptForDestination: true); }
+                finally { _externalBusy = false; }
+            };
+        }
+        _externalTimer.Stop();
+        _externalTimer.Start();
+    }
+
+    /// <param name="promptForDestination">
+    /// true: ask where to upload (items came from outside the app). false: items were chosen inside the app,
+    /// so they go straight to the folder being viewed.
+    /// </param>
+    public async Task HandleIncomingPathsAsync(IEnumerable<string> paths, bool promptForDestination = true)
     {
         try
         {
@@ -3484,31 +3522,44 @@ public sealed partial class MainPage : Page
 
             if (filePaths.Count == 0 && folderPaths.Count == 0) return;
 
-            long totalBytes = 0;
-            foreach (var f in filePaths)
+            bool prompt = promptForDestination || !InDriveFolderContext;
+            string? targetFolderId = _currentFolderId;
+            string targetFolderName = string.IsNullOrEmpty(_currentFolderId) ? "My Drive" : (CurrentFolderTitle?.Text ?? "this folder");
+            bool navigateToDest = false;
+
+            if (prompt)
             {
-                try { totalBytes += new FileInfo(f).Length; } catch { }
-            }
-            foreach (var d in folderPaths)
-            {
-                try
+                long totalBytes = await Task.Run(() =>
                 {
-                    var di = new DirectoryInfo(d);
-                    foreach (var fi in di.EnumerateFiles("*", SearchOption.AllDirectories))
+                    long total = 0;
+                    foreach (var f in filePaths)
                     {
-                        totalBytes += fi.Length;
+                        try { total += new FileInfo(f).Length; } catch { }
                     }
+                    foreach (var d in folderPaths)
+                    {
+                        try
+                        {
+                            foreach (var fi in new DirectoryInfo(d).EnumerateFiles("*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true }))
+                            {
+                                total += fi.Length;
+                            }
+                        }
+                        catch { }
+                    }
+                    return total;
+                });
+
+                App.CurrentWindow?.Activate();
+                bool confirmed;
+                (confirmed, targetFolderId, targetFolderName, navigateToDest) =
+                    await ShowUploadDestinationDialogAsync(filePaths, folderPaths, totalBytes);
+
+                if (!confirmed)
+                {
+                    Debug.WriteLine("Upload cancelled by user at destination picker.");
+                    return;
                 }
-                catch { }
-            }
-
-            var (confirmed, targetFolderId, targetFolderName, navigateToDest) =
-                await ShowUploadDestinationDialogAsync(filePaths, folderPaths, totalBytes);
-
-            if (!confirmed)
-            {
-                Debug.WriteLine("Upload cancelled by user at destination picker.");
-                return;
             }
 
             if (navigateToDest)
@@ -3533,6 +3584,12 @@ public sealed partial class MainPage : Page
                 {
                     NavigateToFolder(targetFolderId, targetFolderName);
                 }
+            }
+
+            int itemCount = filePaths.Count + folderPaths.Count;
+            if (StatusBarSelectionText != null)
+            {
+                StatusBarSelectionText.Text = $"• Uploading {itemCount} item{(itemCount == 1 ? "" : "s")} to {targetFolderName}";
             }
 
             if (filePaths.Count > 0)
