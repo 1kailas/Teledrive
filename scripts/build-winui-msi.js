@@ -156,12 +156,20 @@ for (const c of components) {
     </DirectoryRef>`;
 }
 
+const pkgVersion = (() => {
+  try {
+    return require(path.resolve(__dirname, '../package.json')).version || '3.0.0';
+  } catch {
+    return '3.0.0';
+  }
+})();
+
 const wxs = `<?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Product Id="*" 
            Name="TeleDrive" 
            Language="1033" 
-           Version="1.0.0" 
+           Version="${pkgVersion}" 
            Manufacturer="TeleDrive" 
            UpgradeCode="7b2a5c9e-1d3f-4e6a-8b0c-9d2e4f6a8b0c">
 
