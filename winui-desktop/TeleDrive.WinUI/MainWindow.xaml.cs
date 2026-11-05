@@ -142,6 +142,14 @@ public sealed partial class MainWindow : Window
                                 }
                                 if (args.DidSizeChange)
                                 {
+                                    double scale = Content?.XamlRoot?.RasterizationScale ?? 1.0;
+                                    int minW = (int)(720 * scale), minH = (int)(520 * scale);
+                                    var cur = appWindow.Size;
+                                    if (cur.Width < minW || cur.Height < minH)
+                                    {
+                                        appWindow.Resize(new Windows.Graphics.SizeInt32(Math.Max(cur.Width, minW), Math.Max(cur.Height, minH)));
+                                        return;
+                                    }
                                     cfg.WindowWidth = appWindow.Size.Width;
                                     cfg.WindowHeight = appWindow.Size.Height;
                                 }

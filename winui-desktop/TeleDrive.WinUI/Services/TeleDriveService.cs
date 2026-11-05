@@ -37,6 +37,28 @@ public class TeleDriveService
         _http.DefaultRequestHeaders.Add("X-Requested-With", "teledrive");
     }
 
+    public async Task<(bool DaemonOk, bool BotApiOk, string? Error, string Version)> GetSystemStatusAsync()
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(await _http.GetStringAsync($"{BaseUrl}/api/system"));
+            var root = doc.RootElement;
+            bool botOk = false;
+            string? err = null;
+            if (root.TryGetProperty("botApi", out var bot))
+            {
+                botOk = bot.TryGetProperty("reachable", out var r) && r.ValueKind == JsonValueKind.True;
+                if (bot.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String) err = e.GetString();
+            }
+            var ver = root.TryGetProperty("version", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+            return (true, botOk, err, ver);
+        }
+        catch
+        {
+            return (false, false, "Local service is not responding", "");
+        }
+    }
+
     public async Task EnsureDaemonRunningAsync()
     {
         // 1. Quick check if daemon is already responding on BaseUrl (<200ms)

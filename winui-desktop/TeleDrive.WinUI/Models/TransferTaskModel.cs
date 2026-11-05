@@ -109,7 +109,7 @@ public partial class TransferTaskModel : ObservableObject
             if (IsDone)
             {
                 return IsUpload
-                    ? $"{FileModel.FormatBytes(Size)} (Uploaded to cloud)"
+                    ? $"{FileModel.FormatBytes(Size)} (Uploaded to Telegram)"
                     : $"{FileModel.FormatBytes(Size)} (Saved to disk)";
             }
             if (Status == "finalizing")
@@ -135,7 +135,7 @@ public partial class TransferTaskModel : ObservableObject
                 return IsUpload ? "⬆ Uploading to Telegram..." : "⬇ Downloading from Telegram...";
             }
             if (IsDone)
-                return IsUpload ? "✓ Stored in Telegram Cloud" : "✓ Saved to disk";
+                return IsUpload ? "✓ Stored in Telegram" : "✓ Saved to disk";
             if (IsPaused)
                 return "⏸ Paused";
             if (IsFailed)

@@ -149,7 +149,7 @@ public partial class FileModel : ObservableObject
     public Visibility TakenAtVisibility => HasTakenAt ? Visibility.Visible : Visibility.Collapsed;
 
     public bool HasParts => PartCount.HasValue && PartCount > 0;
-    public string PartCountSummary => HasParts ? $"{PartCount} Telegram Cloud chunks" : "1 Cloud chunk";
+    public string PartCountSummary => HasParts ? $"{PartCount} Telegram parts" : "1 Telegram part";
 
     private List<MetadataEntry>? _parsedMetadata;
     public List<MetadataEntry> MetadataEntries

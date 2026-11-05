@@ -32,6 +32,8 @@ public sealed partial class MainPage : Page
     public ObservableCollection<FileModel> Files { get; } = new();
     public ObservableCollection<TransferTaskModel> Transfers { get; } = new();
     public ObservableCollection<TransferTaskModel> FilteredTransfers { get; } = new();
+    public ObservableCollection<FileModel> RecentFiles { get; } = new();
+    private string _recentTab = "all";
 
     private List<FolderModel> _allFolders = new();
     private List<FileModel> _allFiles = new();
@@ -58,6 +60,7 @@ public sealed partial class MainPage : Page
         FilesListView.ItemsSource = Files;
         TransfersListView.ItemsSource = FilteredTransfers;
         RecentDownloadsListView.ItemsSource = FilteredTransfers;
+        RecentFilesListView.ItemsSource = RecentFiles;
 
         Loaded += MainPage_Loaded;
     }
@@ -158,6 +161,12 @@ public sealed partial class MainPage : Page
 
     private async Task LoadContentsAsync()
     {
+        var pageAtStart = _currentPageTag;
+        var folderAtStart = _currentFolderId;
+        bool Stale() => pageAtStart != _currentPageTag || folderAtStart != _currentFolderId;
+
+        if (_currentPageTag == "settings") return;
+
         if (_currentPageTag == "transfers")
         {
             DriveScrollViewer.Visibility = Visibility.Collapsed;
@@ -165,6 +174,8 @@ public sealed partial class MainPage : Page
             TransfersView.Visibility = Visibility.Visible;
             FileDetailsPane.Visibility = Visibility.Collapsed;
             CurrentFolderTitle.Text = "Transfers Hub";
+            UpdateHeaderBreadcrumbs();
+            StatusBarSelectionText.Text = "";
             ItemCountSubtitle.Text = $"· {Transfers.Count} total";
             ViewModeToggleBorder.Visibility = Visibility.Collapsed;
             UploadFilesBtn.Visibility = Visibility.Visible;
@@ -172,6 +183,7 @@ public sealed partial class MainPage : Page
             NewFolderBtn.Visibility = Visibility.Collapsed;
             if (EmptyTrashBtn != null) EmptyTrashBtn.Visibility = Visibility.Collapsed;
             await RefreshTransfersAsync();
+            StatusBarItemCountText.Text = $"{Transfers.Count} transfer{(Transfers.Count == 1 ? "" : "s")}";
             return;
         }
 
@@ -182,6 +194,8 @@ public sealed partial class MainPage : Page
             TransfersView.Visibility = Visibility.Collapsed;
             FileDetailsPane.Visibility = Visibility.Collapsed;
             CurrentFolderTitle.Text = "Recent Activity";
+            UpdateHeaderBreadcrumbs();
+            StatusBarSelectionText.Text = "";
             ViewModeToggleBorder.Visibility = Visibility.Collapsed;
             UploadFilesBtn.Visibility = Visibility.Visible;
             UploadFolderBtn.Visibility = Visibility.Visible;
@@ -189,10 +203,14 @@ public sealed partial class MainPage : Page
             if (EmptyTrashBtn != null) EmptyTrashBtn.Visibility = Visibility.Collapsed;
 
             var recentFiles = await _service.GetRecentAsync();
-            Files.Clear();
-            foreach (var f in recentFiles) Files.Add(f);
-            ItemCountSubtitle.Text = $"· {Files.Count} items";
+            if (Stale()) return;
+            RecentFiles.Clear();
+            foreach (var f in recentFiles) RecentFiles.Add(f);
+            ItemCountSubtitle.Text = $"· {RecentFiles.Count} item{(RecentFiles.Count == 1 ? "" : "s")}";
+            StatusBarItemCountText.Text = $"{RecentFiles.Count} item{(RecentFiles.Count == 1 ? "" : "s")}";
             await RefreshTransfersAsync();
+            if (Stale()) return;
+            UpdateRecentLayout();
             return;
         }
 
@@ -202,11 +220,7 @@ public sealed partial class MainPage : Page
             RecentView.Visibility = Visibility.Collapsed;
             TransfersView.Visibility = Visibility.Collapsed;
             ViewModeToggleBorder.Visibility = Visibility.Visible;
-            FileDetailsPane.Visibility = Visibility.Visible;
-            if (ToggleDetailsPaneBtn != null)
-            {
-                ToggleDetailsPaneBtn.Background = (Brush)Application.Current.Resources["LayerFillColorDefaultBrush"];
-            }
+            ApplyDetailsPanePreference();
             UploadFilesBtn.Visibility = Visibility.Collapsed;
             UploadFolderBtn.Visibility = Visibility.Collapsed;
             NewFolderBtn.Visibility = Visibility.Collapsed;
@@ -214,11 +228,13 @@ public sealed partial class MainPage : Page
             if (NavBackBtn != null) NavBackBtn.Visibility = Visibility.Collapsed;
 
             var (folders, files, totalSize) = await _service.GetTrashAsync();
+            if (Stale()) return;
             _allFolders = folders;
             _allFiles = files;
 
             ApplyCurrentFilterAndDisplay();
             ItemCountSubtitle.Text = $"· {_allFiles.Count + _allFolders.Count} items in Trash ({FileModel.FormatBytes(totalSize)})";
+            if (EmptyTrashBtn != null) EmptyTrashBtn.IsEnabled = _allFiles.Count + _allFolders.Count > 0;
             return;
         }
 
@@ -226,11 +242,7 @@ public sealed partial class MainPage : Page
         RecentView.Visibility = Visibility.Collapsed;
         TransfersView.Visibility = Visibility.Collapsed;
         ViewModeToggleBorder.Visibility = Visibility.Visible;
-        FileDetailsPane.Visibility = Visibility.Visible;
-        if (ToggleDetailsPaneBtn != null)
-        {
-            ToggleDetailsPaneBtn.Background = (Brush)Application.Current.Resources["LayerFillColorDefaultBrush"];
-        }
+        ApplyDetailsPanePreference();
         UploadFilesBtn.Visibility = Visibility.Visible;
         UploadFolderBtn.Visibility = Visibility.Visible;
         NewFolderBtn.Visibility = Visibility.Visible;
@@ -239,6 +251,7 @@ public sealed partial class MainPage : Page
         UpdateNavBackButton();
 
         var (folders2, files2) = await _service.GetDriveAsync(_currentFolderId);
+        if (Stale()) return;
         _allFolders = folders2;
         _allFiles = files2;
 
@@ -455,6 +468,7 @@ public sealed partial class MainPage : Page
         }
 
         TransfersEmptyState.Visibility = FilteredTransfers.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (_currentPageTag == "recent") UpdateRecentLayout();
     }
 
     // --- Responsive Grid Layout, Card Scaling & Ctrl+Scroll / Ctrl+Key Zoom ---
@@ -464,7 +478,7 @@ public sealed partial class MainPage : Page
 
     private int GetCurrentSizeTierIndex()
     {
-        if (_targetTileWidth <= 110) return 0; // Tiny / Micro (96px)
+        if (_targetTileWidth <= 110) return 0; // Tiny (116px)
         if (_targetTileWidth <= 145) return 1; // Mini / Ultra Compact (130px)
         if (_targetTileWidth <= 185) return 2; // Compact (165px)
         if (_targetTileWidth <= 235) return 3; // Medium / Standard (205px)
@@ -473,7 +487,7 @@ public sealed partial class MainPage : Page
 
     private void NavView_PaneOpened(NavigationView sender, object args)
     {
-        if (!AppConfigService.Current.IsPaneOpen)
+        if (ActualWidth >= NavView.ExpandedModeThresholdWidth && !AppConfigService.Current.IsPaneOpen)
         {
             AppConfigService.Current.IsPaneOpen = true;
             AppConfigService.Save();
@@ -482,7 +496,7 @@ public sealed partial class MainPage : Page
 
     private void NavView_PaneClosed(NavigationView sender, object args)
     {
-        if (AppConfigService.Current.IsPaneOpen)
+        if (ActualWidth >= NavView.ExpandedModeThresholdWidth && AppConfigService.Current.IsPaneOpen)
         {
             AppConfigService.Current.IsPaneOpen = false;
             AppConfigService.Save();
@@ -924,7 +938,7 @@ public sealed partial class MainPage : Page
         if (DetailsPartsText != null)
         {
             int totalParts = files.Sum(f => f.PartCount ?? 1);
-            DetailsPartsText.Text = $"{totalParts} cloud chunks";
+            DetailsPartsText.Text = $"{totalParts} Telegram parts";
         }
 
         if (DetailsThumbImage != null) DetailsThumbImage.Visibility = Visibility.Collapsed;
@@ -938,6 +952,81 @@ public sealed partial class MainPage : Page
         if (DetailsMediaSection != null) DetailsMediaSection.Visibility = Visibility.Collapsed;
         if (DetailsEmptyPlaceholder != null) DetailsEmptyPlaceholder.Visibility = Visibility.Collapsed;
         if (DetailsContentStack != null) DetailsContentStack.Visibility = Visibility.Visible;
+    }
+
+    private void ApplyDetailsPanePreference()
+    {
+        bool show = AppConfigService.Current.IsDetailsPaneVisible && _overlayDetails != true;
+        FileDetailsPane.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (ToggleDetailsPaneBtn != null)
+        {
+            ToggleDetailsPaneBtn.Background = show
+                ? (Brush)Application.Current.Resources["LayerFillColorDefaultBrush"]
+                : new SolidColorBrush(Colors.Transparent);
+        }
+    }
+
+    private void UpdateRecentLayout()
+    {
+        bool showFiles = _recentTab != "transfers";
+        bool showTransfers = _recentTab != "files";
+        RecentFilesListView.Visibility = showFiles ? Visibility.Visible : Visibility.Collapsed;
+        RecentDownloadsListView.Visibility = showTransfers ? Visibility.Visible : Visibility.Collapsed;
+        RecentFilesHeader.Visibility = _recentTab == "all" && RecentFiles.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        RecentTransfersHeader.Visibility = _recentTab == "all" && FilteredTransfers.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        bool empty = (!showFiles || RecentFiles.Count == 0) && (!showTransfers || FilteredTransfers.Count == 0);
+        RecentEmptyState.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async Task RefreshServiceStatusAsync()
+    {
+        var green = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 16, 185, 129));
+        var red = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 239, 68, 68));
+        var (daemonOk, botOk, error, version) = await _service.GetSystemStatusAsync();
+        DaemonStatusText.Text = daemonOk ? $"Running{(version.Length > 0 ? " · v" + version : "")}" : "Not responding";
+        DaemonStatusText.Foreground = daemonOk ? green : red;
+        BotApiStatusText.Text = botOk ? "Running" : $"Unavailable{(string.IsNullOrEmpty(error) ? "" : " · " + error)}";
+        BotApiStatusText.Foreground = botOk ? green : red;
+        ToolTipService.SetToolTip(BotApiStatusText, BotApiStatusText.Text);
+    }
+
+    private bool? _overlayDetails;
+
+    private void ContentRoot_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        ApplyResponsiveLayout(e.NewSize.Width);
+    }
+
+    private void ApplyResponsiveLayout(double w)
+    {
+        if (w <= 0 || UploadFilesLabel == null) return;
+        var labels = w < 940 ? Visibility.Collapsed : Visibility.Visible;
+        UploadFilesLabel.Visibility = labels;
+        UploadFolderLabel.Visibility = labels;
+        NewFolderLabel.Visibility = labels;
+        EmptyTrashLabel.Visibility = labels;
+        SearchBox.Width = w < 640 ? 130 : (w < 1000 ? 170 : 200);
+        ItemCountSubtitle.Visibility = w < 700 ? Visibility.Collapsed : Visibility.Visible;
+
+        bool overlay = w < 880;
+        FileDetailsPane.Width = w < 1100 ? 280 : 320;
+        if (overlay != _overlayDetails)
+        {
+            _overlayDetails = overlay;
+            Grid.SetColumnSpan(FileDetailsPane, overlay ? 2 : 1);
+            FileDetailsPane.HorizontalAlignment = overlay ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
+            FileDetailsPane.Background = (Brush)Application.Current.Resources[overlay ? "SolidBackgroundFillColorSecondaryBrush" : "CardBackgroundFillColorDefaultBrush"];
+            if (overlay)
+            {
+                FileDetailsPane.Visibility = Visibility.Collapsed;
+                ToggleDetailsPaneBtn.Background = new SolidColorBrush(Colors.Transparent);
+            }
+            else if (AppConfigService.Current.IsDetailsPaneVisible)
+            {
+                FileDetailsPane.Visibility = Visibility.Visible;
+                ToggleDetailsPaneBtn.Background = (Brush)Application.Current.Resources["LayerFillColorDefaultBrush"];
+            }
+        }
     }
 
     private void DriveScrollViewer_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -954,8 +1043,8 @@ public sealed partial class MainPage : Page
         double tileHeight;
         if (_targetTileWidth <= 110)
         {
-            tileWidth = 96;
-            tileHeight = 118; // Tiny / Micro (96px)
+            tileWidth = 116;
+            tileHeight = 126; // Tiny / Micro (116px — fits size text + both action buttons)
         }
         else if (_targetTileWidth <= 140)
         {
@@ -987,8 +1076,8 @@ public sealed partial class MainPage : Page
         if (FoldersGridView?.ItemsPanelRoot is ItemsWrapGrid foldersWrap)
         {
             // Sized generously to guarantee zero clipping of folder name, count subtitle, or borders at any tier
-            foldersWrap.ItemWidth = tileWidth <= 110 ? 195 : (tileWidth <= 140 ? 215 : (tileWidth <= 175 ? 235 : (tileWidth <= 220 ? 260 : 300)));
-            foldersWrap.ItemHeight = tileWidth <= 110 ? 58 : (tileWidth <= 140 ? 60 : (tileWidth <= 175 ? 62 : 64));
+            foldersWrap.ItemWidth = _targetTileWidth <= 110 ? 195 : (_targetTileWidth <= 140 ? 215 : (_targetTileWidth <= 175 ? 235 : (_targetTileWidth <= 220 ? 260 : 300)));
+            foldersWrap.ItemHeight = _targetTileWidth <= 110 ? 58 : (_targetTileWidth <= 140 ? 60 : (_targetTileWidth <= 175 ? 62 : 64));
         }
     }
 
@@ -1293,7 +1382,7 @@ public sealed partial class MainPage : Page
             var dialog = new ContentDialog
             {
                 Title = "Permanently Delete?",
-                Content = $"Are you sure you want to permanently delete {total} item{(total > 1 ? "s" : "")}? This cannot be undone and will permanently remove all storage messages from the Telegram cloud channel.",
+                Content = $"Are you sure you want to permanently delete {total} item{(total > 1 ? "s" : "")}? This cannot be undone and will permanently remove the stored messages from your private Telegram channel.",
                 PrimaryButtonText = "Delete Permanently",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Close,
@@ -1340,7 +1429,7 @@ public sealed partial class MainPage : Page
         var dialog = new ContentDialog
         {
             Title = "Empty Trash?",
-            Content = $"Permanently delete all {total} item{(total > 1 ? "s" : "")} in Trash? This will delete all files from Telegram cloud messages and free storage space.",
+            Content = $"Permanently delete all {total} item{(total > 1 ? "s" : "")} in Trash? This will delete the stored messages from your private Telegram channel and free storage space.",
             PrimaryButtonText = "Empty Trash",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
@@ -1573,7 +1662,7 @@ public sealed partial class MainPage : Page
         var existingPanel = new StackPanel { Spacing = 4 };
         existingPanel.Children.Add(new TextBlock
         {
-            Text = "EXISTING IN CLOUD",
+            Text = "ALREADY IN TELEGRAM STORAGE",
             FontSize = 10,
             FontWeight = FontWeights.Bold,
             Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 168, 85, 247))
@@ -1633,7 +1722,7 @@ public sealed partial class MainPage : Page
                 Children =
                 {
                     new TextBlock { Text = "Replace the file in the destination", FontWeight = FontWeights.Medium, FontSize = 13 },
-                    new TextBlock { Text = "Replaces the existing cloud file with the newly uploaded version", FontSize = 11.5, Opacity = 0.7 }
+                    new TextBlock { Text = "Replaces the existing file with the newly uploaded version", FontSize = 11.5, Opacity = 0.7 }
                 }
             }
         };
@@ -1900,6 +1989,7 @@ public sealed partial class MainPage : Page
             _currentPageTag = "settings";
             CurrentFolderTitle.Text = "Settings";
             ItemCountSubtitle.Text = "Preferences & Diagnostics";
+            UpdateHeaderBreadcrumbs();
             DriveScrollViewer.Visibility = Visibility.Collapsed;
             RecentView.Visibility = Visibility.Collapsed;
             TransfersView.Visibility = Visibility.Collapsed;
@@ -1913,11 +2003,19 @@ public sealed partial class MainPage : Page
             {
                 ShellContextMenuToggle.IsOn = ShellIntegrationService.IsShellIntegrationRegistered();
             }
+            SearchBox.Visibility = Visibility.Collapsed;
+            if (RefreshToolbarBtn != null) RefreshToolbarBtn.Visibility = Visibility.Collapsed;
+            if (EmptyTrashBtn != null) EmptyTrashBtn.Visibility = Visibility.Collapsed;
+            StatusBarItemCountText.Text = "";
             SettingsView.Visibility = Visibility.Visible;
+            SettingsView.ChangeView(0, 0, null, true);
+            _ = RefreshServiceStatusAsync();
             return;
         }
 
         SettingsView.Visibility = Visibility.Collapsed;
+        SearchBox.Visibility = Visibility.Visible;
+        if (RefreshToolbarBtn != null) RefreshToolbarBtn.Visibility = Visibility.Visible;
 
         var item = (args?.SelectedItem as NavigationViewItem) ?? (sender.SelectedItem as NavigationViewItem);
         if (item != null && item.Tag is string tag)
@@ -1930,22 +2028,30 @@ public sealed partial class MainPage : Page
             }
             else if (tag == "folder_documents")
             {
-                _currentFolderId = await GetOrCreateSpecialFolderIdAsync("Documents");
+                var specialId = await GetOrCreateSpecialFolderIdAsync("Documents");
+                if (_currentPageTag != tag) return;
+                _currentFolderId = specialId;
                 CurrentFolderTitle.Text = "Documents";
             }
             else if (tag == "folder_pictures")
             {
-                _currentFolderId = await GetOrCreateSpecialFolderIdAsync("Pictures");
+                var specialId = await GetOrCreateSpecialFolderIdAsync("Pictures");
+                if (_currentPageTag != tag) return;
+                _currentFolderId = specialId;
                 CurrentFolderTitle.Text = "Pictures";
             }
             else if (tag == "folder_videos")
             {
-                _currentFolderId = await GetOrCreateSpecialFolderIdAsync("Videos");
+                var specialId = await GetOrCreateSpecialFolderIdAsync("Videos");
+                if (_currentPageTag != tag) return;
+                _currentFolderId = specialId;
                 CurrentFolderTitle.Text = "Videos";
             }
             else if (tag == "folder_music")
             {
-                _currentFolderId = await GetOrCreateSpecialFolderIdAsync("Music");
+                var specialId = await GetOrCreateSpecialFolderIdAsync("Music");
+                if (_currentPageTag != tag) return;
+                _currentFolderId = specialId;
                 CurrentFolderTitle.Text = "Music";
             }
             else if (tag == "starred")
@@ -2127,6 +2233,7 @@ public sealed partial class MainPage : Page
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot
         };
+        dialog.Opened += (_, _) => { inputTextBox.Focus(FocusState.Programmatic); inputTextBox.SelectAll(); };
 
         if (await dialog.ShowAsync() == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(inputTextBox.Text))
         {
@@ -2179,12 +2286,11 @@ public sealed partial class MainPage : Page
 
     private void SetTransfersFilterBtnActive(Button activeBtn)
     {
-        TransfersAllBtn.Background = new SolidColorBrush(Colors.Transparent);
-        TransfersAllBtn.Foreground = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"];
-        TransfersActiveBtn.Background = new SolidColorBrush(Colors.Transparent);
-        TransfersUploadsBtn.Background = new SolidColorBrush(Colors.Transparent);
-        TransfersDownloadsBtn.Background = new SolidColorBrush(Colors.Transparent);
-        TransfersCompletedBtn.Background = new SolidColorBrush(Colors.Transparent);
+        foreach (var b in new[] { TransfersAllBtn, TransfersActiveBtn, TransfersUploadsBtn, TransfersDownloadsBtn, TransfersCompletedBtn })
+        {
+            b.Background = new SolidColorBrush(Colors.Transparent);
+            b.Foreground = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"];
+        }
 
         activeBtn.Background = (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"];
         activeBtn.Foreground = new SolidColorBrush(Colors.Black);
@@ -2227,26 +2333,33 @@ public sealed partial class MainPage : Page
 
     private void RecentAllBtn_Click(object sender, RoutedEventArgs e)
     {
-        RecentAllBtn.Background = (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"];
-        RecentFilesBtn.Background = new SolidColorBrush(Colors.Transparent);
-        RecentDownloadsBtn.Background = new SolidColorBrush(Colors.Transparent);
-        RecentDownloadsListView.Visibility = Visibility.Visible;
+        _recentTab = "all";
+        SetRecentChipActive((Button)sender);
+        UpdateRecentLayout();
     }
 
     private void RecentFilesBtn_Click(object sender, RoutedEventArgs e)
     {
-        RecentFilesBtn.Background = (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"];
-        RecentAllBtn.Background = new SolidColorBrush(Colors.Transparent);
-        RecentDownloadsBtn.Background = new SolidColorBrush(Colors.Transparent);
-        RecentDownloadsListView.Visibility = Visibility.Collapsed;
+        _recentTab = "files";
+        SetRecentChipActive((Button)sender);
+        UpdateRecentLayout();
     }
 
     private void RecentDownloadsBtn_Click(object sender, RoutedEventArgs e)
     {
-        RecentDownloadsBtn.Background = (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"];
-        RecentAllBtn.Background = new SolidColorBrush(Colors.Transparent);
-        RecentFilesBtn.Background = new SolidColorBrush(Colors.Transparent);
-        RecentDownloadsListView.Visibility = Visibility.Visible;
+        _recentTab = "transfers";
+        SetRecentChipActive((Button)sender);
+        UpdateRecentLayout();
+    }
+
+    private void SetRecentChipActive(Button active)
+    {
+        foreach (var b in new[] { RecentAllBtn, RecentFilesBtn, RecentDownloadsBtn })
+        {
+            bool on = b == active;
+            b.Background = on ? (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"] : new SolidColorBrush(Colors.Transparent);
+            b.Foreground = on ? new SolidColorBrush(Colors.Black) : (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"];
+        }
     }
 
     // --- Transfer Actions ---
@@ -2327,6 +2440,12 @@ public sealed partial class MainPage : Page
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot
+        };
+        dialog.Opened += (_, _) =>
+        {
+            input.Focus(FocusState.Programmatic);
+            var dot = isFolder ? -1 : currentName.LastIndexOf('.');
+            if (dot > 0) input.Select(0, dot); else input.SelectAll();
         };
 
         if (await dialog.ShowAsync() == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(input.Text))
@@ -2690,13 +2809,15 @@ public sealed partial class MainPage : Page
         selectedTargetId = initialMatch.Id;
 
         // Fixed-size Root Grid so the dialog NEVER changes height or width
+        double pickerHeight = Math.Clamp(xamlRoot.Size.Height - 260, 380, 560);
         var rootGrid = new Grid
         {
-            Width = 520,
-            Height = 560,
-            MinHeight = 560,
-            MaxHeight = 560,
-            RowSpacing = 8
+            Width = 560,
+            Height = pickerHeight,
+            MinHeight = pickerHeight,
+            MaxHeight = pickerHeight,
+            RowSpacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Center
         };
         rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 0: Summary
         rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 1: Address Bar / Breadcrumbs
@@ -3328,6 +3449,7 @@ public sealed partial class MainPage : Page
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = xamlRoot
         };
+        dialog.Resources["ContentDialogMaxWidth"] = 640.0;
 
         var dialogResult = await dialog.ShowAsync();
         if (dialogResult == ContentDialogResult.Primary)

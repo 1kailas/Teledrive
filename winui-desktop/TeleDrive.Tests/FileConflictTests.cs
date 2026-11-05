@@ -18,7 +18,7 @@ public static class FileConflictHelper
 
         foreach (var path in filePaths)
         {
-            var name = Path.GetFileName(path);
+            var name = Path.GetFileName(path.Replace('\\', '/'));
             if (existingSet.Contains(name))
             {
                 conflicting.Add(path);

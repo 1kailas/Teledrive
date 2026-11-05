@@ -24,7 +24,7 @@
             IsSettingsVisible="True"
             OpenPaneLength="240"
             CompactPaneLength="48"
-            PaneDisplayMode="Left"
+            PaneDisplayMode="Auto"
             IsPaneOpen="True"
             CompactModeThresholdWidth="640"
             ExpandedModeThresholdWidth="1008"
@@ -92,7 +92,7 @@
             </NavigationView.MenuItems>
 
             <!-- Main Content Area -->
-            <Grid Padding="24,16,24,8">
+            <Grid x:Name="ContentRoot" Padding="24,16,24,8" SizeChanged="ContentRoot_SizeChanged">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -121,6 +121,8 @@
                         <StackPanel x:Name="BreadcrumbsBarStack" Orientation="Horizontal" VerticalAlignment="Center" Spacing="4">
                             <TextBlock
                                 x:Name="CurrentFolderTitle"
+                                MaxWidth="360"
+                                TextTrimming="CharacterEllipsis"
                                 FontSize="20"
                                 FontWeight="SemiBold"
                                 Text="My Drive" />
@@ -133,7 +135,7 @@
                     </StackPanel>
 
                     <!-- Actions Bar -->
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="12,0,0,0">
                         <AutoSuggestBox
                             x:Name="SearchBox"
                             Width="200"
@@ -144,26 +146,28 @@
                         <Button
                             x:Name="UploadFilesBtn"
                             Style="{StaticResource AccentButtonStyle}"
+                            ToolTipService.ToolTip="Upload files"
                             Click="UploadFilesBtn_Click">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <FontIcon Glyph="&#xE898;" FontSize="14" />
-                                <TextBlock Text="Upload Files" />
+                                <TextBlock x:Name="UploadFilesLabel" Text="Upload Files" />
                             </StackPanel>
                         </Button>
 
                         <Button
                             x:Name="UploadFolderBtn"
+                            ToolTipService.ToolTip="Upload folder"
                             Click="UploadFolderBtn_Click">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <FontIcon Glyph="&#xED25;" FontSize="14" />
-                                <TextBlock Text="Upload Folder" />
+                                <TextBlock x:Name="UploadFolderLabel" Text="Upload Folder" />
                             </StackPanel>
                         </Button>
 
-                        <Button x:Name="NewFolderBtn" Click="NewFolderBtn_Click">
+                        <Button x:Name="NewFolderBtn" ToolTipService.ToolTip="New folder" Click="NewFolderBtn_Click">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <FontIcon Glyph="&#xE8F4;" FontSize="14" />
-                                <TextBlock Text="New Folder" />
+                                <TextBlock x:Name="NewFolderLabel" Text="New Folder" />
                             </StackPanel>
                         </Button>
 
@@ -173,14 +177,14 @@
                             Background="#DC2626"
                             Click="EmptyTrashBtn_Click"
                             Visibility="Collapsed"
-                            ToolTipService.ToolTip="Permanently delete all items in trash and purge messages from Telegram cloud">
+                            ToolTipService.ToolTip="Permanently delete all items in trash and purge the stored messages from Telegram">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <FontIcon Glyph="&#xE74D;" FontSize="14" />
-                                <TextBlock Text="Empty Trash" />
+                                <TextBlock x:Name="EmptyTrashLabel" Text="Empty Trash" />
                             </StackPanel>
                         </Button>
 
-                        <Button ToolTipService.ToolTip="Refresh" Click="RefreshBtn_Click">
+                        <Button x:Name="RefreshToolbarBtn" ToolTipService.ToolTip="Refresh" Click="RefreshBtn_Click">
                             <FontIcon Glyph="&#xE72C;" FontSize="14" />
                         </Button>
                     </StackPanel>
@@ -772,7 +776,6 @@
                                 <!-- Header & Switcher -->
                                 <Grid>
                                     <StackPanel Orientation="Horizontal" Spacing="12">
-                                        <TextBlock FontSize="18" FontWeight="SemiBold" Text="Recent Activity" />
                                         <Border
                                             Background="{ThemeResource LayerFillColorDefaultBrush}"
                                             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
@@ -790,7 +793,7 @@
                                                     Click="RecentAllBtn_Click" />
                                                 <Button
                                                     x:Name="RecentFilesBtn"
-                                                    Content="Cloud Files"
+                                                    Content="Telegram Files"
                                                     Padding="8,4"
                                                     Background="Transparent"
                                                     BorderThickness="0"
@@ -808,11 +811,56 @@
 
                                     <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8">
                                         <Button Content="Clear Finished" Click="ClearFinishedDownloads_Click" />
-                                        <Button Content="📁 Downloads Folder" Click="OpenDownloadsFolder_Click" />
+                                        <Button Click="OpenDownloadsFolder_Click" ToolTipService.ToolTip="Open the downloads folder">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <FontIcon Glyph="&#xE8B7;" FontSize="14" Foreground="#F59E0B" />
+                                                <TextBlock Text="Downloads Folder" />
+                                            </StackPanel>
+                                        </Button>
                                     </StackPanel>
                                 </Grid>
 
-                                <!-- Recent Downloads List -->
+                                <TextBlock x:Name="RecentFilesHeader" FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="RECENT FILES" Margin="4,0,0,-8" />
+                                <ListView
+                                    x:Name="RecentFilesListView"
+                                    SelectionMode="None">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate x:DataType="models:FileModel">
+                                            <Border
+                                                Margin="0,0,0,6"
+                                                Padding="14,10"
+                                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="8">
+                                                <Grid ColumnSpacing="14">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <FontIcon Grid.Column="0" VerticalAlignment="Center" FontSize="20" Foreground="{x:Bind CategoryBrush}" Glyph="{x:Bind CategoryGlyph}" />
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                                        <TextBlock FontWeight="Medium" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Name}" />
+                                                        <TextBlock FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind FormattedDate}" />
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind FormattedSize}" />
+                                                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                                        <Button Background="Transparent" BorderThickness="0" Padding="6" Click="FileDownloadBtn_Click" ToolTipService.ToolTip="Download">
+                                                            <FontIcon FontSize="13" Foreground="#2DD4BF" Glyph="&#xE896;" />
+                                                        </Button>
+                                                        <Button Background="Transparent" BorderThickness="0" Padding="6" Click="FileStarBtn_Click" ToolTipService.ToolTip="Star">
+                                                            <FontIcon FontSize="13" Foreground="#F59E0B" Glyph="{x:Bind StarGlyph, Mode=OneWay}" />
+                                                        </Button>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+
+                                <TextBlock x:Name="RecentTransfersHeader" FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="DOWNLOADS &amp; UPLOADS" Margin="4,0,0,-8" />
                                 <ListView
                                     x:Name="RecentDownloadsListView"
                                     SelectionMode="None">
@@ -908,6 +956,12 @@
                                         </DataTemplate>
                                     </ListView.ItemTemplate>
                                 </ListView>
+
+                                <StackPanel x:Name="RecentEmptyState" HorizontalAlignment="Center" Spacing="10" Margin="0,64,0,0" Visibility="Collapsed">
+                                    <FontIcon FontSize="48" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="&#xE823;" HorizontalAlignment="Center" />
+                                    <TextBlock FontSize="16" FontWeight="SemiBold" Text="No recent activity yet" HorizontalAlignment="Center" />
+                                    <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Files you upload or download will show up here." HorizontalAlignment="Center" />
+                                </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
 
@@ -920,17 +974,21 @@
                             <StackPanel Spacing="16">
                                 <!-- Header & Actions -->
                                 <Grid>
-                                    <StackPanel Spacing="4">
-                                        <TextBlock FontSize="20" FontWeight="SemiBold" Text="Transfers Hub" />
+                                    <StackPanel Spacing="4" VerticalAlignment="Center">
                                         <TextBlock
                                             FontSize="12"
                                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                            Text="Live direct upload &amp; download stream syncing with Telegram cloud" />
+                                            Text="Live direct upload &amp; download stream syncing with Telegram storage" />
                                     </StackPanel>
 
                                     <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                         <Button Content="Clear Finished" Click="ClearFinishedDownloads_Click" />
-                                        <Button Content="📁 Downloads Folder" Click="OpenDownloadsFolder_Click" />
+                                        <Button Click="OpenDownloadsFolder_Click" ToolTipService.ToolTip="Open the downloads folder">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <FontIcon Glyph="&#xE8B7;" FontSize="14" Foreground="#F59E0B" />
+                                                <TextBlock Text="Downloads Folder" />
+                                            </StackPanel>
+                                        </Button>
                                     </StackPanel>
                                 </Grid>
 
@@ -1001,7 +1059,7 @@
                                         FontSize="12"
                                         Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                                         HorizontalAlignment="Center"
-                                        Text="Drop files onto TeleDrive or click Upload to transfer to cloud" />
+                                        Text="Drop files onto TeleDrive or click Upload to transfer to Telegram storage" />
                                 </StackPanel>
 
                                 <!-- Transfers Hub ListView -->
@@ -1108,7 +1166,7 @@
                             HorizontalScrollBarVisibility="Disabled"
                             VerticalScrollBarVisibility="Auto"
                             Visibility="Collapsed">
-                            <StackPanel MaxWidth="800" HorizontalAlignment="Stretch" Spacing="18" Padding="0,0,24,24">
+                            <StackPanel MaxWidth="800" HorizontalAlignment="Left" Spacing="18" Padding="0,0,24,24">
                                 <!-- Settings Subtitle (Page title 'Settings' is prominently displayed in the main top header) -->
                                 <TextBlock Text="Configure display scales, card sizes, local cache, and system diagnostics." FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="0,0,0,4" />
 
@@ -1132,7 +1190,7 @@
                                                 <TextBlock Text="Control how large folders and files appear in the grid view" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                                             </StackPanel>
                                             <ComboBox Grid.Column="1" x:Name="SettingsCardSizeCombo" Width="210" VerticalAlignment="Center" SelectionChanged="SettingsCardSizeCombo_SelectionChanged">
-                                                <ComboBoxItem Content="Tiny / Micro (96px)" Tag="96" />
+                                                <ComboBoxItem Content="Tiny (116px)" Tag="96" />
                                                 <ComboBoxItem Content="Mini / Ultra Compact (130px)" Tag="130" />
                                                 <ComboBoxItem Content="Compact (165px)" Tag="165" />
                                                 <ComboBoxItem Content="Medium / Standard (205px)" Tag="205" />
@@ -1237,7 +1295,7 @@
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                                 <TextBlock Text="Downloads Folder" FontWeight="Medium" FontSize="13" />
-                                                <TextBlock Text="Saved destination for downloaded cloud chunks" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                                <TextBlock Text="Saved destination for downloaded files" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                                             </StackPanel>
                                             <Button Grid.Column="1" VerticalAlignment="Center" Click="OpenDownloadsFolder_Click">
                                                 <StackPanel Orientation="Horizontal" Spacing="6">
@@ -1283,8 +1341,8 @@
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="Local Rust Daemon" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Grid.Column="1" Text="http://127.0.0.1:48291 (Active)" Foreground="#10B981" FontWeight="Medium" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="0" Text="Local TeleDrive service" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock x:Name="DaemonStatusText" Grid.Column="1" Text="Checking…" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontWeight="Medium" VerticalAlignment="Center" />
                                         </Grid>
 
                                         <Grid ColumnSpacing="16">
@@ -1292,8 +1350,8 @@
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="Local Telegram Bot API" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Grid.Column="1" Text="http://127.0.0.1:8082 (2GB Cloud Server Active)" Foreground="#10B981" FontWeight="Medium" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="0" Text="Bundled Telegram Bot API (2 GB parts)" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock x:Name="BotApiStatusText" Grid.Column="1" Text="Checking…" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontWeight="Medium" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="320" />
                                         </Grid>
 
                                         <Grid ColumnSpacing="16">
@@ -1352,7 +1410,7 @@
                                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                         HorizontalAlignment="Center" />
                                     <TextBlock
-                                        Text="Choose an item to view its details, properties, and Telegram cloud chunks."
+                                        Text="Choose an item to view its details, properties, and Telegram storage parts."
                                         FontSize="12"
                                         TextWrapping="Wrap"
                                         TextAlignment="Center"
@@ -1457,10 +1515,10 @@
                                             Background="Transparent"
                                             BorderThickness="0"
                                             Click="DetailsDeletePermanentlyBtn_Click"
-                                            ToolTipService.ToolTip="Permanently delete from Telegram cloud without sending to trash">
+                                            ToolTipService.ToolTip="Permanently delete without sending to trash">
                                             <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                                                 <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="#F87171" />
-                                                <TextBlock Text="Delete Permanently from Cloud" FontSize="11" Foreground="#F87171" />
+                                                <TextBlock Text="Delete Permanently" FontSize="11" Foreground="#F87171" />
                                             </StackPanel>
                                         </Button>
                                     </StackPanel>
@@ -1485,10 +1543,10 @@
                                             Background="#DC2626"
                                             Foreground="White"
                                             Click="DetailsDeletePermanentlyBtn_Click"
-                                            ToolTipService.ToolTip="Permanently delete from Telegram cloud">
+                                            ToolTipService.ToolTip="Permanently delete from Telegram storage">
                                             <StackPanel Orientation="Horizontal" Spacing="8">
                                                 <FontIcon Glyph="&#xE74D;" FontSize="13" />
-                                                <TextBlock Text="Delete Forever from Cloud" FontWeight="SemiBold" />
+                                                <TextBlock Text="Delete Forever" FontWeight="SemiBold" />
                                             </StackPanel>
                                         </Button>
                                     </StackPanel>
@@ -1547,8 +1605,8 @@
 
                                 <MenuFlyoutSeparator />
 
-                                <!-- Telegram Cloud Chunking -->
-                                <TextBlock Text="TELEGRAM CLOUD STORAGE" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <!-- Telegram storage parts -->
+                                <TextBlock Text="TELEGRAM STORAGE" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 <StackPanel Spacing="8">
                                     <Grid>
                                         <TextBlock Text="Chunks" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
@@ -1556,7 +1614,7 @@
                                     </Grid>
                                     <Grid>
                                         <TextBlock Text="Security" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                        <TextBlock Text="AES-256 Cloud Vault" HorizontalAlignment="Right" FontSize="12" FontWeight="Medium" Foreground="#10B981" />
+                                        <TextBlock Text="Private Telegram channel" HorizontalAlignment="Right" FontSize="12" FontWeight="Medium" Foreground="#10B981" />
                                     </Grid>
                                     <Grid>
                                         <TextBlock Text="File ID" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
@@ -1633,7 +1691,7 @@
                             CornerRadius="4"
                             Click="ToggleDetailsPaneBtn_Click"
                             ToolTipService.ToolTip="Toggle Details Pane">
-                            <FontIcon x:Name="ToggleDetailsPaneIcon" Glyph="&#xE9F5;" FontSize="13" />
+                            <FontIcon x:Name="ToggleDetailsPaneIcon" Glyph="&#xE946;" FontSize="13" />
                         </Button>
 
                         <Border
@@ -1695,7 +1753,7 @@
                         FontWeight="SemiBold"
                         HorizontalAlignment="Center" />
                     <TextBlock
-                        Text="Files will be ingested and uploaded directly to Telegram Cloud"
+                        Text="Files will be ingested and uploaded directly to Telegram storage"
                         FontSize="13"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         HorizontalAlignment="Center" />

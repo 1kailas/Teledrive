@@ -11,7 +11,7 @@ public class AppConfig
     public int ViewMode { get; set; } = 0; // 0=Grid, 1=List
     public string Theme { get; set; } = "Default"; // "Default", "Dark", "Light"
     public bool IsPaneOpen { get; set; } = true;
-    public bool IsDetailsPaneVisible { get; set; } = true;
+    public bool IsDetailsPaneVisible { get; set; } = false;
     public int WindowX { get; set; } = -1;
     public int WindowY { get; set; } = -1;
     public int WindowWidth { get; set; } = 1280;
