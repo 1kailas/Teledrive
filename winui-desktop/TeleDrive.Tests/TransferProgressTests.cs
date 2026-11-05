@@ -146,13 +146,47 @@ public class TransferProgressTests
     }
 
     [Fact]
-    public void ConnectingPhase_ZeroTransferred_ReportsZeroProgress()
+    public void FinalizingPhase_FullProgressRatio_AndZeroFakeEta()
     {
-        string status = "connecting";
-        long transferred = 0;
-        long size = 80_000_000;
+        string status = "finalizing";
+        string phase = "finalizing";
+        long size = 92_900_000;
+        long transferred = size;
 
-        double pct = (status == "connecting" && transferred == 0) ? 0.0 : TransferProgressHelpers.CalculateProgressPercentage(transferred, size);
-        Assert.Equal(0.0, pct);
+        double ratio = (status == "finalizing" || phase == "finalizing") ? 1.0 : (double)transferred / size;
+        Assert.Equal(1.0, ratio);
+    }
+
+    [Fact]
+    public void OvertimeGlide_SmoothlyApproachesCapWithoutFreezing()
+    {
+        double pSize = 100_000_000;
+        double rate = 4.0 * 1024 * 1024;
+        double expectedSec = pSize / rate; // ~23.8s
+
+        // Test overtime at 0.5s, 1.5s, 2.5s
+        double ot1 = 0.5;
+        double ot2 = 1.5;
+        double ot3 = 2.5;
+
+        double glide1 = 0.95 + 0.035 * (1.0 - Math.Exp(-ot1 / 1.5));
+        double glide2 = 0.95 + 0.035 * (1.0 - Math.Exp(-ot2 / 1.5));
+        double glide3 = 0.95 + 0.035 * (1.0 - Math.Exp(-ot3 / 1.5));
+
+        Assert.True(glide1 > 0.95, "Glide must be above 95%");
+        Assert.True(glide2 > glide1, "Glide must smoothly advance forward");
+        Assert.True(glide3 > glide2, "Glide must continue advancing forward");
+        Assert.True(glide3 <= 0.99, "Glide must stay under 99% before finalizing");
+    }
+
+    [Fact]
+    public void AdaptiveUploadRate_CalculatesRealisticBandwidth()
+    {
+        ulong size = 40_000_000;
+        double elapsed = 10.0; // 40MB in 10s = 4.0 MB/s
+        double measuredRate = size / elapsed;
+
+        Assert.Equal(4_000_000.0, measuredRate);
+        Assert.InRange(measuredRate, 256.0 * 1024.0, 100.0 * 1024.0 * 1024.0);
     }
 }

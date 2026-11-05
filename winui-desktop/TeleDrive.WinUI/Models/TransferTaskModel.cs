@@ -113,11 +113,11 @@ public partial class TransferTaskModel : ObservableObject
         {
             if (Status == "queued") return 0.0;
             if (Status == "connecting" && Transferred == 0) return 0.0;
-            if (IsDone || Status == "finalizing") return 1.0;
+            if (IsDone || Status == "finalizing" || Phase == "finalizing") return 1.0;
             if (Size == 0) return 0.0;
             double ratio = Math.Clamp((double)Transferred / Size, 0.0, 1.0);
             // An active transfer should never claim 100% until it is finalized and done
-            if (IsActive && ratio >= 0.999) return 0.99;
+            if (IsActive && ratio >= 0.999 && Status != "finalizing" && Phase != "finalizing") return 0.99;
             return ratio;
         }
     }

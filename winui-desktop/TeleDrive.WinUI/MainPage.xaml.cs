@@ -513,7 +513,7 @@ public sealed partial class MainPage : Page
 
         for (int i = Transfers.Count - 1; i >= 0; i--)
         {
-            if (!fetchedIds.Contains(Transfers[i].Id) && !Transfers[i].IsDone)
+            if (!fetchedIds.Contains(Transfers[i].Id))
             {
                 Transfers.RemoveAt(i);
             }

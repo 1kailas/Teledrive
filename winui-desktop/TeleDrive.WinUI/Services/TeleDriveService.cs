@@ -31,6 +31,32 @@ public class TeleDriveService
     // Cache completed uploads so they remain visible in transfers hub
     private readonly ConcurrentDictionary<string, TransferTaskModel> _completedTransfers = new();
     private int _previousActiveUploadCount = 0;
+    private double _measuredUploadRate = 0;
+
+    public double GetAdaptiveUploadRate(ulong daemonEstRate = 0)
+    {
+        if (_measuredUploadRate >= 256.0 * 1024.0)
+        {
+            return _measuredUploadRate;
+        }
+        if (daemonEstRate > 0 && daemonEstRate != 8 * 1024 * 1024)
+        {
+            return daemonEstRate;
+        }
+        return 3.5 * 1024 * 1024; // 3.5 MiB/s realistic default for domestic broadband
+    }
+
+    public void RecordCompletedUploadThroughput(ulong bytes, double elapsedSec)
+    {
+        if (bytes >= 1024 * 1024 && elapsedSec >= 0.5)
+        {
+            double rate = (double)bytes / elapsedSec;
+            rate = Math.Clamp(rate, 256.0 * 1024.0, 100.0 * 1024.0 * 1024.0);
+            _measuredUploadRate = _measuredUploadRate > 0
+                ? (_measuredUploadRate * 0.6 + rate * 0.4)
+                : rate;
+        }
+    }
 
     public TeleDriveService()
     {
@@ -478,6 +504,8 @@ public class TeleDriveService
                             ulong activeEta = 0;
                             bool hasSending = false;
                             bool allStored = true;
+                            bool allPartsPastExpected = true;
+                            int sendingCount = 0;
 
                             foreach (var p in partsArr.EnumerateArray())
                             {
@@ -485,7 +513,7 @@ public class TeleDriveService
                                 var pPhase = p.TryGetProperty("phase", out var ph) ? ph.GetString() : null;
                                 var pSize = p.TryGetProperty("size", out var pSz) ? pSz.GetUInt64() : 0;
                                 long? startedAt = p.TryGetProperty("startedAt", out var sa) && sa.ValueKind == JsonValueKind.Number ? sa.GetInt64() : null;
-                                ulong estRate = p.TryGetProperty("estRate", out var er) && er.ValueKind == JsonValueKind.Number ? er.GetUInt64() : 8 * 1024 * 1024;
+                                ulong estRate = p.TryGetProperty("estRate", out var er) && er.ValueKind == JsonValueKind.Number ? er.GetUInt64() : 0;
 
                                 if (pStatus == "stored")
                                 {
@@ -497,30 +525,46 @@ public class TeleDriveService
                                     if (pPhase == "sending" && startedAt.HasValue && startedAt.Value > 0)
                                     {
                                         hasSending = true;
-                                        double rate = estRate > 0 ? estRate : 8.0 * 1024 * 1024;
+                                        sendingCount++;
+                                        double rate = GetAdaptiveUploadRate(estRate);
                                         double elapsedSec = Math.Max(0.0, (serverNow - startedAt.Value) / 1000.0);
-                                        double expectedSec = Math.Max(0.5, pSize / rate);
+                                        double expectedSec = Math.Max(0.5, (double)pSize / rate);
 
-                                        double fraction;
                                         if (elapsedSec < expectedSec)
                                         {
-                                            fraction = Math.Min(0.98, elapsedSec / expectedSec);
+                                            allPartsPastExpected = false;
+                                            // Smooth progressive upload up to 95%
+                                            double fraction = Math.Min(0.95, (elapsedSec / expectedSec) * 0.95);
                                             ulong partEta = (ulong)Math.Max(1.0, Math.Ceiling(expectedSec - elapsedSec));
                                             activeEta = Math.Max(activeEta, partEta);
+                                            doneBytes += (ulong)(pSize * fraction);
+                                            activeSpeed += (ulong)rate;
+                                        }
+                                        else if (elapsedSec < expectedSec + 3.0)
+                                        {
+                                            allPartsPastExpected = false;
+                                            // Over expected time by 0..3s: smoothly glide from 95% to 98.5%
+                                            double overtime = elapsedSec - expectedSec;
+                                            double glide = 0.95 + 0.035 * (1.0 - Math.Exp(-overtime / 1.5));
+                                            doneBytes += (ulong)(pSize * Math.Min(0.988, glide));
+                                            activeSpeed += (ulong)(rate * Math.Max(0.2, 1.0 - (overtime / 4.0)));
+                                            activeEta = 0; // No fake 1s left countdown!
                                         }
                                         else
                                         {
-                                            fraction = 0.99;
-                                            activeEta = Math.Max(activeEta, 1);
+                                            // Transmission complete (> expectedSec + 3s). Bytes have reached Telegram server.
+                                            // In finalizing phase awaiting Telegram cloud storage acknowledgement.
+                                            doneBytes += pSize;
                                         }
-
-                                        doneBytes += (ulong)(pSize * fraction);
-                                        activeSpeed += (ulong)rate;
+                                    }
+                                    else
+                                    {
+                                        allPartsPastExpected = false;
                                     }
                                 }
                             }
 
-                            if (allStored && partsArr.GetArrayLength() > 0)
+                            if ((allStored || (hasSending && allPartsPastExpected && sendingCount > 0)) && partsArr.GetArrayLength() > 0)
                             {
                                 phase = "finalizing";
                                 status = "finalizing";
@@ -532,7 +576,7 @@ public class TeleDriveService
                             {
                                 phase = "uploading";
                                 status = "uploading";
-                                transferred = Math.Min(doneBytes, size > 0 ? (ulong)(size * 0.99) : doneBytes);
+                                transferred = Math.Min(doneBytes, size > 0 ? (ulong)(size * 0.988) : doneBytes);
                                 speed = activeSpeed;
                                 eta = activeEta;
                             }
@@ -570,9 +614,19 @@ public class TeleDriveService
                     // Monotonic forward progress guard: never step backwards during active upload
                     if (status == "uploading")
                     {
-                        ulong prevBytes = _lastUploadProgress.TryGetValue(id, out var last) ? last.Bytes : 0;
-                        if (transferred < prevBytes) transferred = prevBytes;
-                        _lastUploadProgress[id] = (transferred, now, speed);
+                        if (!_lastUploadProgress.TryGetValue(id, out var last))
+                        {
+                            _lastUploadProgress[id] = (transferred, now, speed);
+                        }
+                        else
+                        {
+                            if (transferred < last.Bytes) transferred = last.Bytes;
+                            _lastUploadProgress[id] = (transferred, last.Time, speed);
+                        }
+                    }
+                    else if (status == "finalizing")
+                    {
+                        transferred = size;
                     }
 
                     var task = new TransferTaskModel
@@ -614,6 +668,7 @@ public class TeleDriveService
         // Check if any upload completed: any item in _completedTransfers that is no longer active
         var activeUploadIds = new HashSet<string>(uploads.Select(u => u.Id));
         bool anyFinished = false;
+        var nowUtc = DateTime.UtcNow;
         foreach (var kvp in _completedTransfers.Where(c => c.Value.IsUpload && !activeUploadIds.Contains(c.Key)))
         {
             if (kvp.Value.Status != "done")
@@ -624,6 +679,12 @@ public class TeleDriveService
                 kvp.Value.Speed = 0;
                 kvp.Value.Eta = 0;
                 anyFinished = true;
+
+                if (_lastUploadProgress.TryRemove(kvp.Key, out var startInfo))
+                {
+                    double totalSec = (nowUtc - startInfo.Time).TotalSeconds;
+                    RecordCompletedUploadThroughput(kvp.Value.Size, totalSec);
+                }
             }
         }
         if (anyFinished)

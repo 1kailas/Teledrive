@@ -164,7 +164,7 @@ public sealed class TrackedTransferState
     public double DisplayTransferred { get; private set; }
     public double TargetTransferred { get; private set; }
 
-    public bool IsDone => LiveModel.IsDone || (Size > 0 && TargetTransferred >= Size);
+    public bool IsDone => LiveModel.IsDone;
     public bool IsQueued => LiveModel.Status == "queued" || LiveModel.Phase == "queued";
     public bool IsActive => LiveModel.IsActive && !IsDone && !IsQueued;
 
@@ -180,7 +180,7 @@ public sealed class TrackedTransferState
     {
         LiveModel = task;
 
-        if (task.IsDone)
+        if (task.IsDone || task.Status == "finalizing" || task.Phase == "finalizing")
         {
             DisplayTransferred = task.Size;
             TargetTransferred = task.Size;
