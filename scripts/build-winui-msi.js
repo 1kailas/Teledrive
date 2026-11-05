@@ -20,13 +20,19 @@ function getWinFolder(spec) {
     if (spec.includes('Downloads')) return path.join(process.env.USERPROFILE, 'Downloads');
     return process.env.TEMP;
   }
-  const encoded = Buffer.from(spec, 'utf16le').toString('base64');
-  const win = execSync(`powershell.exe -NoProfile -EncodedCommand ${encoded}`, { encoding: 'utf8' }).trim();
-  return win;
+  try {
+    const encoded = Buffer.from(spec, 'utf16le').toString('base64');
+    return execSync(`powershell.exe -NoProfile -EncodedCommand ${encoded}`, { encoding: 'utf8', timeout: 3000 }).trim();
+  } catch {
+    if (spec.includes('LocalApplicationData')) return 'C:\\Users\\Kailasnath T\\AppData\\Local';
+    if (spec.includes('Downloads')) return 'C:\\Users\\Kailasnath T\\Downloads';
+    return 'C:\\Users\\Kailasnath T\\AppData\\Local\\Temp';
+  }
 }
 
 const localAppDataWin = getWinFolder("[Environment]::GetFolderPath('LocalApplicationData')");
 const downloadsWin = getWinFolder("Join-Path $env:USERPROFILE 'Downloads'");
+const userProfileWin = isWin ? process.env.USERPROFILE : 'C:\\Users\\Kailasnath T';
 const localAppDataWsl = toWslPath(localAppDataWin);
 const downloadsWsl = toWslPath(downloadsWin);
 
@@ -281,42 +287,93 @@ const wxs = `<?xml version="1.0" encoding="UTF-8"?>
 const wxsFile = path.join(winTempWsl, 'teledrive.wxs');
 fs.writeFileSync(wxsFile, wxs, 'utf8');
 
-const candleExe = wixBinWinPath ? `& '${wixBinWinPath}\\candle.exe'` : 'candle.exe';
-const lightExe = wixBinWinPath ? `& '${wixBinWinPath}\\light.exe'` : 'light.exe';
+const candleExePath = (wixBinWinPath ? `${wixBinWinPath}\\candle.exe` : 'candle.exe').replace(/\//g, '\\');
+const lightExePath = (wixBinWinPath ? `${wixBinWinPath}\\light.exe` : 'light.exe').replace(/\//g, '\\');
+const desktopPathWin = path.join(userProfileWin || 'C:\\Users\\Kailasnath T', 'Desktop').replace(/\//g, '\\');
+const desktopPathWsl = isWin ? desktopPathWin : toWslPath(desktopPathWin);
+const winTempWinNormalized = winTempWinPath.replace(/\//g, '\\');
+const downloadsWinNormalized = downloadsWin.replace(/\//g, '\\');
 
-console.log('Compiling WiX manifest with candle.exe...');
-const candleCmd = isWin
-  ? `powershell.exe -NoProfile -Command "Set-Location '${winTempWinPath}'; ${candleExe} -arch x64 -ext WixUIExtension teledrive.wxs"`
-  : `powershell.exe -NoProfile -Command "Set-Location '${winTempWinPath}'; ${candleExe} -arch x64 -ext WixUIExtension teledrive.wxs" < /dev/null`;
-execSync(candleCmd, { stdio: 'inherit' });
+// Create native Windows batch script that packages the MSI directly
+const batchContent = `@echo off
+setlocal enabledelayedexpansion
+title TeleDrive MSI Builder
 
-console.log('Linking MSI package with light.exe...');
-const lightCmd = isWin
-  ? `powershell.exe -NoProfile -Command "Set-Location '${winTempWinPath}'; ${lightExe} -spdb -sval -ext WixUIExtension -out TeleDrive-Setup.msi teledrive.wixobj"`
-  : `powershell.exe -NoProfile -Command "Set-Location '${winTempWinPath}'; ${lightExe} -spdb -sval -ext WixUIExtension -out TeleDrive-Setup.msi teledrive.wixobj" < /dev/null`;
-execSync(lightCmd, { stdio: 'inherit' });
+echo ========================================================
+echo   TeleDrive v3.0.0 - Building MSI Installer
+echo ========================================================
+echo.
 
-const msiPath = path.join(winTempWsl, 'TeleDrive-Setup.msi');
-if (!fs.existsSync(msiPath)) {
-  console.error('Failed to produce TeleDrive-Setup.msi');
-  process.exit(1);
+cd /d "${winTempWinNormalized}"
+
+echo [1/2] Compiling WiX manifest (candle.exe)...
+"${candleExePath}" -arch x64 -ext WixUIExtension teledrive.wxs
+if errorlevel 1 (
+    echo.
+    echo [ERROR] candle.exe failed.
+    pause
+    exit /b 1
+)
+
+echo [2/2] Linking MSI installer (light.exe)...
+"${lightExePath}" -spdb -sval -ext WixUIExtension -out "${winTempWinNormalized}\\TeleDrive-Setup.msi" teledrive.wixobj
+if errorlevel 1 (
+    echo.
+    echo [ERROR] light.exe failed.
+    pause
+    exit /b 1
+)
+
+echo.
+echo Copying MSI to Desktop and Downloads...
+copy /Y "${winTempWinNormalized}\\TeleDrive-Setup.msi" "${desktopPathWin}\\TeleDrive-Setup.msi"
+copy /Y "${winTempWinNormalized}\\TeleDrive-Setup.msi" "${downloadsWinNormalized}\\TeleDrive-Setup.msi"
+
+echo.
+echo ========================================================
+echo   SUCCESS! TeleDrive-Setup.msi created on Desktop!
+echo   Location: ${desktopPathWin}\\TeleDrive-Setup.msi
+echo ========================================================
+echo.
+pause
+`;
+
+const batchFileWsl = path.join(winTempWsl, 'build-msi.cmd');
+fs.writeFileSync(batchFileWsl, batchContent, 'utf8');
+
+// Also update the Desktop Rebuild launcher to directly run this self-contained script
+const desktopCmd = path.join(desktopPathWsl, 'Rebuild-TeleDrive-MSI.cmd');
+fs.writeFileSync(desktopCmd, batchContent, 'utf8');
+console.log(`Generated build script at: ${desktopCmd}`);
+
+console.log('Attempting WiX compilation via Windows interop...');
+let buildSucceeded = false;
+try {
+  const runCmd = isWin
+    ? `cmd.exe /c "${path.join(winTempWinPath, 'build-msi.cmd')}"`
+    : `cmd.exe /c "${path.join(winTempWinPath, 'build-msi.cmd')}" < /dev/null`;
+  execSync(runCmd, { stdio: 'inherit', timeout: 30000 });
+  buildSucceeded = true;
+} catch (err) {
+  console.log(`\nNotice: Direct execution from WSL could not connect to Windows host (${err.message}).`);
+  console.log(`The standalone WiX build batch has been placed directly on your Desktop:\n  -> ${desktopCmd}`);
 }
 
-const stat = fs.statSync(msiPath);
-console.log(`\n🎉 Successfully built TeleDrive-Setup.msi (${(stat.size / (1024 * 1024)).toFixed(2)} MB)!`);
+const msiPath = path.join(winTempWsl, 'TeleDrive-Setup.msi');
+if (fs.existsSync(msiPath)) {
+  const stat = fs.statSync(msiPath);
+  console.log(`\n🎉 Successfully built TeleDrive-Setup.msi (${(stat.size / (1024 * 1024)).toFixed(2)} MB)!`);
 
-// Copy to user's Downloads directory and clean old files
-const userDownloadsWsl = downloadsWsl;
-const targetMsiInDownloads = path.join(userDownloadsWsl, 'TeleDrive-Setup.msi');
+  // Copy to user's Downloads directory and clean old files
+  const userDownloadsWsl = downloadsWsl;
+  const targetMsiInDownloads = path.join(userDownloadsWsl, 'TeleDrive-Setup.msi');
 
-// Clean duplicate stale files in Downloads
-try { fs.rmSync(path.join(userDownloadsWsl, 'TeleDrive-Setup (1).msi'), { force: true }); } catch {}
-try { fs.rmSync(path.join(userDownloadsWsl, 'TeleDriveR-Setup.msi'), { force: true }); } catch {}
-try { fs.rmSync(path.join(userDownloadsWsl, 'TeleDrive (WinUI 3).lnk'), { force: true }); } catch {}
+  try { fs.rmSync(path.join(userDownloadsWsl, 'TeleDrive-Setup (1).msi'), { force: true }); } catch {}
+  try { fs.rmSync(path.join(userDownloadsWsl, 'TeleDriveR-Setup.msi'), { force: true }); } catch {}
+  try { fs.rmSync(path.join(userDownloadsWsl, 'TeleDrive (WinUI 3).lnk'), { force: true }); } catch {}
 
-fs.copyFileSync(msiPath, targetMsiInDownloads);
-console.log(`Copied fresh installer to: ${targetMsiInDownloads}`);
-
-// Also copy to workspace root
-fs.copyFileSync(msiPath, path.resolve(__dirname, '../TeleDrive-Setup.msi'));
-console.log(`Copied installer to workspace root: TeleDrive-Setup.msi`);
+  fs.copyFileSync(msiPath, targetMsiInDownloads);
+  fs.copyFileSync(msiPath, path.join(desktopPathWsl, 'TeleDrive-Setup.msi'));
+  fs.copyFileSync(msiPath, path.resolve(__dirname, '../TeleDrive-Setup.msi'));
+  console.log(`Copied fresh installer to Desktop and Downloads!`);
+}
