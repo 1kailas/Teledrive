@@ -7,8 +7,8 @@ const DB_VERSION = 1;
 const KEY_PREFIX = 'frame:v2:';
 const MAX_ACTIVE = 2;
 const MAX_CACHE_ENTRIES = 90;
-const CAPTURE_EXTENSIONS = new Set(['mp4', 'm4v', 'webm', 'ogv', 'ogg', 'mov']);
-const CAPTURE_MIME_TYPES = new Set(['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime']);
+const CAPTURE_EXTENSIONS = new Set(['mp4', 'm4v', 'webm', 'ogv', 'ogg', 'mov', 'mkv', 'avi', 'ts']);
+const CAPTURE_MIME_TYPES = new Set(['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-matroska', 'video/mp2t']);
 
 interface StoredFrame {
   key: string;

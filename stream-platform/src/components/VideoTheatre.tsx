@@ -16,17 +16,17 @@ import { useExit, usePresence } from './ui';
 
 interface VideoTheatreProps {
   video: MediaItem;
-  activeEpisode: EpisodeItem | null;
-  seasonEpisodes: EpisodeItem[];
-  nextEpisode: EpisodeItem | null;
-  hasPreviousEpisode: boolean;
-  hasNextEpisode: boolean;
+  activeEpisode?: EpisodeItem | null;
+  seasonEpisodes?: EpisodeItem[];
+  nextEpisode?: EpisodeItem | null;
+  hasPreviousEpisode?: boolean;
+  hasNextEpisode?: boolean;
   saved: boolean;
   onClose: () => void;
   onToggleSaved: () => void;
-  onPreviousEpisode: () => void;
-  onNextEpisode: () => void;
-  onPlayEpisode: (episode: EpisodeItem) => void;
+  onPreviousEpisode?: () => void;
+  onNextEpisode?: () => void;
+  onPlayEpisode?: (episode: EpisodeItem) => void;
   onCopyLink: (id: string) => void;
 }
 
@@ -52,10 +52,10 @@ const SHORTCUTS: Array<[string, string]> = [
 ];
 
 export function VideoTheatre({
-  video, activeEpisode, seasonEpisodes, nextEpisode,
-  hasPreviousEpisode, hasNextEpisode, saved,
-  onClose, onToggleSaved, onPreviousEpisode, onNextEpisode,
-  onPlayEpisode, onCopyLink,
+  video, activeEpisode = null, seasonEpisodes = [], nextEpisode = null,
+  hasPreviousEpisode = false, hasNextEpisode = false, saved,
+  onClose, onToggleSaved, onPreviousEpisode = () => {}, onNextEpisode = () => {},
+  onPlayEpisode = () => {}, onCopyLink,
 }: VideoTheatreProps) {
   const [audioPrefs, setAudioPrefs] = useState<AudioPreferences>(getAudioPrefs);
   const [audioTracks, setAudioTracks] = useState<{ id: string; label: string; enabled: boolean }[]>([]);

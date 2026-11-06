@@ -1,13 +1,12 @@
 import {
   Bookmark, Check, ChevronDown, ChevronRight, CircleAlert, Film, FolderOpen,
-  Home, Music2, Play, Plus, RefreshCw, Search, Tv, X,
+  Home, Music2, Play, Plus, RefreshCw, Search, X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { PlayerBar } from './components/PlayerBar';
-import { SeriesHub } from './components/SeriesHub';
 import { VideoTheatre } from './components/VideoTheatre';
 import {
-  AlbumCard, Artwork, EmptyState, LoadingView, MediaCard, SeriesCard, Shelf,
+  AlbumCard, Artwork, EmptyState, LoadingView, MediaCard, Shelf,
   TrackRow, useBodyLock, usePresence,
 } from './components/ui';
 import { posterDataUrl } from './poster';
@@ -15,23 +14,21 @@ import { useCapturedFrame } from './thumbs';
 import {
   artistOf, artwork, formatOf, getPositions, getWatchlist,
   saveWatchlist, sizeOf, timeOf, titleOf,
-  type EpisodeItem, type MediaItem, type SeriesItem,
+  type MediaItem,
 } from './library';
 
-type View = 'home' | 'films' | 'series' | 'music' | 'saved';
+type View = 'home' | 'films' | 'music' | 'saved';
 type FilmSort = 'recent' | 'title' | 'duration';
 
 const NAV: Array<{ id: View; label: string; icon: typeof Home }> = [
   { id: 'home', label: 'Home', icon: Home },
-  { id: 'films', label: 'Films', icon: Film },
-  { id: 'series', label: 'Series', icon: Tv },
+  { id: 'films', label: 'Movies & Films', icon: Film },
   { id: 'music', label: 'Music', icon: Music2 },
   { id: 'saved', label: 'My list', icon: Bookmark },
 ];
 
 const PAGE_COPY: Record<Exclude<View, 'home'>, { title: string; body: string }> = {
-  films: { title: 'Films', body: 'Everything in your private cinema.' },
-  series: { title: 'Series', body: 'Episodic shows and documentaries.' },
+  films: { title: 'Movies & Films', body: 'All movies, films and videos in your private cinema.' },
   music: { title: 'Music', body: 'Albums, soundtracks and singles.' },
   saved: { title: 'My list', body: 'The films and tracks you want to come back to.' },
 };
@@ -113,7 +110,6 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<MediaItem[]>([]);
-  const [series, setSeries] = useState<SeriesItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [refresh, setRefresh] = useState(0);
@@ -125,8 +121,6 @@ export default function App() {
   const [filmSort, setFilmSort] = useState<FilmSort>('recent');
 
   const [video, setVideo] = useState<MediaItem | null>(null);
-  const [selectedSeries, setSelectedSeries] = useState<SeriesItem | null>(null);
-  const [activeEpisode, setActiveEpisode] = useState<EpisodeItem | null>(null);
 
   const [track, setTrack] = useState<MediaItem | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -143,7 +137,7 @@ export default function App() {
   const searchRef = useRef<HTMLInputElement>(null);
   const toastTimer = useRef<number | null>(null);
 
-  useBodyLock(Boolean(video || selectedSeries));
+  useBodyLock(Boolean(video));
 
   /* ---------------------------------------------------------------- */
   /*  Data                                                             */
@@ -160,7 +154,7 @@ export default function App() {
     setError('');
     const type = query
       ? 'all'
-      : view === 'films' || view === 'series'
+      : view === 'films'
         ? 'video'
         : view === 'music' ? 'audio' : 'all';
 
@@ -171,11 +165,22 @@ export default function App() {
             ? 'Your viewing session expired. Sign in with Cloudflare Access to continue.'
             : 'The library could not be reached. Check your connection or hosted settings.');
         }
-        return response.json() as Promise<{ items?: MediaItem[]; series?: SeriesItem[] }>;
+        return response.json() as Promise<{ items?: MediaItem[]; series?: { seasons?: { episodes?: MediaItem[] }[] }[] }>;
       })
       .then((data) => {
-        setItems(Array.isArray(data.items) ? data.items : []);
-        if (Array.isArray(data.series)) setSeries(data.series);
+        const list: MediaItem[] = Array.isArray(data.items) ? [...data.items] : [];
+        if (Array.isArray(data.series)) {
+          for (const s of data.series) {
+            for (const se of (s.seasons || [])) {
+              for (const ep of (se.episodes || [])) {
+                if (!list.some((it) => it.id === ep.id)) {
+                  list.push(ep);
+                }
+              }
+            }
+          }
+        }
+        setItems(list);
       })
       .catch((reason: unknown) => {
         if (controller.signal.aborted) return;
@@ -197,7 +202,7 @@ export default function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
       const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
-      if (event.key === '/' && !typing && !video && !selectedSeries) {
+      if (event.key === '/' && !typing && !video) {
         event.preventDefault();
         searchRef.current?.focus();
       }
@@ -209,7 +214,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [video, selectedSeries]);
+  }, [video]);
 
   useEffect(() => () => {
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
@@ -275,39 +280,15 @@ export default function App() {
   }, [visibleVideos, filmSort]);
 
   const hero = continueWatching[0] ?? videos[0] ?? null;
-  const featuredSeries = !hero && series.length > 0 ? series[0]! : null;
-  const featuredEpisode = featuredSeries?.seasons[0]?.episodes[0] ?? null;
-  const heroItem = hero ?? featuredEpisode;
-  const heroTitle = hero ? titleOf(hero) : featuredSeries?.name ?? '';
+  const heroItem = hero;
+  const heroTitle = hero ? titleOf(hero) : '';
   const heroPosition = hero ? positions[hero.id] ?? 0 : 0;
   const heroProgress = hero?.duration && heroPosition > 5
     ? Math.min(heroPosition / hero.duration, 1)
     : 0;
   const heroContinue = heroProgress > 0;
 
-  const currentSeries = useMemo(() => {
-    if (!activeEpisode) return selectedSeries;
-    return series.find((entry) => entry.id === activeEpisode.seriesId)
-      ?? (selectedSeries?.id === activeEpisode.seriesId ? selectedSeries : null);
-  }, [activeEpisode, series, selectedSeries]);
-
-  const seasonEpisodes = useMemo(() => {
-    if (!currentSeries || !activeEpisode) return [];
-    const season = currentSeries.seasons.find((entry) => entry.seasonNumber === activeEpisode.seasonNumber)
-      ?? currentSeries.seasons[0];
-    return season?.episodes ?? [];
-  }, [currentSeries, activeEpisode]);
-
-  const episodeIndex = activeEpisode
-    ? seasonEpisodes.findIndex((entry) => entry.id === activeEpisode.id)
-    : -1;
-  const previousEpisode = episodeIndex > 0 ? seasonEpisodes[episodeIndex - 1] ?? null : null;
-  const nextEpisode = episodeIndex >= 0 && episodeIndex < seasonEpisodes.length - 1
-    ? seasonEpisodes[episodeIndex + 1] ?? null
-    : null;
-
-  const totalResults = visibleVideos.length + visibleSongs.length
-    + (isSearching ? series.length : 0);
+  const totalResults = visibleVideos.length + visibleSongs.length;
 
   /* ---------------------------------------------------------------- */
   /*  Actions                                                          */
@@ -340,41 +321,12 @@ export default function App() {
   function playVideo(item: MediaItem) {
     audioRef.current?.pause();
     setPlaying(false);
-    setSelectedSeries(null);
-    setActiveEpisode(null);
     setVideo(item);
-  }
-
-  function playEpisode(episode: EpisodeItem, owningSeries: SeriesItem) {
-    audioRef.current?.pause();
-    setPlaying(false);
-    setSelectedSeries(owningSeries);
-    setActiveEpisode(episode);
-    setVideo(episode);
   }
 
   function closeVideo() {
     setVideo(null);
-    setActiveEpisode(null);
     setPositions(getPositions());
-  }
-
-  function closeSeries() {
-    setSelectedSeries(null);
-    setActiveEpisode(null);
-  }
-
-  function playNextEpisode() {
-    if (nextEpisode && currentSeries) playEpisode(nextEpisode, currentSeries);
-  }
-
-  function playPreviousEpisode() {
-    if (previousEpisode && currentSeries) playEpisode(previousEpisode, currentSeries);
-  }
-
-  function playSeries(seriesItem: SeriesItem) {
-    const first = seriesItem.seasons[0]?.episodes[0];
-    if (first) playEpisode(first, seriesItem);
   }
 
   function playFeatured() {
@@ -382,7 +334,6 @@ export default function App() {
       playVideo(hero);
       return;
     }
-    if (featuredSeries) playSeries(featuredSeries);
   }
 
   function playSong(item: MediaItem) {
@@ -395,7 +346,6 @@ export default function App() {
     }
 
     if (video) closeVideo();
-    if (selectedSeries) closeSeries();
     setAudioError('');
     const queue = visibleSongs.length > 0 ? visibleSongs : songs.length > 0 ? songs : [item];
     queueRef.current = queue;
@@ -489,7 +439,7 @@ export default function App() {
   const isHome = view === 'home' && !isSearching;
   const viewKey = error ? 'error' : loading ? 'loading' : isSearching ? 'search' : isHome ? 'home' : view;
   const showHero = isHome && Boolean(heroItem);
-  const hasLibrary = videos.length > 0 || series.length > 0 || songs.length > 0;
+  const hasLibrary = videos.length > 0 || songs.length > 0;
   const headerSolid = scrolled || view !== 'home' || isSearching || loading || Boolean(error) || !showHero;
 
   const continueRow = continueWatching.filter((item) => item.id !== hero?.id);
@@ -535,7 +485,7 @@ export default function App() {
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search"
-                aria-label="Search films, series, artists and tracks"
+                aria-label="Search movies, films, artists and tracks"
                 maxLength={120}
               />
               {search ? (
@@ -587,7 +537,7 @@ export default function App() {
           <div className="content">
             <PageHeading
               title={`Results for “${query}”`}
-              meta={`${plural(totalResults, 'result')} across films, series and music`}
+              meta={`${plural(totalResults, 'result')} across movies, films and music`}
             >
               <button type="button" className="button button-secondary" onClick={clearSearch}>
                 <X size={15} />
@@ -608,23 +558,13 @@ export default function App() {
               />
             ) : (
               <>
-                {(series.length > 0 || visibleVideos.length > 0) ? (
-                  <section className="result-section" aria-label="Films and series results">
+                {visibleVideos.length > 0 ? (
+                  <section className="result-section" aria-label="Movies and films results">
                     <div className="section-heading">
-                      <h2>Films & series</h2>
-                      <span>{plural(series.length + visibleVideos.length, 'title')}</span>
+                      <h2>Movies & films</h2>
+                      <span>{plural(visibleVideos.length, 'title')}</span>
                     </div>
                     <div className="media-grid">
-                      {series.map((entry) => (
-                        <SeriesCard
-                          key={entry.id}
-                          series={entry}
-                          onOpen={() => {
-                            setSelectedSeries(entry);
-                            setActiveEpisode(null);
-                          }}
-                        />
-                      ))}
                       {sortedVideos.map((item) => (
                         <MediaCard
                           key={item.id}
@@ -681,7 +621,7 @@ export default function App() {
                 <div className="hero-content">
                   <span className="eyebrow">
                     <span className="eyebrow-dot" />
-                    {featuredSeries && !hero ? 'Featured series' : heroContinue ? 'Continue watching' : 'Featured film'}
+                    {heroContinue ? 'Continue watching' : 'Featured movie'}
                   </span>
                   <h1>{heroTitle}</h1>
                   <div className="hero-meta">
@@ -692,24 +632,15 @@ export default function App() {
                         <span>{sizeOf(hero.size)}</span>
                         {hero.parts && hero.parts.length > 1 ? <span>{hero.parts.length} parts</span> : null}
                       </>
-                    ) : featuredSeries ? (
-                      <>
-                        <span>{plural(featuredSeries.seasonsCount, 'season')}</span>
-                        <span>{plural(featuredSeries.episodesCount, 'episode')}</span>
-                      </>
                     ) : null}
                   </div>
                   <p className="hero-description">
-                    {hero?.description
-                      || featuredSeries?.description
-                      || 'From your private collection, streamed directly from TeleDrive.'}
+                    {hero?.description || 'From your private collection, streamed directly from TeleDrive.'}
                   </p>
                   <div className="hero-actions">
                     <button type="button" className="button button-primary" onClick={playFeatured}>
                       <Play size={17} fill="currentColor" />
-                      {heroContinue
-                        ? 'Resume'
-                        : featuredSeries && !hero ? `Play S${featuredEpisode?.seasonNumber ?? 1} E${featuredEpisode?.episodeNumber ?? 1}` : 'Play film'}
+                      {heroContinue ? 'Resume' : 'Play movie'}
                     </button>
                     {hero ? (
                       <button
@@ -719,15 +650,6 @@ export default function App() {
                       >
                         {saved.includes(hero.id) ? <Check size={16} /> : <Plus size={16} />}
                         {saved.includes(hero.id) ? 'In My list' : 'Add to My list'}
-                      </button>
-                    ) : featuredSeries ? (
-                      <button
-                        type="button"
-                        className="button button-secondary"
-                        onClick={() => { setSelectedSeries(featuredSeries); setActiveEpisode(null); }}
-                      >
-                        <Tv size={16} />
-                        View series
                       </button>
                     ) : null}
                   </div>
@@ -746,7 +668,7 @@ export default function App() {
                 <EmptyState
                   icon={<FolderOpen size={22} />}
                   title="Your library is empty"
-                  body="Add films, series folders and music to the stream folder in TeleDrive. They will appear here automatically."
+                  body="Add movies, films and music to TeleDrive. They will appear here automatically."
                   action={(
                     <button type="button" className="button button-secondary" onClick={() => setRefresh((current) => current + 1)}>
                       <RefreshCw size={15} />
@@ -760,7 +682,7 @@ export default function App() {
                 <div className="welcome">
                   <span className="eyebrow"><span className="eyebrow-dot" />Your library</span>
                   <h1>Your library</h1>
-                  <p>Films, series and music, streamed directly from TeleDrive.</p>
+                  <p>Movies, films and music, streamed directly from TeleDrive.</p>
                 </div>
               </div>
             )}
@@ -804,25 +726,7 @@ export default function App() {
                 </Shelf>
               ) : null}
 
-              {series.length > 0 ? (
-                <Shelf
-                  title="Series"
-                  meta={plural(series.length, 'series')}
-                  action={(
-                    <button type="button" className="link-action" onClick={() => go('series')}>
-                      See all <ChevronRight size={15} />
-                    </button>
-                  )}
-                >
-                  {series.slice(0, 10).map((entry) => (
-                    <SeriesCard
-                      key={entry.id}
-                      series={entry}
-                      onOpen={() => { setSelectedSeries(entry); setActiveEpisode(null); }}
-                    />
-                  ))}
-                </Shelf>
-              ) : null}
+
 
               {albums.length > 0 ? (
                 <Shelf
@@ -897,37 +801,7 @@ export default function App() {
               </>
             ) : null}
 
-            {view === 'series' ? (
-              <>
-                <PageHeading
-                  title={PAGE_COPY.series.title}
-                  meta={`${plural(series.length, 'series')} · ${PAGE_COPY.series.body}`}
-                />
-                {series.length === 0 ? (
-                  <EmptyState
-                    icon={<Tv size={22} />}
-                    title="No series yet"
-                    body="Create a folder for each show inside the stream folder in TeleDrive. Season folders and episode numbers are detected automatically."
-                    action={(
-                      <button type="button" className="button button-secondary" onClick={() => setRefresh((current) => current + 1)}>
-                        <RefreshCw size={15} />
-                        Refresh library
-                      </button>
-                    )}
-                  />
-                ) : (
-                  <div className="media-grid">
-                    {series.map((entry) => (
-                      <SeriesCard
-                        key={entry.id}
-                        series={entry}
-                        onOpen={() => { setSelectedSeries(entry); setActiveEpisode(null); }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </>
-            ) : null}
+
 
             {view === 'music' ? (
               <>
@@ -1148,31 +1022,14 @@ export default function App() {
         ))}
       </nav>
 
-      {selectedSeries && !video ? (
-        <SeriesHub
-          series={selectedSeries}
-          playingId={activeEpisode?.id}
-          onClose={closeSeries}
-          onPlay={playEpisode}
-        />
-      ) : null}
+
 
       {video ? (
         <VideoTheatre
           video={video}
-          activeEpisode={activeEpisode}
-          seasonEpisodes={seasonEpisodes}
-          nextEpisode={nextEpisode}
-          hasPreviousEpisode={Boolean(previousEpisode)}
-          hasNextEpisode={Boolean(nextEpisode)}
           saved={saved.includes(video.id)}
           onClose={closeVideo}
           onToggleSaved={() => toggleSaved(video.id)}
-          onPreviousEpisode={playPreviousEpisode}
-          onNextEpisode={playNextEpisode}
-          onPlayEpisode={(episode) => {
-            if (currentSeries) playEpisode(episode, currentSeries);
-          }}
           onCopyLink={copyStreamUrl}
         />
       ) : null}

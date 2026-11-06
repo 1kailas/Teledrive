@@ -405,17 +405,17 @@ async function fetchTelegramChunk(
 }
 
 function normalizeCatalogFile(item: CatalogFile): CatalogFile {
-  if (item.name.toLowerCase().includes('inception') || item.id === '9bd298eb-844b-4062-b216-590c78969698') {
+  if (item.id === '9bd298eb-844b-4062-b216-590c78969698' && (!item.parts || item.parts.length === 0)) {
     return {
       ...item,
       id: '9bd298eb-844b-4062-b216-590c78969698',
-      name: 'Inception.2010.1080p.NF.WEB-DL.English.H.264.mp4',
-      mimeType: 'video/mp4',
-      format: 'MP4',
+      name: item.name || 'Inception.2010.1080p.NF.WEB-DL.English.H.264.mp4',
+      mimeType: item.mimeType || 'video/mp4',
+      format: item.format || 'MP4',
       category: 'video',
-      size: 2914735596,
-      duration: 8884,
-      description: 'Dom Cobb is a skilled thief who steals valuable secrets from deep within the subconscious during the dream state. Full-length feature film (2h 28m).',
+      size: item.size || 2914735596,
+      duration: item.duration || 8884,
+      description: item.description || 'Dom Cobb is a skilled thief who steals valuable secrets from deep within the subconscious during the dream state. Full-length feature film (2h 28m).',
       partsCount: INCEPTION_PARTS.length,
       parts: INCEPTION_PARTS as unknown as CatalogPart[],
     };
@@ -442,8 +442,8 @@ function parseCatalogPayload(payload: unknown): StandaloneCatalog {
     })) : [];
   }
 
-  // Guarantee that Inception is always present and complete
-  if (!items.some((i) => i.id === '9bd298eb-844b-4062-b216-590c78969698')) {
+  // Provide demo Inception item only if catalog is completely empty
+  if (items.length === 0) {
     items.push(normalizeCatalogFile({
       id: '9bd298eb-844b-4062-b216-590c78969698',
       name: 'Inception.2010.1080p.NF.WEB-DL.English.H.264.mp4',
