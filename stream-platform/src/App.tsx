@@ -691,15 +691,22 @@ export default function App() {
                     <div className="popover-section">
                       <span className="popover-label">AUDIO STREAM</span>
                       <div className="audio-track-list">
-                        {audioTracks.map((tr, idx) => (
-                          <button
-                            key={tr.id}
-                            className={`audio-option-btn ${tr.enabled ? 'selected' : ''}`}
-                            onClick={() => switchAudioTrack(idx)}>
-                            <span className="radio-circle">{tr.enabled && <span className="inner-dot" />}</span>
-                            <span>{tr.label}</span>
-                          </button>
-                        ))}
+                        {audioTracks.length > 0 ? (
+                          audioTracks.map((tr, idx) => (
+                            <button
+                              key={tr.id}
+                              className={`audio-option-btn ${tr.enabled ? 'selected' : ''}`}
+                              onClick={() => switchAudioTrack(idx)}>
+                              <span className="radio-circle">{tr.enabled && <span className="inner-dot" />}</span>
+                              <span>{tr.label}</span>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="audio-option-btn selected" style={{ cursor: 'default' }}>
+                            <span className="radio-circle"><span className="inner-dot" /></span>
+                            <span>Main Audio Track (AAC Stereo / Surround)</span>
+                          </div>
+                        )}
                       </div>
                     </div>
 

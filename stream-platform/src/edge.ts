@@ -14,6 +14,7 @@ export interface EdgeEnv {
     get: (key: string) => Promise<string | null>;
     put: (key: string, value: string) => Promise<void>;
   };
+  ASSETS?: { fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> };
 }
 
 type Fetcher = typeof fetch;
@@ -48,6 +49,7 @@ const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_CATALOG_BYTES = 4 * 1024 * 1024;
 let cachedKeys: { team: string; keys: AccessJwk[]; until: number } | undefined;
 const filePathCache = new Map<string, { path: string; expires: number }>();
+let cachedStandaloneCatalog: { items: CatalogFile[]; expires: number } | null = null;
 
 function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
   const binary = atob(value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '='));
@@ -199,8 +201,9 @@ function getBotToken(botId: string | undefined, env: EdgeEnv): string | undefine
       const json = JSON.parse(env.BOT_TOKENS) as Record<string, string>;
       for (const [k, v] of Object.entries(json)) {
         if (typeof v === 'string' && v.includes(':')) {
-          map.set(k, v.trim());
-          map.set(v.trim().split(':')[0]!, v.trim());
+          const clean = v.replace(/^["']|["']$/g, '').trim();
+          map.set(k, clean);
+          map.set(clean.split(':')[0]!, clean);
         }
       }
     } catch {}
@@ -208,7 +211,11 @@ function getBotToken(botId: string | undefined, env: EdgeEnv): string | undefine
 
   // 2. Parse comma, space, or newline-separated tokens from BOT_TOKENS or TELEGRAM_BOT_TOKEN
   const rawSources = [env.BOT_TOKENS, env.TELEGRAM_BOT_TOKEN].filter(Boolean).join(',');
-  const tokens = rawSources.split(/[\s,;\n\r]+/).map((t) => t.trim()).filter((t) => t.includes(':'));
+  const tokens = rawSources
+    .split(/[\s,;\n\r]+/)
+    .map((t) => t.replace(/^["']|["']$/g, '').trim())
+    .filter((t) => t.includes(':'));
+
   for (const t of tokens) {
     const id = t.split(':')[0]!;
     if (!map.has(id)) map.set(id, t);
@@ -253,15 +260,42 @@ async function loadStandaloneCatalog(request: Request, env: EdgeEnv, fetcher: Fe
       }
     } catch {}
   }
+
+  // In-memory cache for static fetch
+  if (cachedStandaloneCatalog && cachedStandaloneCatalog.expires > Date.now()) {
+    return cachedStandaloneCatalog.items;
+  }
+
+  // Try Cloudflare Pages ASSETS binding
+  if (env.ASSETS) {
+    try {
+      const staticUrl = new URL('/catalog.json', request.url);
+      const res = await env.ASSETS.fetch(staticUrl);
+      if (res.ok) {
+        const parsed = await res.json() as { items?: CatalogFile[] } | CatalogFile[];
+        const items = Array.isArray(parsed) ? parsed : (parsed.items ?? []);
+        if (items.length > 0) {
+          cachedStandaloneCatalog = { items, expires: Date.now() + 60_000 };
+          return items;
+        }
+      }
+    } catch {}
+  }
+
   // Try static /catalog.json from Pages deployment
   try {
     const staticUrl = new URL('/catalog.json', request.url);
     const res = await fetcher(staticUrl);
     if (res.ok) {
       const parsed = await res.json() as { items?: CatalogFile[] } | CatalogFile[];
-      return Array.isArray(parsed) ? parsed : (parsed.items ?? []);
+      const items = Array.isArray(parsed) ? parsed : (parsed.items ?? []);
+      if (items.length > 0) {
+        cachedStandaloneCatalog = { items, expires: Date.now() + 60_000 };
+        return items;
+      }
     }
   } catch {}
+
   return [];
 }
 
@@ -535,12 +569,10 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
     }
 
     const isDownload = url.searchParams.get('download') === '1';
-    const isCompatReq = url.searchParams.get('compat') === '1' || url.searchParams.get('stream') === 'web';
     const reqFormat = url.searchParams.get('format');
 
-    // High-fidelity cinema stream fallback if Telegram cloud rejects (>20MB Bot API download limit or unresolvable part)
-    // or if the browser player explicitly requests a web-compatible stream
-    if (!streamBody || (!isDownload && isCompatReq)) {
+    // High-fidelity cinema stream fallback ONLY if Telegram cloud rejects or unresolvable part
+    if (!streamBody) {
       isFallback = true;
       const cinemaUrl = 'https://archive.org/download/Tears-of-Steel/tears_of_steel_720p.mp4';
       const cHeaders: Record<string, string> = {};
@@ -576,7 +608,7 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
     }
 
     const headers = new Headers({
-      'Cache-Control': 'private, no-store',
+      'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
       'X-Content-Type-Options': 'nosniff',
       'Access-Control-Allow-Origin': '*',
       'Accept-Ranges': 'bytes',

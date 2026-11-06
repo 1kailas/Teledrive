@@ -91,7 +91,14 @@ if (fs.existsSync(sqliteDbPath)) {
       };
 
       if (existingIdx >= 0) {
-        items[existingIdx] = { ...items[existingIdx], ...entry };
+        // Do not overwrite Inception if it already has more than 51 parts (19.5MB cloud parts)
+        const isInc = f.name.toLowerCase().includes('inception');
+        const prevParts = items[existingIdx]?.parts?.length ?? 0;
+        if (isInc && prevParts > 51) {
+          // Keep existing 19.5MB parts
+        } else {
+          items[existingIdx] = { ...items[existingIdx], ...entry };
+        }
       } else {
         seen.add(f.id);
         items.push(entry);
@@ -169,6 +176,25 @@ if (!seen.has('b2222222-2222-4222-b222-222222222222')) {
     album: 'TeleDrive Cloud',
     description: 'Warm nocturnal chords with subtle stereo panning and gentle acoustic decay.',
   });
+}
+
+// Check for completed 19.5MB cloud parts for Inception
+const progressPath = path.resolve(__dirname, '../data/inception-upload-progress.json');
+if (fs.existsSync(progressPath)) {
+  try {
+    const pData = JSON.parse(fs.readFileSync(progressPath, 'utf8'));
+    if (Array.isArray(pData) && pData.length > 51) {
+      const incItem = items.find((it) => it.name.toLowerCase().includes('inception'));
+      if (incItem) {
+        incItem.name = 'Inception.2010.1080p.NF.WEB-DL.English.H.264.mp4';
+        incItem.mimeType = 'video/mp4';
+        incItem.size = 2914735596;
+        incItem.duration = 8884;
+        incItem.description = 'Dom Cobb is a skilled thief who steals valuable secrets from deep within the subconscious during the dream state. Full-length feature film (2h 28m).';
+        incItem.parts = pData.sort((a: any, b: any) => a.partIndex - b.partIndex);
+      }
+    }
+  } catch {}
 }
 
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
