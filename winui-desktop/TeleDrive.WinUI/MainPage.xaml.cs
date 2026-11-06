@@ -70,19 +70,6 @@ public sealed partial class MainPage : Page
     {
         _service.OnUploadCompleted += Service_OnUploadCompleted;
 
-        // Initialize dedicated high-precision physics progress engine
-        TransferProgressEngine.Instance.Initialize(DispatcherQueue);
-        TransferProgressEngine.Instance.OnProgressUpdated += () =>
-        {
-            var activeTasks = Transfers.Where(t => t.IsActive && !t.IsDone).ToList();
-            if (activeTasks.Count > 0)
-            {
-                double agg = TransferProgressEngine.Instance.GetAggregatePercentage();
-                StatusBarTransferProgress.Value = agg;
-                TaskbarProgressService.SetProgress(MainWindow.WindowHandle, (ulong)(agg * 100), 10000);
-            }
-        };
-
         // Live icon & thumbnail resolution listener: updates file cards dynamically without tab switching
         ThumbnailCacheService.Instance.OnThumbnailResolved += (idOrNameOrExt, uri) =>
         {
@@ -519,10 +506,7 @@ public sealed partial class MainPage : Page
             }
         }
 
-        // 2. Feed the LIVE UI collection directly to TransferProgressEngine for smooth 30fps animation
-        TransferProgressEngine.Instance.SyncLiveTasks(Transfers);
-
-        // 3. Filter transfers for the UI
+        // 2. Filter transfers for the UI
         var filteredList = ApplyTransferFilter(Transfers);
         UpdateFilteredTransfers(filteredList);
 
@@ -553,6 +537,7 @@ public sealed partial class MainPage : Page
 
             StatusBarTransferBtn.Visibility = Visibility.Visible;
             StatusBarTransferText.Text = $"{activeCount} transfer{(activeCount == 1 ? "" : "s")}";
+            StatusBarTransferProgress.IsIndeterminate = activeTasks.Any(t => t.IsProgressIndeterminate);
             StatusBarTransferProgress.Value = totalSize > 0
                 ? Math.Clamp((double)totalTransferred / totalSize * 100.0, 0.0, 100.0)
                 : 0.0;
@@ -567,6 +552,7 @@ public sealed partial class MainPage : Page
         }
         else
         {
+            StatusBarTransferProgress.IsIndeterminate = false;
             StatusBarTransferBtn.Visibility = Visibility.Collapsed;
         }
 
@@ -580,7 +566,9 @@ public sealed partial class MainPage : Page
                 totalTransferred += t.Transferred;
                 totalSize += t.Size;
             }
-            TaskbarProgressService.SetProgress(MainWindow.WindowHandle, totalTransferred, Math.Max(totalTransferred, totalSize));
+            TaskbarProgressService.SetProgress(MainWindow.WindowHandle, totalTransferred,
+                Math.Max(totalTransferred, totalSize),
+                activeTasks.Any(t => t.IsProgressIndeterminate) ? TaskbarProgressState.Indeterminate : TaskbarProgressState.Normal);
         }
         else
         {
@@ -2887,13 +2875,25 @@ public sealed partial class MainPage : Page
         await RefreshTransfersAsync();
     }
 
-    private void OpenDownloadsFolder_Click(object sender, RoutedEventArgs e)
+    private async void OpenDownloadsFolder_Click(object sender, RoutedEventArgs e)
     {
-        var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-        if (Directory.Exists(downloads))
+        var downloads = await _service.GetDownloadDirectoryAsync();
+        if (!string.IsNullOrWhiteSpace(downloads) && Directory.Exists(downloads))
         {
-            Process.Start("explorer.exe", downloads);
+            try
+            {
+                var start = new ProcessStartInfo("explorer.exe") { UseShellExecute = true };
+                start.ArgumentList.Add(downloads);
+                Process.Start(start);
+                return;
+            }
+            catch (Exception ex)
+            {
+                ShowToast($"Couldn't open downloads folder: {ex.Message}", InfoBarSeverity.Error);
+                return;
+            }
         }
+        ShowToast("Downloads folder is unavailable", InfoBarSeverity.Warning);
     }
 
     private async void OpenDownloadedFile_Click(object sender, RoutedEventArgs e)

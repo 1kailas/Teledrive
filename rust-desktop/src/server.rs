@@ -1372,7 +1372,6 @@ impl AppServer {
                 "queuePosition": 0,
                 "botId": p.bot_id,
                 "botUsername": p.bot_id.as_ref().and_then(|id| bot_names.get(id)).cloned(),
-                "estRate": if p.status == "uploading" { serde_json::json!(8 * 1024 * 1024) } else { serde_json::Value::Null },
                 "attempts": p.attempts,
                 "lastError": p.last_error,
                 "nextAttemptAt": serde_json::Value::Null,

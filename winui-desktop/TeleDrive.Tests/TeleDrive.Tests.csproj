@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Compile Include="../TeleDrive.WinUI/Services/UploadProgressSnapshot.cs" Link="UploadProgressSnapshot.cs" />
   </ItemGroup>
 
 </Project>

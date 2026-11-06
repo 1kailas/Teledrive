@@ -8,9 +8,8 @@ using TeleDrive_WinUI.Models;
 namespace TeleDrive_WinUI.Services;
 
 /// <summary>
-/// High-precision, rock-solid transfer progress engine.
-/// Completely eliminates simultaneous progress bar jumping, false 512 KiB/s speed,
-/// and freezing at the beginning or end. Directly binds to the live UI task models.
+/// Legacy transfer progress tracker. Values must only mirror daemon-confirmed bytes;
+/// the UI currently reads its transfer models directly instead of running this timer.
 /// </summary>
 public sealed class TransferProgressEngine
 {
@@ -151,8 +150,7 @@ public sealed class TransferProgressEngine
 }
 
 /// <summary>
-/// Per-task state tracker directly attached to the live UI TransferTaskModel.
-/// Smoothly glides progress bars at 30+ fps on the UI thread without fake speed or locking.
+/// Per-task snapshot of the last reported transfer progress.
 /// </summary>
 public sealed class TrackedTransferState
 {
@@ -180,7 +178,7 @@ public sealed class TrackedTransferState
     {
         LiveModel = task;
 
-        if (task.IsDone || task.Status == "finalizing" || task.Phase == "finalizing")
+        if (task.IsDone)
         {
             DisplayTransferred = task.Size;
             TargetTransferred = task.Size;
@@ -190,46 +188,23 @@ public sealed class TrackedTransferState
 
         if (task.Status == "queued" || task.Phase == "queued")
         {
-            DisplayTransferred = 0;
-            TargetTransferred = 0;
-            task.Transferred = 0;
+            DisplayTransferred = task.Transferred;
+            TargetTransferred = task.Transferred;
             return;
         }
 
-        // Active task: Target is the server-computed bytes
+        // Snapshot only: never animate beyond bytes confirmed by the daemon.
         TargetTransferred = Math.Min(task.Size > 0 ? task.Size : task.Transferred, task.Transferred);
-
-        // If newly started or jumped significantly ahead, ensure Display is bounded
-        if (DisplayTransferred > TargetTransferred)
-        {
-            DisplayTransferred = TargetTransferred;
-        }
-        else if (DisplayTransferred == 0 && TargetTransferred > 0)
-        {
-            DisplayTransferred = TargetTransferred;
-            task.Transferred = (ulong)DisplayTransferred;
-        }
+        DisplayTransferred = TargetTransferred;
     }
 
     /// <summary>
-    /// Called on the UI thread every animation frame (~30 fps).
-    /// Glides LiveModel.Transferred smoothly towards TargetTransferred.
+    /// Keep the snapshot current without inventing in-flight bytes.
     /// </summary>
     public void TickAnimation(double dt)
     {
         if (IsDone || IsQueued || !IsActive) return;
 
-        if (DisplayTransferred < TargetTransferred)
-        {
-            double diff = TargetTransferred - DisplayTransferred;
-            double step = Math.Max(4096.0, diff * Math.Clamp(dt * 10.0, 0.05, 1.0));
-            DisplayTransferred = Math.Min(TargetTransferred, DisplayTransferred + step);
-            LiveModel.Transferred = (ulong)Math.Min(DisplayTransferred, Size > 0 ? Size : DisplayTransferred);
-        }
-        else
-        {
-            DisplayTransferred = TargetTransferred;
-            LiveModel.Transferred = (ulong)Math.Min(TargetTransferred, Size > 0 ? Size : TargetTransferred);
-        }
+        DisplayTransferred = TargetTransferred;
     }
 }

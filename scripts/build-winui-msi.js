@@ -352,7 +352,7 @@ try {
   const runCmd = isWin
     ? `cmd.exe /c "${path.join(winTempWinPath, 'build-msi.cmd')}"`
     : `cmd.exe /c "${path.join(winTempWinPath, 'build-msi.cmd')}" < /dev/null`;
-  execSync(runCmd, { stdio: 'inherit', timeout: 30000 });
+  execSync(runCmd, { stdio: 'inherit', timeout: 180000 });
   buildSucceeded = true;
 } catch (err) {
   console.log(`\nNotice: Direct execution from WSL could not connect to Windows host (${err.message}).`);
@@ -364,13 +364,9 @@ if (fs.existsSync(msiPath)) {
   const stat = fs.statSync(msiPath);
   console.log(`\n🎉 Successfully built TeleDrive-Setup.msi (${(stat.size / (1024 * 1024)).toFixed(2)} MB)!`);
 
-  // Copy to user's Downloads directory and clean old files
+  // Refresh the current installer without removing unrelated downloads.
   const userDownloadsWsl = downloadsWsl;
   const targetMsiInDownloads = path.join(userDownloadsWsl, 'TeleDrive-Setup.msi');
-
-  try { fs.rmSync(path.join(userDownloadsWsl, 'TeleDrive-Setup (1).msi'), { force: true }); } catch {}
-  try { fs.rmSync(path.join(userDownloadsWsl, 'TeleDriveR-Setup.msi'), { force: true }); } catch {}
-  try { fs.rmSync(path.join(userDownloadsWsl, 'TeleDrive (WinUI 3).lnk'), { force: true }); } catch {}
 
   fs.copyFileSync(msiPath, targetMsiInDownloads);
   fs.copyFileSync(msiPath, path.join(desktopPathWsl, 'TeleDrive-Setup.msi'));

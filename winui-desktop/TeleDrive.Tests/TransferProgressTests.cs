@@ -1,4 +1,6 @@
 using System;
+using System.Text.Json;
+using TeleDrive_WinUI.Services;
 using Xunit;
 
 namespace TeleDrive.Tests;
@@ -103,33 +105,31 @@ public class TransferProgressTests
     }
 
     [Fact]
-    public void InitialConnectionRamp_NeverStuckAtZero()
+    public void InFlightUpload_DoesNotAdvanceWithoutTelegramConfirmation()
     {
-        // During initial connection handshake (0..2.5s), active ramp provides non-zero responsive feedback
-        double elapsed = 1.0;
-        double rampCap = 50_000_000 * 0.025; // 2.5% of 50MB = 1.25MB
-        double progressFraction = Math.Min(1.0, elapsed / 2.5);
-        double initialRamp = rampCap * (1.0 - Math.Pow(1.0 - progressFraction, 2.0));
-
-        Assert.True(initialRamp > 0, "Initial ramp must be positive to prevent freeze at 0%");
-        Assert.True(initialRamp <= rampCap, "Initial ramp must not exceed cap");
+        using var doc = JsonDocument.Parse("""
+            {"status":"active","parts":[{"status":"uploading","size":50000000,"startedAt":1000,"estRate":8388608}]}
+            """);
+        var snapshot = UploadProgressSnapshot.Read(doc.RootElement, 50_000_000);
+        Assert.Equal(0UL, snapshot.ConfirmedBytes);
+        Assert.True(snapshot.Sending);
+        Assert.False(snapshot.AllStored);
     }
 
     [Fact]
-    public void FinalizingCreep_ContinuouslyAdvancesTowardsCapWithoutFreezing()
+    public void MultiPartUpload_OnlyCountsStoredParts()
     {
-        // When cloud confirmation is pending, finalization creep approaches 99.4% smoothly
-        double size = 100_000_000;
-        double cap = size * 0.994;
-        double currentDisplay = size * 0.95; // at 95%
-
-        double dist = cap - currentDisplay;
-        double dt = 0.04; // 25fps frame
-        double step = Math.Max(16.0 * 1024, dist * (dt * 1.5));
-        double nextDisplay = Math.Min(cap, currentDisplay + step);
-
-        Assert.True(nextDisplay > currentDisplay, "Progress must continue moving forward during finalization");
-        Assert.True(nextDisplay <= cap, "Progress must not overshoot 99.4% until server confirms completion");
+        using var doc = JsonDocument.Parse("""
+            {"status":"active","parts":[
+              {"status":"stored","size":400},
+              {"status":"uploading","size":300,"startedAt":0},
+              {"status":"pending","phase":"waiting-bot","size":300}]}
+            """);
+        var snapshot = UploadProgressSnapshot.Read(doc.RootElement, 1000);
+        Assert.Equal(400UL, snapshot.ConfirmedBytes);
+        Assert.True(snapshot.Sending);
+        Assert.True(snapshot.WaitingForBot);
+        Assert.False(snapshot.AllStored);
     }
 
     [Fact]
@@ -146,81 +146,44 @@ public class TransferProgressTests
     }
 
     [Fact]
-    public void FinalizingPhase_FullProgressRatio_AndZeroFakeEta()
+    public void AllStored_EntersFinalizingOnlyWhenConfirmed()
     {
-        string status = "finalizing";
-        string phase = "finalizing";
-        long size = 92_900_000;
-        long transferred = size;
-
-        double ratio = (status == "finalizing" || phase == "finalizing") ? 1.0 : (double)transferred / size;
-        Assert.Equal(1.0, ratio);
+        using var doc = JsonDocument.Parse("""
+            {"status":"active","parts":[{"status":"stored","size":700},{"status":"stored","size":300}]}
+            """);
+        var snapshot = UploadProgressSnapshot.Read(doc.RootElement, 1000);
+        Assert.Equal(1000UL, snapshot.ConfirmedBytes);
+        Assert.True(snapshot.AllStored);
+        Assert.False(snapshot.Sending);
     }
 
     [Fact]
-    public void OvertimeGlide_SmoothlyApproachesCapWithoutFreezing()
+    public void FailedOrEmptySession_NeverReportedAsFinalizing()
     {
-        double pSize = 100_000_000;
-        double rate = 4.0 * 1024 * 1024;
-        double expectedSec = pSize / rate; // ~23.8s
-
-        // Test overtime at 0.5s, 1.5s, 2.5s
-        double ot1 = 0.5;
-        double ot2 = 1.5;
-        double ot3 = 2.5;
-
-        double glide1 = 0.95 + 0.035 * (1.0 - Math.Exp(-ot1 / 1.5));
-        double glide2 = 0.95 + 0.035 * (1.0 - Math.Exp(-ot2 / 1.5));
-        double glide3 = 0.95 + 0.035 * (1.0 - Math.Exp(-ot3 / 1.5));
-
-        Assert.True(glide1 > 0.95, "Glide must be above 95%");
-        Assert.True(glide2 > glide1, "Glide must smoothly advance forward");
-        Assert.True(glide3 > glide2, "Glide must continue advancing forward");
-        Assert.True(glide3 <= 0.99, "Glide must stay under 99% before finalizing");
+        using var empty = JsonDocument.Parse("""{"status":"active","parts":[]}""");
+        using var failed = JsonDocument.Parse("""{"status":"failed","parts":[{"status":"failed","size":50}]}""");
+        Assert.False(UploadProgressSnapshot.Read(empty.RootElement, 100).AllStored);
+        var snapshot = UploadProgressSnapshot.Read(failed.RootElement, 100);
+        Assert.True(snapshot.Failed);
+        Assert.False(snapshot.AllStored);
     }
 
     [Fact]
-    public void AdaptiveUploadRate_CalculatesRealisticBandwidth()
+    public void OversizedParts_AreCappedAtOriginalFileSize()
     {
-        ulong size = 40_000_000;
-        double elapsed = 10.0; // 40MB in 10s = 4.0 MB/s
-        double measuredRate = size / elapsed;
-
-        Assert.Equal(4_000_000.0, measuredRate);
-        Assert.InRange(measuredRate, 256.0 * 1024.0, 100.0 * 1024.0 * 1024.0);
+        using var doc = JsonDocument.Parse("""
+            {"parts":[{"status":"stored","size":18446744073709551615},{"status":"stored","size":100}]}
+            """);
+        var snapshot = UploadProgressSnapshot.Read(doc.RootElement, 100);
+        Assert.Equal(100UL, snapshot.ConfirmedBytes);
     }
 
     [Fact]
-    public void MultiFileUpload_DifferentFileSizes_IndependentTransferredBytes()
+    public void NoConfirmation_MultipleFilesRemainAtZeroIndependently()
     {
-        // 3 files of different sizes uploading simultaneously
-        ulong size1 = 92_900_000;  // TeleDrive-Setup.msi
-        ulong size2 = 117_300_000; // TeleDrive-Portable.zip
-        ulong size3 = 271_400_000; // DevinUserSetup.exe
-
-        int activeStreams = 3;
-        double totalBandwidth = 3.5 * 1024 * 1024;
-        double streamRate = totalBandwidth / activeStreams;
-
-        double elapsed = 5.0; // 5 seconds in
-
-        double exp1 = (double)size1 / streamRate;
-        double exp2 = (double)size2 / streamRate;
-        double exp3 = (double)size3 / streamRate;
-
-        double frac1 = Math.Min(0.95, (elapsed / exp1) * 0.95);
-        double frac2 = Math.Min(0.95, (elapsed / exp2) * 0.95);
-        double frac3 = Math.Min(0.95, (elapsed / exp3) * 0.95);
-
-        // Fractions and percentages must vary inversely with total size
-        Assert.True(frac1 > frac2, "Smaller file must have a higher completion percentage");
-        Assert.True(frac2 > frac3, "Medium file must have a higher completion percentage than large file");
-
-        double pct1 = frac1 * 100.0;
-        double pct2 = frac2 * 100.0;
-        double pct3 = frac3 * 100.0;
-
-        Assert.True(pct1 != pct2 && pct2 != pct3, "All files must have distinct progress percentages, not lockstep");
+        using var doc = JsonDocument.Parse("""{"parts":[{"status":"uploading","size":10}]}""");
+        Assert.Equal(0UL, UploadProgressSnapshot.Read(doc.RootElement, 10).ConfirmedBytes);
+        Assert.Equal(0UL, UploadProgressSnapshot.Read(doc.RootElement, 1000).ConfirmedBytes);
     }
 
     [Fact]

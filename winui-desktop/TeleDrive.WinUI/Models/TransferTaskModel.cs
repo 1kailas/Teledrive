@@ -55,6 +55,7 @@ public partial class TransferTaskModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ProgressPercentage))]
     [NotifyPropertyChangedFor(nameof(ProgressSummary))]
     [NotifyPropertyChangedFor(nameof(SpeedSummary))]
+    [NotifyPropertyChangedFor(nameof(IsProgressIndeterminate))]
     private string _status = "queued"; // "downloading" | "finalizing" | "uploading" | "pending" | "paused" | "done" | "failed" | "cancelled"
 
     public string DisplayStatus => Status switch
@@ -94,6 +95,7 @@ public partial class TransferTaskModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SpeedSummary))]
+    [NotifyPropertyChangedFor(nameof(IsProgressIndeterminate))]
     private string _phase = "";
 
     public string? Error { get; set; }
@@ -106,19 +108,17 @@ public partial class TransferTaskModel : ObservableObject
     public bool IsActive => Status == "downloading" || Status == "finalizing" || Status == "uploading" || Status == "pending" || Status == "active" || Status == "queued" || Status == "connecting" || Status == "preparing";
     public bool IsPaused => Status == "paused";
     public bool IsFailed => Status == "failed" || Status == "error";
+    public bool IsProgressIndeterminate => IsUpload && IsActive && !IsDone
+        && Status != "queued" && Status != "finalizing";
 
     public double ProgressRatio
     {
         get
         {
-            if (Status == "queued") return 0.0;
             if (Status == "connecting" && Transferred == 0) return 0.0;
-            if (IsDone || Status == "finalizing" || Phase == "finalizing") return 1.0;
+            if (IsDone) return 1.0;
             if (Size == 0) return 0.0;
-            double ratio = Math.Clamp((double)Transferred / Size, 0.0, 1.0);
-            // An active transfer should never claim 100% until it is finalized and done
-            if (IsActive && ratio >= 0.999 && Status != "finalizing" && Phase != "finalizing") return 0.99;
-            return ratio;
+            return Math.Clamp((double)Transferred / Size, 0.0, 1.0);
         }
     }
 
@@ -136,22 +136,19 @@ public partial class TransferTaskModel : ObservableObject
             }
 
             if (Status == "queued")
-                return $"0% of {FileModel.FormatBytes(Size)} (Waiting in queue)";
+                return $"{FileModel.FormatBytes(Transferred)} of {FileModel.FormatBytes(Size)} (Waiting in queue)";
 
             if (Status == "connecting" || Phase == "connecting")
                 return $"{FileModel.FormatBytes(Transferred)} of {FileModel.FormatBytes(Size)} (Connecting to Telegram...)";
 
             if (Status == "finalizing" || Phase == "finalizing")
                 return IsUpload
-                    ? $"{FileModel.FormatBytes(Transferred)} of {FileModel.FormatBytes(Size)} (Finalizing & saving in Telegram...)"
+                    ? $"{FileModel.FormatBytes(Transferred)} confirmed (Saving metadata...)"
                     : $"{FileModel.FormatBytes(Transferred)} of {FileModel.FormatBytes(Size)} (Verifying & saving to disk...)";
 
-            ulong displayTransferred = Transferred;
-            if (IsActive && displayTransferred >= Size && Size > 0)
-            {
-                displayTransferred = (ulong)(Size * 0.99);
-            }
-            return $"{FileModel.FormatBytes(displayTransferred)} of {FileModel.FormatBytes(Size)} ({ProgressPercentage:F1}%)";
+            if (IsUpload)
+                return $"{FileModel.FormatBytes(Transferred)} of {FileModel.FormatBytes(Size)} confirmed in Telegram";
+            return $"{FileModel.FormatBytes(Transferred)} of {FileModel.FormatBytes(Size)} ({ProgressPercentage:F1}%)";
         }
     }
 
@@ -176,6 +173,12 @@ public partial class TransferTaskModel : ObservableObject
 
             if (Status == "queued")
                 return "⏳ Waiting in queue...";
+            if (IsUpload && Phase == "waiting-bot")
+                return "Waiting for an available bot...";
+            if (IsUpload && Status == "preparing")
+                return "Preparing file for Telegram...";
+            if (IsUpload && Phase == "sending")
+                return "Sending to Telegram; awaiting confirmation...";
             if (Status == "connecting" || Phase == "connecting" || Status == "preparing")
                 return "⚡ Connecting to Telegram...";
             if (Status == "finalizing" || Phase == "finalizing")
@@ -188,7 +191,7 @@ public partial class TransferTaskModel : ObservableObject
                     : $"⚡ {FileModel.FormatBytes(Speed)}/s";
             }
 
-            return IsUpload ? "⚡ Finishing upload..." : "⬇ Downloading...";
+            return IsUpload ? "Sending to Telegram..." : "⬇ Downloading...";
         }
     }
 
