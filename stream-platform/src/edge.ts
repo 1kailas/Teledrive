@@ -266,7 +266,26 @@ async function loadStandaloneCatalog(request: Request, env: EdgeEnv, fetcher: Fe
 }
 
 export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher = fetch): Promise<Response> {
-  if (request.method !== 'GET') return error(405, 'Read-only gateway');
+  // CORS Preflight
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+        'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization, cf-access-jwt-assertion, X-Requested-With',
+        'Access-Control-Max-Age': '86400',
+      },
+    });
+  }
+
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    return error(405, 'Read-only gateway');
+  }
+
+  const isHead = request.method === 'HEAD';
+  const withHead = (res: Response): Response =>
+    isHead ? new Response(null, { status: res.status, headers: res.headers }) : res;
 
   const isOriginMode = Boolean(env.TELEDRIVE_ORIGIN);
 
@@ -317,7 +336,12 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
           return data.files.map((file) => cleanCatalog(file, category))
             .filter((file): file is CatalogFile => file !== null);
         }));
-        return Response.json({ items: lists.flat() }, { headers: { 'Cache-Control': 'private, no-store' } });
+        return withHead(Response.json({ items: lists.flat() }, {
+          headers: {
+            'Cache-Control': 'private, no-store',
+            'Access-Control-Allow-Origin': '*',
+          },
+        }));
       }
 
       // Standalone Cloudflare mode
@@ -331,7 +355,12 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
         }
         return true;
       });
-      return Response.json({ items: filtered }, { headers: { 'Cache-Control': 'private, no-store' } });
+      return withHead(Response.json({ items: filtered }, {
+        headers: {
+          'Cache-Control': 'private, no-store',
+          'Access-Control-Allow-Origin': '*',
+        },
+      }));
     }
 
     // MEDIA OR ARTWORK ENDPOINT
@@ -359,13 +388,14 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
         'Cache-Control': 'private, no-store',
         'X-Content-Type-Options': 'nosniff',
         'Content-Security-Policy': "sandbox; default-src 'none'",
+        'Access-Control-Allow-Origin': '*',
       });
       for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag']) {
         const value = response.headers.get(name);
         if (value) headers.set(name, value);
       }
       if (kind === 'media' && response.ok) headers.set('Content-Type', String(record.file.mimeType));
-      return new Response(response.body, { status: response.status, headers });
+      return withHead(new Response(isHead ? null : response.body, { status: response.status, headers }));
     }
 
     // Standalone Direct Telegram Mode
@@ -382,14 +412,15 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
           if (filePath) {
             const artRes = await fetcher(`https://api.telegram.org/file/bot${botToken}/${filePath}`);
             if (artRes.ok) {
-              return new Response(artRes.body, {
+              return withHead(new Response(isHead ? null : artRes.body, {
                 status: 200,
                 headers: {
                   'Content-Type': artRes.headers.get('content-type') || 'image/webp',
                   'Cache-Control': 'public, max-age=86400',
                   'X-Content-Type-Options': 'nosniff',
+                  'Access-Control-Allow-Origin': '*',
                 },
-              });
+              }));
             }
           }
         }
@@ -423,6 +454,7 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
       'Cache-Control': 'private, no-store',
       'X-Content-Type-Options': 'nosniff',
       'Content-Security-Policy': "sandbox; default-src 'none'",
+      'Access-Control-Allow-Origin': '*',
       'Content-Type': item.mimeType || detectMimeType(item.name, item.category),
     });
 
@@ -431,7 +463,7 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
       if (val) headers.set(name, val);
     }
 
-    return new Response(tgStreamRes.body, { status: tgStreamRes.status, headers });
+    return withHead(new Response(isHead ? null : tgStreamRes.body, { status: tgStreamRes.status, headers }));
   } catch {
     return error(502, 'TeleDrive is offline or the origin is unavailable');
   }

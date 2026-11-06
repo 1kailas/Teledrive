@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '../..');
+const outPath = path.resolve(__dirname, '../public/catalog.json');
 
 const p1 = '/mnt/c/Users/Kailasnath T/AppData/Roaming/TeleDrive/data/teledrive.json';
 const p2 = '/mnt/c/Users/Kailasnath T/AppData/Roaming/TeleDrive/data/teledrive-db.json';
@@ -35,21 +36,42 @@ interface CatalogItem {
 const items: CatalogItem[] = [];
 const seen = new Set<string>();
 
-// Read teledrive.db if available
+// Pre-load existing committed catalog items (ensures CI/Cloudflare Pages builds never lose catalog)
+if (fs.existsSync(outPath)) {
+  try {
+    const raw = fs.readFileSync(outPath, 'utf8');
+    const existing = JSON.parse(raw) as { items?: CatalogItem[] } | CatalogItem[];
+    const list = Array.isArray(existing) ? existing : (existing.items ?? []);
+    for (const item of list) {
+      if (item && item.id && !seen.has(item.id)) {
+        seen.add(item.id);
+        items.push(item);
+      }
+    }
+  } catch {}
+}
+
+// Read teledrive.db if available locally
 if (fs.existsSync(sqliteDbPath)) {
   try {
     const { createRequire } = await import('node:module');
     const require = createRequire(import.meta.url);
     const Database = require(path.resolve(rootDir, 'server/node_modules/better-sqlite3'));
     const db = new Database(sqliteDbPath, { readonly: true });
-    const rows = db.prepare('SELECT * FROM files WHERE category IN (\'video\', \'audio\')').all();
+    const rows = db.prepare("SELECT * FROM files WHERE category IN ('video', 'audio')").all();
     for (const f of rows) {
-      if (seen.has(f.id)) continue;
-      seen.add(f.id);
       const parts = db.prepare('SELECT * FROM parts WHERE blob_id = ? ORDER BY idx ASC').all(f.blob_id);
       let meta: Record<string, unknown> = {};
       try { meta = JSON.parse(f.metadata || '{}'); } catch {}
-      items.push({
+      const mappedParts = parts.map((p: any) => ({
+        partIndex: p.idx,
+        size: p.size,
+        telegramFileId: p.tg_file_id,
+        botId: p.bot_id,
+      }));
+
+      const existingIdx = items.findIndex((it) => it.id === f.id);
+      const entry: CatalogItem = {
         id: f.id,
         name: f.name,
         category: f.category,
@@ -61,13 +83,15 @@ if (fs.existsSync(sqliteDbPath)) {
         artist: typeof meta.artist === 'string' ? meta.artist : '',
         album: typeof meta.album === 'string' ? meta.album : '',
         description: f.description || 'Direct Telegram Cloud Stream',
-        parts: parts.map((p: any) => ({
-          partIndex: p.idx,
-          size: p.size,
-          telegramFileId: p.tg_file_id,
-          botId: p.bot_id,
-        })),
-      });
+        parts: mappedParts.length > 0 ? mappedParts : undefined,
+      };
+
+      if (existingIdx >= 0) {
+        items[existingIdx] = { ...items[existingIdx], ...entry };
+      } else {
+        seen.add(f.id);
+        items.push(entry);
+      }
     }
   } catch (e) {
     console.warn('SQLite export bypassed:', (e as Error).message);
@@ -110,36 +134,39 @@ for (const p of jsonSources) {
   } catch {}
 }
 
-// Audio tracks
-items.push({
-  id: 'a1111111-1111-4111-a111-111111111111',
-  name: 'Ambient Dreamscape.wav',
-  category: 'audio',
-  mimeType: 'audio/wav',
-  size: 5292044,
-  duration: 30,
-  hasThumbnail: false,
-  updatedAt: Date.now(),
-  artist: 'TeleDrive Soundscapes',
-  album: 'Folio Studio Sessions',
-  description: 'Multi-harmonic ambient progression streamed directly in high fidelity.',
-});
+// Ensure audio tracks are present
+if (!seen.has('a1111111-1111-4111-a111-111111111111')) {
+  items.push({
+    id: 'a1111111-1111-4111-a111-111111111111',
+    name: 'Ambient Dreamscape.wav',
+    category: 'audio',
+    mimeType: 'audio/wav',
+    size: 5292044,
+    duration: 30,
+    hasThumbnail: false,
+    updatedAt: Date.now(),
+    artist: 'TeleDrive Soundscapes',
+    album: 'Folio Studio Sessions',
+    description: 'Multi-harmonic ambient progression streamed directly in high fidelity.',
+  });
+}
 
-items.push({
-  id: 'b2222222-2222-4222-b222-222222222222',
-  name: 'Midnight Lo-Fi.wav',
-  category: 'audio',
-  mimeType: 'audio/wav',
-  size: 4233644,
-  duration: 24,
-  hasThumbnail: false,
-  updatedAt: Date.now(),
-  artist: 'Aurora Node',
-  album: 'TeleDrive Cloud',
-  description: 'Warm nocturnal chords with subtle stereo panning and gentle acoustic decay.',
-});
+if (!seen.has('b2222222-2222-4222-b222-222222222222')) {
+  items.push({
+    id: 'b2222222-2222-4222-b222-222222222222',
+    name: 'Midnight Lo-Fi.wav',
+    category: 'audio',
+    mimeType: 'audio/wav',
+    size: 4233644,
+    duration: 24,
+    hasThumbnail: false,
+    updatedAt: Date.now(),
+    artist: 'Aurora Node',
+    album: 'TeleDrive Cloud',
+    description: 'Warm nocturnal chords with subtle stereo panning and gentle acoustic decay.',
+  });
+}
 
-const outPath = path.resolve(__dirname, '../public/catalog.json');
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
 fs.writeFileSync(outPath, JSON.stringify({ items }, null, 2));
 console.log(`Exported ${items.length} media items to ${outPath}`);
