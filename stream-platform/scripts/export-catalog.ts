@@ -17,6 +17,7 @@ const editionsDir = path.resolve(streamRoot, 'data/stream-editions');
  */
 const PUBLIC_DOWNLOAD_LIMIT = 20 * 1024 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SHA256 = /^[a-f0-9]{64}$/i;
 const MEDIA_EXTENSIONS = [
   'mp4', 'm4v', 'mkv', 'webm', 'mov', 'avi', 'ts', 'm2ts', 'mts', 'flv', 'wmv', '3gp', 'ogv',
   'mp3', 'm4a', 'aac', 'wav', 'flac', 'ogg', 'opus', 'weba', 'wma',
@@ -45,6 +46,10 @@ interface CatalogItem {
   description: string;
   format?: string;
   parts?: CatalogPart[];
+  /** Internal only: used to collapse retry duplicates within one export. */
+  contentFingerprint?: string;
+  /** Internal only: picks the original upload as the stable catalog entry. */
+  createdAt?: number;
 }
 
 interface EditionManifest {
@@ -54,6 +59,7 @@ interface EditionManifest {
   size?: number;
   duration?: number | null;
   source?: string;
+  contentFingerprint?: string;
   uploadedAt?: number;
   parts: CatalogPart[];
 }
@@ -178,6 +184,40 @@ function hasPlayableParts(parts: CatalogPart[]): boolean {
   );
 }
 
+/**
+ * A failed desktop upload can produce several file rows for the same bytes.
+ * Collapse those retries by content hash so the public catalog shows one card.
+ * The oldest record wins, which keeps shared catalog links stable.
+ */
+function dedupeSourceItems(items: CatalogItem[]): CatalogItem[] {
+  const byHash = new Map<string, CatalogItem>();
+  const result: CatalogItem[] = [];
+
+  for (const item of items) {
+    if (!item.contentFingerprint) {
+      result.push(item);
+      continue;
+    }
+
+    const existing = byHash.get(item.contentFingerprint);
+    if (!existing) {
+      byHash.set(item.contentFingerprint, item);
+      result.push(item);
+      continue;
+    }
+
+    const existingCreated = existing.createdAt ?? existing.updatedAt;
+    const itemCreated = item.createdAt ?? item.updatedAt;
+    if (itemCreated < existingCreated || (itemCreated === existingCreated && item.id < existing.id)) {
+      const index = result.indexOf(existing);
+      if (index >= 0) result[index] = item;
+      byHash.set(item.contentFingerprint, item);
+    }
+  }
+
+  return result;
+}
+
 function normalizeCatalogItem(value: unknown): CatalogItem | null {
   if (!value || typeof value !== 'object') return null;
   const raw = value as Record<string, unknown>;
@@ -205,7 +245,11 @@ function normalizeCatalogItem(value: unknown): CatalogItem | null {
   };
 }
 
-function itemFromSourceRecord(record: Record<string, unknown>, rawParts: unknown): CatalogItem | null {
+function itemFromSourceRecord(
+  record: Record<string, unknown>,
+  rawParts: unknown,
+  rawBlob?: Record<string, unknown> | null,
+): CatalogItem | null {
   if (record.trashed_at) return null;
   if (record.status !== undefined && record.status !== 'ready') return null;
 
@@ -222,6 +266,10 @@ function itemFromSourceRecord(record: Record<string, unknown>, rawParts: unknown
 
   const metadata = metadataOf(record.metadata);
   const size = asNumber(record.size) ?? totalSize(parts);
+  const updatedAt = asNumber(record.updated_at ?? record.updatedAt) ?? 0;
+  const sourceFingerprint = asString(rawBlob?.sha256 ?? rawBlob?.content_hash ?? rawBlob?.contentHash)
+    .trim()
+    .toLowerCase();
   return {
     id,
     name,
@@ -232,12 +280,14 @@ function itemFromSourceRecord(record: Record<string, unknown>, rawParts: unknown
     duration: asNumber(record.duration),
     hasThumbnail: record.has_thumbnail === true || record.has_thumbnail === 1
       || record.hasThumbnail === true,
-    updatedAt: asNumber(record.updated_at ?? record.updatedAt) ?? 0,
+    updatedAt,
     artist: asString(metadata.artist),
     album: asString(metadata.album),
     description: asString(record.description),
     format: asString(metadata.format) || extensionOf(name) || undefined,
     parts,
+    ...(SHA256.test(sourceFingerprint) ? { contentFingerprint: sourceFingerprint } : {}),
+    createdAt: asNumber(record.created_at ?? record.createdAt) ?? updatedAt,
   };
 }
 
@@ -282,8 +332,16 @@ function discoverDataDir(): string | null {
 
 function loadJsonSource(filePath: string): CatalogItem[] {
   if (!fs.existsSync(filePath)) return [];
-  const data = readJson<{ files?: unknown[]; parts?: unknown[] }>(filePath);
+  const data = readJson<{ files?: unknown[]; blobs?: unknown[]; parts?: unknown[] }>(filePath);
   if (!data) return [];
+
+  const blobsById = new Map<string, Record<string, unknown>>();
+  for (const value of Array.isArray(data.blobs) ? data.blobs : []) {
+    if (!value || typeof value !== 'object') continue;
+    const blob = value as Record<string, unknown>;
+    const blobId = asString(blob.id ?? blob.blob_id ?? blob.blobId).trim();
+    if (blobId) blobsById.set(blobId, blob);
+  }
 
   const partsByBlob = new Map<string, unknown[]>();
   for (const value of Array.isArray(data.parts) ? data.parts : []) {
@@ -301,7 +359,11 @@ function loadJsonSource(filePath: string): CatalogItem[] {
     if (!value || typeof value !== 'object') continue;
     const record = value as Record<string, unknown>;
     const blobId = asString(record.blob_id ?? record.blobId).trim();
-    const item = itemFromSourceRecord(record, partsByBlob.get(blobId) ?? []);
+    const item = itemFromSourceRecord(
+      record,
+      partsByBlob.get(blobId) ?? [],
+      blobsById.get(blobId) ?? null,
+    );
     if (item) items.push(item);
   }
   return items;
@@ -330,13 +392,15 @@ function loadSqliteSource(filePath: string): CatalogItem[] {
       `).all();
 
       const items: CatalogItem[] = [];
+      const blobStatement = database.prepare('SELECT content_hash FROM blobs WHERE id = ?');
       for (const value of rows) {
         const record = value as Record<string, unknown>;
         const blobId = asString(record.blob_id).trim();
         const parts = blobId
           ? database.prepare('SELECT * FROM parts WHERE blob_id = ? ORDER BY idx ASC').all(blobId)
           : [];
-        const item = itemFromSourceRecord(record, parts);
+        const blob = blobId ? (blobStatement.all(blobId)[0] as Record<string, unknown> | undefined) : undefined;
+        const item = itemFromSourceRecord(record, parts, blob ?? null);
         if (item) items.push(item);
       }
       return items;
@@ -368,6 +432,11 @@ function loadEditions(): Map<string, EditionManifest> {
 
     const name = asString(data.name).trim();
     const mimeType = asString(data.mimeType).trim();
+    const contentFingerprint = asString(
+      data.contentFingerprint ?? data.content_fingerprint ?? data.contentSha256 ?? data.content_sha256 ?? data.sha256,
+    )
+      .trim()
+      .toLowerCase();
     editions.set(fileId, {
       fileId,
       ...(name ? { name } : {}),
@@ -375,6 +444,7 @@ function loadEditions(): Map<string, EditionManifest> {
       size: asNumber(data.size) ?? totalSize(parts),
       duration: asNumber(data.duration),
       source: asString(data.source).trim() || undefined,
+      ...(SHA256.test(contentFingerprint) ? { contentFingerprint } : {}),
       uploadedAt: asNumber(data.uploadedAt) ?? 0,
       parts,
     });
@@ -402,7 +472,17 @@ function mediaSearchDirs(dataDir: string | null): string[] {
 
   if (dataDir) {
     const userRoot = path.resolve(dataDir, '../../../..');
-    for (const folder of ['Videos', 'Videos/extracted_videos', 'Screen Recordings', 'Downloads', 'Desktop']) {
+    for (const folder of [
+      'Videos',
+      'Videos/extracted_videos',
+      'Videos/Screen Recordings',
+      'Videos/Captures',
+      'Screen Recordings',
+      'Recordings',
+      'Downloads',
+      'Desktop',
+      'Music',
+    ]) {
       directories.add(path.join(userRoot, folder));
     }
   }
@@ -504,15 +584,27 @@ function main(): void {
     return;
   }
 
+  const sourceList = dedupeSourceItems([...sourceItems.values()]);
+  if (sourceList.length < sourceItems.size) {
+    console.log(`[catalog] Collapsed ${sourceItems.size - sourceList.length} duplicate upload(s) with identical content.`);
+  }
+
   const existingItems = readExistingCatalog();
   const existingById = new Map(existingItems.map((item) => [item.id, item]));
   const editions = loadEditions();
+  const editionsByFingerprint = new Map<string, EditionManifest>();
+  for (const edition of editions.values()) {
+    if (edition.contentFingerprint && !editionsByFingerprint.has(edition.contentFingerprint)) {
+      editionsByFingerprint.set(edition.contentFingerprint, edition);
+    }
+  }
   const searchDirs = mediaSearchDirs(dataDir);
   const merged: CatalogItem[] = [];
 
-  for (const source of sourceItems.values()) {
+  for (const source of sourceList) {
     const existing = existingById.get(source.id);
-    const edition = editions.get(source.id);
+    const edition = editions.get(source.id)
+      ?? (source.contentFingerprint ? editionsByFingerprint.get(source.contentFingerprint) : undefined);
     const sourceParts = source.parts ?? [];
     const existingParts = existing?.parts ?? [];
 
@@ -575,7 +667,7 @@ function main(): void {
   const document = { items: merged, series: [] as unknown[] };
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, `${JSON.stringify(document, null, 2)}\n`);
-  console.log(`[catalog] Exported ${merged.length} media item(s) from ${sourceItems.size} source record(s) to ${outPath}`);
+  console.log(`[catalog] Exported ${merged.length} media item(s) from ${sourceList.length} unique source record(s) to ${outPath}`);
 }
 
 main();

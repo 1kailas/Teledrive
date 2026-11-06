@@ -1,0 +1,36 @@
+{
+  "fileId": "65ccc148-7aba-44ff-b18d-59fa090c626f",
+  "name": "Screen Recording 2026-11-06 211344.mp4",
+  "mimeType": "video/mp4",
+  "size": 67240922,
+  "duration": 68,
+  "source": "/mnt/c/Users/Kailasnath T/Videos/Screen Recordings/Screen Recording 2026-11-06 211344.mp4",
+  "contentFingerprint": "82a89ba439f8297dd7a3b0481964f21c81ad23587c9d388d56d4a9ca22b38f81",
+  "uploadedAt": 1793994511434,
+  "parts": [
+    {
+      "partIndex": 0,
+      "size": 20447232,
+      "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAgNq7i8Hg9NmVlaS9hG8vmTboOhKwQACtCUAAmJHeFevckLTvTFvKj0E",
+      "botId": "9067026204"
+    },
+    {
+      "partIndex": 1,
+      "size": 20447232,
+      "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAgVq7i8RCVKEezEviKe1cgF6mNH7-AACtiUAAmJHeFe06Cg83veNTT0E",
+      "botId": "9289345215"
+    },
+    {
+      "partIndex": 2,
+      "size": 20447232,
+      "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAgRq7i8PofAYAZVXwIZ4LWYlnLXqjAACtSUAAmJHeFeHn1h9fqRUvT0E",
+      "botId": "9081838703"
+    },
+    {
+      "partIndex": 3,
+      "size": 5899226,
+      "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAgJq7i8E2PO_38QHHVyYJsqnSl8qJAACsyUAAmJHeFcWOXWTpuxAjj0E",
+      "botId": "9082065892"
+    }
+  ]
+}

@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "export-catalog": "tsx scripts/export-catalog.ts",
+    "upload-cloud-edition": "tsx scripts/upload-cloud-edition.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts"
   },
