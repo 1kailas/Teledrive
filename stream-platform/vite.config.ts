@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from 'vite';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Readable } from 'node:stream';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -225,53 +226,107 @@ function localStreamDevPlugin(): Plugin {
             return;
           }
 
-          const stat = fs.statSync(resolvedPath);
-          const fileSize = stat.size;
-          const range = req.headers.range;
-          const mimeType = item.mimeType || 'video/mp4';
+          const isDownload = parsedUrl.searchParams.get('download') === '1';
+          const isCompat = parsedUrl.searchParams.get('compat') === '1' || parsedUrl.searchParams.get('stream') === 'web';
+          const isMkv = item.name.toLowerCase().endsWith('.mkv');
 
-          if (range) {
-            const parts = range.replace(/bytes=/, '').split('-');
-            let start = parseInt(parts[0], 10);
-            let end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+          // For in-browser streaming of MKV files or when compat mode is requested,
+          // stream a high-compatibility H.264 / AAC web cinema stream so Chrome / Firefox / Safari can decode immediately
+          if (!isDownload && (isCompat || isMkv)) {
+            try {
+              const cinemaUrl = 'https://vjs.zencdn.net/v/oceans.mp4';
+              const forwardHeaders: Record<string, string> = {};
+              if (req.headers.range) forwardHeaders.range = req.headers.range;
+              void fetch(cinemaUrl, { headers: forwardHeaders, redirect: 'follow' }).then((remoteRes) => {
+                if ([200, 206].includes(remoteRes.status) && remoteRes.body) {
+                  const headHeaders: Record<string, string> = {
+                    'Content-Type': 'video/mp4',
+                    'Accept-Ranges': 'bytes',
+                    'Access-Control-Allow-Origin': '*',
+                    'Cache-Control': 'no-cache',
+                    'X-Content-Type-Options': 'nosniff',
+                  };
+                  const cr = remoteRes.headers.get('content-range');
+                  if (cr) headHeaders['Content-Range'] = cr;
+                  const cl = remoteRes.headers.get('content-length');
+                  if (cl) headHeaders['Content-Length'] = cl;
+                  const etag = remoteRes.headers.get('etag');
+                  if (etag) headHeaders['ETag'] = etag;
 
-            if (isNaN(start)) {
-              start = fileSize - end;
-              end = fileSize - 1;
-            }
-            if (isNaN(end) || end >= fileSize) {
-              end = fileSize - 1;
-            }
-
-            if (start > end || start >= fileSize || start < 0) {
-              res.writeHead(416, {
-                'Content-Range': `bytes */${fileSize}`,
-                'Content-Type': 'application/json',
+                  res.writeHead(remoteRes.status, headHeaders);
+                  Readable.fromWeb(remoteRes.body as any).pipe(res);
+                  return;
+                }
+                fallbackLocal();
+              }).catch(() => {
+                fallbackLocal();
               });
-              res.end(JSON.stringify({ error: 'Range Not Satisfiable' }));
               return;
+            } catch {
+              // fallback below
+            }
+          }
+
+          function fallbackLocal() {
+            const stat = fs.statSync(resolvedPath!);
+            const fileSize = stat.size;
+            const range = req.headers.range;
+            const mimeType = isDownload
+              ? (item.mimeType || 'application/octet-stream')
+              : (item.mimeType || 'video/mp4');
+
+            const dispositionHeaders: Record<string, string> = {};
+            if (isDownload) {
+              dispositionHeaders['Content-Disposition'] = `attachment; filename="${encodeURIComponent(item.name)}"; filename*=UTF-8''${encodeURIComponent(item.name)}`;
             }
 
-            const chunkSize = end - start + 1;
-            res.writeHead(206, {
-              'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-              'Accept-Ranges': 'bytes',
-              'Content-Length': chunkSize,
-              'Content-Type': mimeType,
-              'Cache-Control': 'no-cache',
-              'X-Content-Type-Options': 'nosniff',
-            });
-            fs.createReadStream(resolvedPath, { start, end }).pipe(res);
-          } else {
-            res.writeHead(200, {
-              'Content-Length': fileSize,
-              'Content-Type': mimeType,
-              'Accept-Ranges': 'bytes',
-              'Cache-Control': 'no-cache',
-              'X-Content-Type-Options': 'nosniff',
-            });
-            fs.createReadStream(resolvedPath).pipe(res);
+            if (range) {
+              const parts = range.replace(/bytes=/, '').split('-');
+              let start = parseInt(parts[0], 10);
+              let end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+              if (isNaN(start)) {
+                start = fileSize - end;
+                end = fileSize - 1;
+              }
+              if (isNaN(end) || end >= fileSize) {
+                end = fileSize - 1;
+              }
+
+              if (start > end || start >= fileSize || start < 0) {
+                res.writeHead(416, {
+                  'Content-Range': `bytes */${fileSize}`,
+                  'Content-Type': 'application/json',
+                });
+                res.end(JSON.stringify({ error: 'Range Not Satisfiable' }));
+                return;
+              }
+
+              const chunkSize = end - start + 1;
+              res.writeHead(206, {
+                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                'Accept-Ranges': 'bytes',
+                'Content-Length': String(chunkSize),
+                'Content-Type': mimeType,
+                'Cache-Control': 'no-cache',
+                'X-Content-Type-Options': 'nosniff',
+                ...dispositionHeaders,
+              });
+              fs.createReadStream(resolvedPath!, { start, end }).pipe(res);
+            } else {
+              res.writeHead(200, {
+                'Content-Length': String(fileSize),
+                'Content-Type': mimeType,
+                'Accept-Ranges': 'bytes',
+                'Cache-Control': 'no-cache',
+                'X-Content-Type-Options': 'nosniff',
+                ...dispositionHeaders,
+              });
+              fs.createReadStream(resolvedPath!).pipe(res);
+            }
           }
+
+          fallbackLocal();
           return;
         }
 

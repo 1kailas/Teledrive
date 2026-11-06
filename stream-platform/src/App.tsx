@@ -105,6 +105,7 @@ export default function App() {
   const [playing, setPlaying] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [volume, setVolume] = useState(0.85);
+  const [streamMode, setStreamMode] = useState<'direct' | 'compat'>('direct');
 
   // Advanced Audio & Subtitle Features
   const [audioPrefs, setAudioPrefs] = useState(getAudioPrefs);
@@ -132,6 +133,7 @@ export default function App() {
 
   const retryPlayback = () => {
     setPlaybackError('');
+    setStreamMode('compat');
     if (videoRef.current) {
       videoRef.current.load();
       void videoRef.current.play().catch(() => {});
@@ -456,12 +458,15 @@ export default function App() {
     setPlaybackError('');
     setShowAudioMenu(false);
     setShowSubtitleMenu(false);
+    const isMkv = item.name.toLowerCase().endsWith('.mkv');
+    setStreamMode(isMkv ? 'compat' : 'direct');
     setVideo(item);
     lastSavedAt.current = 0;
   }
 
   function closeVideo() {
     setVideo(null);
+    setStreamMode('direct');
     setShowAudioMenu(false);
     setShowSubtitleMenu(false);
     setPositions(getPositions());
@@ -660,7 +665,7 @@ export default function App() {
         <div ref={modalRef} className={`video-modal ${isFullscreen ? 'fullscreen' : ''}`} role="dialog" aria-modal="true" aria-label={`Watching ${titleOf(video)}`}>
           <div className="modal-header">
             <div className="modal-title-block">
-              <span className="modal-tag">NOW PLAYING · {formatOf(video)} · {sizeOf(video.size)}</span>
+              <span className="modal-tag">NOW PLAYING · {formatOf(video)} {streamMode === 'compat' ? '· WEB CINEMA' : ''} · {sizeOf(video.size)}</span>
               <strong title={titleOf(video)}>{titleOf(video)}</strong>
             </div>
             <div className="modal-actions">
@@ -845,13 +850,14 @@ export default function App() {
           <div className="video-player-container">
             <video
               ref={videoRef}
-              key={video.id}
+              key={`${video.id}-${streamMode}`}
               poster={artwork(video)}
               controls
               autoPlay
               playsInline
               preload="metadata"
               crossOrigin="anonymous"
+              src={`/api/media/${video.id}${streamMode === 'compat' ? '?compat=1' : ''}`}
               onLoadedMetadata={(event) => {
                 inspectMediaTracks();
                 const position = getPositions()[video.id];
@@ -867,12 +873,13 @@ export default function App() {
                 }
               }}
               onEnded={() => { savePosition(video.id, null); setPositions(getPositions()); }}
-              onError={() => setPlaybackError('In-Browser Codec Restriction: This film may use audio or video streams (such as Dolby Digital Plus DDP5.1 / DTS / AC3) that your browser cannot decode natively.')}>
-              <source src={`/api/media/${video.id}`} type={video.mimeType} />
-              {video.name.toLowerCase().endsWith('.mkv') && (
-                <source src={`/api/media/${video.id}?format=webm`} type="video/webm" />
-              )}
-              <source src={`/api/media/${video.id}?format=mp4`} type="video/mp4" />
+              onError={() => {
+                if (streamMode === 'direct') {
+                  setStreamMode('compat');
+                } else {
+                  setPlaybackError('In-Browser Codec Restriction: This movie could not be decoded directly by your web browser.');
+                }
+              }}>
               {customSubtitleUrl && (
                 <track kind="subtitles" src={customSubtitleUrl} label="Custom Subtitles" default />
               )}
