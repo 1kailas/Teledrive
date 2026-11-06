@@ -365,7 +365,7 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
 
     // MEDIA OR ARTWORK ENDPOINT
     const match = /^\/api\/(media|art)\/([^/]+)$/.exec(url.pathname);
-    if (!match || url.search) return error(404, 'Not found');
+    if (!match) return error(404, 'Not found');
     const [, kind, id] = match;
     if (!id || !ID.test(id)) return error(404, 'Not found');
 
@@ -432,38 +432,125 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
     const parts = item.parts && item.parts.length > 0 ? item.parts : [];
     if (!parts.length) return error(404, 'Media stream unavailable');
 
-    const firstPart = parts[0]!;
-    const botToken = getBotToken(firstPart.botId, env);
-    if (!botToken || !firstPart.telegramFileId) return error(502, 'Streaming bot token not configured');
+    // Build byte offsets for all parts
+    let cumulative = 0;
+    const mappedParts = parts.map((p) => {
+      const offset = cumulative;
+      cumulative += p.size;
+      return {
+        partIndex: p.partIndex,
+        size: p.size,
+        telegramFileId: p.telegramFileId,
+        botId: p.botId,
+        offset,
+        end: offset + p.size - 1,
+      };
+    });
+    const totalSize = (item.size && item.size > 0) ? item.size : cumulative;
 
-    const filePath = await getTelegramFilePath(firstPart.telegramFileId, botToken, fetcher);
+    // Parse Range header if present
+    let start = 0;
+    let end = totalSize - 1;
+
+    if (range) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+      if (!match) {
+        return new Response(null, {
+          status: 416,
+          headers: {
+            'Content-Range': `bytes */${totalSize}`,
+            'Access-Control-Allow-Origin': '*',
+          },
+        });
+      }
+      const [, a, b] = match;
+      if (a === '' && b === '') {
+        return new Response(null, {
+          status: 416,
+          headers: {
+            'Content-Range': `bytes */${totalSize}`,
+            'Access-Control-Allow-Origin': '*',
+          },
+        });
+      }
+      if (a === '') {
+        const suffix = parseInt(b!, 10);
+        if (suffix <= 0) {
+          return new Response(null, {
+            status: 416,
+            headers: {
+              'Content-Range': `bytes */${totalSize}`,
+              'Access-Control-Allow-Origin': '*',
+            },
+          });
+        }
+        start = Math.max(0, totalSize - suffix);
+        end = totalSize - 1;
+      } else {
+        start = parseInt(a!, 10);
+        end = b === '' ? totalSize - 1 : Math.min(totalSize - 1, parseInt(b!, 10));
+      }
+    }
+
+    if (start >= totalSize || start > end) {
+      return new Response(null, {
+        status: 416,
+        headers: {
+          'Content-Range': `bytes */${totalSize}`,
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    }
+
+    // Locate the exact part containing the requested start byte
+    const targetPart = mappedParts.find((p) => start >= p.offset && start <= p.end) ?? mappedParts[0]!;
+    const botToken = getBotToken(targetPart.botId, env);
+    if (!botToken || !targetPart.telegramFileId) return error(502, 'Streaming bot token not configured');
+
+    const filePath = await getTelegramFilePath(targetPart.telegramFileId, botToken, fetcher);
     if (!filePath) return error(502, 'Failed to resolve Telegram file path');
 
-    const streamHeaders: Record<string, string> = {};
-    if (range) streamHeaders.Range = range;
+    // Compute relative slice within the target part
+    const partStart = start - targetPart.offset;
+    const partEnd = Math.min(targetPart.size - 1, end - targetPart.offset);
+    const chunkLength = partEnd - partStart + 1;
 
     const tgStreamRes = await fetcher(`https://api.telegram.org/file/bot${botToken}/${filePath}`, {
-      headers: streamHeaders,
+      headers: {
+        Range: `bytes=${partStart}-${partEnd}`,
+      },
     });
 
-    if (![200, 206, 416].includes(tgStreamRes.status)) {
+    if (![200, 206].includes(tgStreamRes.status)) {
       return error(502, 'Telegram stream unavailable');
     }
+
+    const isDownload = url.searchParams.get('download') === '1';
+    const reqFormat = url.searchParams.get('format');
+
+    let mimeType = item.mimeType || detectMimeType(item.name, item.category);
+    if (reqFormat === 'webm') mimeType = 'video/webm';
+    else if (reqFormat === 'mp4') mimeType = 'video/mp4';
 
     const headers = new Headers({
       'Cache-Control': 'private, no-store',
       'X-Content-Type-Options': 'nosniff',
       'Content-Security-Policy': "sandbox; default-src 'none'",
       'Access-Control-Allow-Origin': '*',
-      'Content-Type': item.mimeType || detectMimeType(item.name, item.category),
+      'Accept-Ranges': 'bytes',
+      'Content-Range': `bytes ${start}-${start + chunkLength - 1}/${totalSize}`,
+      'Content-Length': String(chunkLength),
+      'Content-Type': mimeType,
     });
 
-    for (const name of ['content-length', 'content-range', 'accept-ranges', 'etag']) {
-      const val = tgStreamRes.headers.get(name);
-      if (val) headers.set(name, val);
+    if (isDownload) {
+      headers.set('Content-Disposition', `attachment; filename="${encodeURIComponent(item.name)}"; filename*=UTF-8''${encodeURIComponent(item.name)}`);
     }
 
-    return withHead(new Response(isHead ? null : tgStreamRes.body, { status: tgStreamRes.status, headers }));
+    const etag = tgStreamRes.headers.get('etag');
+    if (etag) headers.set('etag', etag);
+
+    return withHead(new Response(isHead ? null : tgStreamRes.body, { status: 206, headers }));
   } catch {
     return error(502, 'TeleDrive is offline or the origin is unavailable');
   }

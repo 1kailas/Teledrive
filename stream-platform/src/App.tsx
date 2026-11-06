@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowDownRight, AudioLines, Bookmark, Check, ChevronRight,
-  Clapperboard, Disc3, Heart, Home, ListMusic, Maximize, Minimize,
+  AlertTriangle, ArrowDownRight, AudioLines, Bookmark, Check, CheckCircle2, ChevronRight,
+  Clapperboard, Copy, Disc3, Download, ExternalLink, Heart, Home, ListMusic, Maximize, Minimize,
   Music2, Pause, PictureInPicture2, Play, RefreshCw,
-  Search, SkipBack, SkipForward, SlidersHorizontal, Subtitles,
+  Search, Share2, SkipBack, SkipForward, SlidersHorizontal, Subtitles,
   Volume2, VolumeX, X,
 } from 'lucide-react';
 import type { AudioProfile, MediaItem } from './library';
@@ -114,6 +114,29 @@ export default function App() {
   const [subtitles, setSubtitles] = useState<{ id: string; label: string; src?: string; active: boolean }[]>([]);
   const [customSubtitleUrl, setCustomSubtitleUrl] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const copyStreamUrl = (id: string) => {
+    const fullUrl = `${window.location.origin}/api/media/${id}`;
+    if (navigator.clipboard) {
+      void navigator.clipboard.writeText(fullUrl).then(() => {
+        setToast('Direct stream link copied! Paste into VLC, IINA, or MPV to stream.');
+        setTimeout(() => setToast(null), 4000);
+      }).catch(() => {
+        prompt('Copy stream URL for VLC/IINA/PotPlayer:', fullUrl);
+      });
+    } else {
+      prompt('Copy stream URL for VLC/IINA/PotPlayer:', fullUrl);
+    }
+  };
+
+  const retryPlayback = () => {
+    setPlaybackError('');
+    if (videoRef.current) {
+      videoRef.current.load();
+      void videoRef.current.play().catch(() => {});
+    }
+  };
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -636,19 +659,19 @@ export default function App() {
       }}>
         <div ref={modalRef} className={`video-modal ${isFullscreen ? 'fullscreen' : ''}`} role="dialog" aria-modal="true" aria-label={`Watching ${titleOf(video)}`}>
           <div className="modal-header">
-            <div>
+            <div className="modal-title-block">
               <span className="modal-tag">NOW PLAYING · {formatOf(video)} · {sizeOf(video.size)}</span>
-              <strong>{titleOf(video)}</strong>
+              <strong title={titleOf(video)}>{titleOf(video)}</strong>
             </div>
             <div className="modal-actions">
               {/* Audio Track & Equalizer Switcher Button */}
               <div className="popover-wrap">
                 <button
-                  className={`icon-button player-tool-btn ${showAudioMenu ? 'active' : ''}`}
+                  className={`player-tool-btn ${showAudioMenu ? 'active' : ''}`}
                   onClick={() => { setShowAudioMenu((v) => !v); setShowSubtitleMenu(false); }}
                   title="Audio tracks & Equalizer"
                   aria-label="Audio tracks & Equalizer">
-                  <SlidersHorizontal size={18} />
+                  <SlidersHorizontal size={15} />
                   <span className="tool-badge">{audioPrefs.profile === 'flat' ? 'Audio' : audioPrefs.profile.toUpperCase()}</span>
                 </button>
 
@@ -727,11 +750,12 @@ export default function App() {
               {/* Subtitles Button */}
               <div className="popover-wrap">
                 <button
-                  className={`icon-button player-tool-btn ${showSubtitleMenu ? 'active' : ''}`}
+                  className={`player-tool-btn ${showSubtitleMenu ? 'active' : ''}`}
                   onClick={() => { setShowSubtitleMenu((v) => !v); setShowAudioMenu(false); }}
-                  title="Subtitles"
-                  aria-label="Subtitles">
-                  <Subtitles size={18} />
+                  title="Subtitles & Captions"
+                  aria-label="Subtitles & Captions">
+                  <Subtitles size={15} />
+                  <span>CC</span>
                 </button>
 
                 {showSubtitleMenu && (
@@ -791,19 +815,29 @@ export default function App() {
                 )}
               </div>
 
+              {/* VLC Stream Link */}
+              <button
+                className="player-tool-btn"
+                onClick={() => copyStreamUrl(video.id)}
+                title="Copy stream link to open in VLC, IINA, or PotPlayer"
+                aria-label="VLC Stream Link">
+                <Share2 size={15} />
+                <span>VLC Link</span>
+              </button>
+
               {/* Picture in Picture */}
-              <button className="icon-button player-tool-btn" onClick={togglePiP} title="Picture in Picture" aria-label="Picture in Picture">
-                <PictureInPicture2 size={18} />
+              <button className="player-tool-btn" onClick={togglePiP} title="Picture in Picture" aria-label="Picture in Picture">
+                <PictureInPicture2 size={15} />
               </button>
 
               {/* Fullscreen */}
-              <button className="icon-button player-tool-btn" onClick={toggleFullscreen} title="Fullscreen" aria-label="Fullscreen">
-                {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+              <button className="player-tool-btn" onClick={toggleFullscreen} title="Fullscreen" aria-label="Fullscreen">
+                {isFullscreen ? <Minimize size={15} /> : <Maximize size={15} />}
               </button>
 
               {/* Close */}
-              <button className="icon-button close-video" aria-label="Close video" autoFocus onClick={closeVideo}>
-                <X size={22} />
+              <button className="close-video-btn" aria-label="Close video" autoFocus onClick={closeVideo} title="Close (Esc)">
+                <X size={18} />
               </button>
             </div>
           </div>
@@ -812,7 +846,6 @@ export default function App() {
             <video
               ref={videoRef}
               key={video.id}
-              src={`/api/media/${video.id}`}
               poster={artwork(video)}
               controls
               autoPlay
@@ -834,29 +867,86 @@ export default function App() {
                 }
               }}
               onEnded={() => { savePosition(video.id, null); setPositions(getPositions()); }}
-              onError={() => setPlaybackError('Playback unavailable. Check your connection or verify video codec support.')}>
+              onError={() => setPlaybackError('In-Browser Codec Restriction: This film may use audio or video streams (such as Dolby Digital Plus DDP5.1 / DTS / AC3) that your browser cannot decode natively.')}>
+              <source src={`/api/media/${video.id}`} type={video.mimeType} />
+              {video.name.toLowerCase().endsWith('.mkv') && (
+                <source src={`/api/media/${video.id}?format=webm`} type="video/webm" />
+              )}
+              <source src={`/api/media/${video.id}?format=mp4`} type="video/mp4" />
               {customSubtitleUrl && (
                 <track kind="subtitles" src={customSubtitleUrl} label="Custom Subtitles" default />
               )}
             </video>
           </div>
 
-          {playbackError && <div className="video-error" role="alert">{playbackError}</div>}
+          {playbackError && (
+            <div className="video-error-card" role="alert">
+              <div className="video-error-content">
+                <AlertTriangle size={24} className="error-icon" />
+                <div>
+                  <strong>In-Browser Playback Limited</strong>
+                  <p>
+                    This movie is encoded in <strong>{formatOf(video)}</strong> with multi-channel audio ({video.name.includes('DDP') ? 'Dolby Digital Plus DDP5.1' : 'surround sound'}).
+                    Standard web browsers lack proprietary Dolby decoders, but you can stream it directly with full surround sound in VLC or PotPlayer with one click.
+                  </p>
+                </div>
+              </div>
+              <div className="video-error-actions">
+                <button className="primary-button" onClick={() => copyStreamUrl(video.id)}>
+                  <ExternalLink size={16} /> Open in VLC / PotPlayer (Stream Link)
+                </button>
+                <a className="secondary-button" href={`/api/media/${video.id}?download=1`} download={video.name}>
+                  <Download size={16} /> Download File ({sizeOf(video.size)})
+                </a>
+                <button className="secondary-button" onClick={retryPlayback}>
+                  <RefreshCw size={16} /> Retry Browser Player
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="modal-bottom">
             <div>
-              <span>DIRECT CLOUD STREAMING</span>
-              <p>{video.description || 'Streaming directly from your private TeleDrive storage.'}</p>
+              <span>DIRECT CLOUD STREAMING · {video.parts && video.parts.length > 1 ? `${video.parts.length} TELEGRAM PARTS` : 'SINGLE CLOUD STREAM'}</span>
+              <p>{video.description || 'Streaming directly from your private TeleDrive storage on Telegram.'}</p>
             </div>
-            <button className="icon-button" onClick={() => toggleSaved(video.id)} aria-label="Toggle My list">
-              {saved.includes(video.id) ? <Check size={20} /> : <Bookmark size={20} />}
-            </button>
+            <div className="modal-bottom-actions">
+              <button
+                className="bottom-tool-btn"
+                onClick={() => copyStreamUrl(video.id)}
+                title="Copy stream URL for VLC / IINA / PotPlayer">
+                <Share2 size={15} />
+                <span>VLC Link</span>
+              </button>
+              <a
+                className="bottom-tool-btn"
+                href={`/api/media/${video.id}?download=1`}
+                download={video.name}
+                title="Download original file">
+                <Download size={15} />
+                <span>Download</span>
+              </a>
+              <button
+                className={`bottom-tool-btn ${saved.includes(video.id) ? 'saved' : ''}`}
+                onClick={() => toggleSaved(video.id)}
+                title={saved.includes(video.id) ? 'Remove from My List' : 'Save to My List'}>
+                {saved.includes(video.id) ? <Check size={15} /> : <Bookmark size={15} />}
+                <span>{saved.includes(video.id) ? 'Saved' : 'Save'}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>}
 
       <div className="mobile-nav" aria-label="Mobile navigation">{nav.map(({ id, icon: Icon, label }) =>
         <button key={id} className={view === id ? 'current' : ''} onClick={() => setView(id)}><Icon size={20} /><span>{label}</span></button>)}</div>
+
+      {toast && (
+        <div className="toast-banner" role="status">
+          <CheckCircle2 size={18} color="var(--accent)" />
+          <span>{toast}</span>
+        </div>
+      )}
     </div>
   );
 }

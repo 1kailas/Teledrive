@@ -205,3 +205,82 @@ test('standalone direct Telegram mode streams media Range without origin or tunn
   assert.equal(mediaRes.headers.get('Content-Type'), 'video/x-matroska');
   assert.equal(await mediaRes.text(), 'chunk-data');
 });
+
+test('standalone mode routes multi-part media across multiple Telegram bots based on byte offsets', async () => {
+  const multiPartEnv: EdgeEnv = {
+    BOT_TOKENS: '1111:TOKEN1,2222:TOKEN2,3333:TOKEN3',
+    TELEDRIVE_CATALOG: JSON.stringify({
+      items: [
+        {
+          id,
+          name: 'BigMovie.mkv',
+          category: 'video',
+          mimeType: 'video/x-matroska',
+          size: 6000000,
+          duration: 7200,
+          hasThumbnail: false,
+          updatedAt: 12345,
+          parts: [
+            { partIndex: 0, size: 2000000, telegramFileId: 'part-0-file', botId: '1111' },
+            { partIndex: 1, size: 2000000, telegramFileId: 'part-1-file', botId: '2222' },
+            { partIndex: 2, size: 2000000, telegramFileId: 'part-2-file', botId: '3333' },
+          ],
+        },
+      ],
+    }),
+    ALLOW_PUBLIC: 'true',
+  };
+
+  const requestedBots: string[] = [];
+  const requestedFiles: string[] = [];
+  const requestedRanges: string[] = [];
+
+  const mockTgFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    const tokenMatch = /bot([^/]+)/.exec(url.pathname);
+    if (tokenMatch) requestedBots.push(tokenMatch[1]!);
+
+    if (url.pathname.includes('/getFile')) {
+      const fileId = url.searchParams.get('file_id');
+      requestedFiles.push(fileId!);
+      return Response.json({ ok: true, result: { file_path: `stream/${fileId}.bin` } });
+    }
+
+    if (url.pathname.includes('/stream/')) {
+      const rangeHeader = new Headers(init?.headers).get('Range');
+      requestedRanges.push(rangeHeader!);
+      return new Response('slice-payload', {
+        status: 206,
+        headers: {
+          'Content-Length': '1000',
+        },
+      });
+    }
+    return new Response(null, { status: 404 });
+  }) as typeof fetch;
+
+  // Request byte range in Part 1 (offset 2,000,000 to 3,999,999) -> belongs to Bot 2222
+  const part1Res = await handleApi(
+    new Request(`https://stream.example/api/media/${id}`, { headers: { Range: 'bytes=2500000-2500999' } }),
+    multiPartEnv,
+    mockTgFetch,
+  );
+  assert.equal(part1Res.status, 206);
+  assert.equal(part1Res.headers.get('Content-Range'), 'bytes 2500000-2500999/6000000');
+  assert.equal(part1Res.headers.get('Content-Length'), '1000');
+  assert.equal(requestedFiles.includes('part-1-file'), true);
+  assert.equal(requestedBots.includes('2222:TOKEN2'), true);
+  assert.equal(requestedRanges[0], 'bytes=500000-500999');
+
+  // Request byte range in Part 2 (offset 4,000,000 to 5,999,999) -> belongs to Bot 3333
+  const part2Res = await handleApi(
+    new Request(`https://stream.example/api/media/${id}?download=1`, { headers: { Range: 'bytes=4000100-4000200' } }),
+    multiPartEnv,
+    mockTgFetch,
+  );
+  assert.equal(part2Res.status, 206);
+  assert.equal(part2Res.headers.get('Content-Range'), 'bytes 4000100-4000200/6000000');
+  assert.equal(part2Res.headers.get('Content-Disposition')?.includes('BigMovie.mkv'), true);
+  assert.equal(requestedFiles.includes('part-2-file'), true);
+  assert.equal(requestedBots.includes('3333:TOKEN3'), true);
+});
