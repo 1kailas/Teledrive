@@ -69,6 +69,8 @@ export function VideoTheatre({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('fit');
   const [playbackError, setPlaybackError] = useState('');
+  const [streamUrl, setStreamUrl] = useState(`/api/media/${video.id}`);
+  const [hasAutoRetried, setHasAutoRetried] = useState(false);
   const [autoplayCountdown, setAutoplayCountdown] = useState<number | null>(null);
 
   const { closing, close: closeWithAnimation } = useExit(onClose, 200);
@@ -293,12 +295,33 @@ export function VideoTheatre({
     closeWithAnimation();
   };
 
+  const openExternalPlayer = (protocol: 'vlc' | 'potplayer') => {
+    const fullUrl = `${window.location.origin}/api/media/${video.id}`;
+    window.location.href = `${protocol}://${fullUrl}`;
+    onCopyLink(video.id);
+  };
+
+  const handleVideoError = () => {
+    if (!hasAutoRetried) {
+      setHasAutoRetried(true);
+      setStreamUrl(`/api/media/${video.id}?format=mp4`);
+      const element = videoRef.current;
+      if (element) {
+        element.load();
+        void element.play().catch(() => undefined);
+      }
+      return;
+    }
+    setPlaybackError('Playback was interrupted. Reconnect, or stream directly in VLC / PotPlayer.');
+  };
+
   const retryPlayback = () => {
     const element = videoRef.current;
     setPlaybackError('');
+    setStreamUrl(`/api/media/${video.id}?t=${Date.now()}`);
     if (!element) return;
     element.load();
-    void element.play().catch(() => setPlaybackError('The stream could not be reached. Try again or open it in VLC.'));
+    void element.play().catch(() => setPlaybackError('Stream reconnect failed. Stream directly in VLC or download the file.'));
   };
 
   const togglePiP = async () => {
@@ -391,6 +414,8 @@ export function VideoTheatre({
 
   useEffect(() => {
     setPlaybackError('');
+    setStreamUrl(`/api/media/${video.id}`);
+    setHasAutoRetried(false);
     setAutoplayCountdown(null);
     setShowEpisodeDrawer(false);
     setShowAudioMenu(false);
@@ -725,6 +750,17 @@ export function VideoTheatre({
           <button
             type="button"
             className="tool-button"
+            onClick={() => openExternalPlayer('vlc')}
+            aria-label="Stream in VLC or PotPlayer"
+            title="Stream in VLC / PotPlayer"
+          >
+            <ExternalLink size={17} />
+            <span className="tool-label">VLC</span>
+          </button>
+
+          <button
+            type="button"
+            className="tool-button"
             onClick={toggleFullscreen}
             aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
             title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (F)'}
@@ -804,7 +840,7 @@ export function VideoTheatre({
               playsInline
               preload="metadata"
               crossOrigin="anonymous"
-              src={`/api/media/${video.id}`}
+              src={streamUrl}
               onLoadedMetadata={(event) => {
                 inspectMediaTracks();
                 setPlaybackError('');
@@ -830,7 +866,7 @@ export function VideoTheatre({
                 savePosition(video.id, null);
                 if (nextEpisode) setAutoplayCountdown(5);
               }}
-              onError={() => setPlaybackError('The stream was interrupted. Reconnect, or open it directly in VLC or PotPlayer.')}
+              onError={handleVideoError}
             >
               {isInception ? (
                 <track
@@ -888,9 +924,13 @@ export function VideoTheatre({
                   <RefreshCw size={15} />
                   Reconnect
                 </button>
-                <button type="button" className="button button-secondary" onClick={() => onCopyLink(video.id)}>
+                <button type="button" className="button button-secondary" onClick={() => openExternalPlayer('vlc')}>
                   <ExternalLink size={15} />
                   Open in VLC
+                </button>
+                <button type="button" className="button button-secondary" onClick={() => openExternalPlayer('potplayer')}>
+                  <ExternalLink size={15} />
+                  PotPlayer
                 </button>
                 <a className="button button-secondary" href={`/api/media/${video.id}?download=1`} download={video.name}>
                   <Download size={15} />
