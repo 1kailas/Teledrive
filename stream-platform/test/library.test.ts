@@ -19,6 +19,12 @@ const item: MediaItem = {
 test('human-friendly labels retain the real filename as a fallback', () => {
   assert.equal(titleOf(item), 'A night at sea');
   assert.equal(titleOf({ ...item, name: 'Untitled' }), 'Untitled');
+  assert.equal(titleOf({ ...item, name: 'The Quiet Signal.2024.1080p.mp4' }), 'The Quiet Signal');
+  assert.equal(
+    titleOf({ ...item, name: 'Inception.2010.1080p.NF.WEB-DL.English.H.264.mp4' }),
+    'Inception',
+  );
+  assert.equal(titleOf({ ...item, name: 'Blade Runner 2049.2017.2160p.mkv' }), 'Blade Runner 2049');
   assert.equal(artistOf(item), 'Your music library');
   assert.equal(artistOf({ ...item, artist: 'The Composers' }), 'The Composers');
 });
