@@ -11,6 +11,7 @@ mod sync_ext;
 mod part_stream;
 mod native_uploads;
 mod native_downloads;
+mod recovery;
 mod ui;
 
 use std::sync::Arc;
@@ -57,18 +58,26 @@ fn already_running() -> bool {
             .encode_wide()
             .chain(std::iter::once(0))
             .collect();
-        let hwnd = unsafe { FindWindowW(std::ptr::null(), title.as_ptr()) };
-        if !hwnd.is_null() {
-            unsafe {
-                if IsIconic(hwnd) != 0 {
-                    ShowWindow(hwnd, 9); // SW_RESTORE
-                } else if IsWindowVisible(hwnd) == 0 {
-                    ShowWindow(hwnd, 5); // SW_SHOW
+        // A forced kill can leave the named mutex alive if a helper process or
+        // the shell still holds a handle. Only treat the mutex as a running
+        // instance when its window actually exists; otherwise this build could
+        // never start again without a reboot.
+        for _ in 0..10 {
+            let hwnd = unsafe { FindWindowW(std::ptr::null(), title.as_ptr()) };
+            if !hwnd.is_null() {
+                unsafe {
+                    if IsIconic(hwnd) != 0 {
+                        ShowWindow(hwnd, 9); // SW_RESTORE
+                    } else if IsWindowVisible(hwnd) == 0 {
+                        ShowWindow(hwnd, 5); // SW_SHOW
+                    }
+                    SetForegroundWindow(hwnd);
                 }
-                SetForegroundWindow(hwnd);
+                return true;
             }
+            std::thread::sleep(std::time::Duration::from_millis(200));
         }
-        return true;
+        return false;
     }
     false
 }
@@ -109,6 +118,29 @@ fn main() {
     let server = Arc::new(AppServer::new(Arc::clone(&db), Arc::clone(&telegram), Arc::clone(&tokio_runtime), port));
 
     server.start();
+
+    // Rebuild file records whose Telegram parts survived an earlier state-file
+    // loss. This runs off the UI thread and waits for the bundled Bot API, so a
+    // large channel never delays startup. It is a no-op once every part has a
+    // visible file record.
+    {
+        let recovery_server = Arc::clone(&server);
+        std::thread::spawn(move || {
+            for _ in 0..60 {
+                if recovery_server.telegram.bot_api.ready() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+            if !recovery_server.telegram.bot_api.ready() {
+                eprintln!("[TeleDrive] Telegram recovery deferred: bundled Bot API is not ready.");
+                return;
+            }
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                crate::recovery::recover_orphan_telegram_files(&recovery_server);
+            }));
+        });
+    }
 
     // Write daemon info to data_dir and LocalAppData so WinUI 3 can immediately detect active port
     let daemon_info = serde_json::json!({

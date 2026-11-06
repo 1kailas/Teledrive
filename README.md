@@ -1,5 +1,5 @@
 # TeleDrive 🚀
-### A self-contained desktop drive — local vault by default, Telegram optional
+### A self-contained desktop drive — your private Telegram channel is the storage engine
 
 [![WinUI 3 Desktop](https://img.shields.io/badge/TeleDrive%20WinUI-Windows%20App%20SDK%20%2B%20.NET%208-blue.svg)](winui-desktop/)
 [![Rust Desktop](https://img.shields.io/badge/TeleDriveR-Native%20Rust%20%2B%20Win32-orange.svg)](rust-desktop/)
@@ -8,7 +8,7 @@
 [![Zero Flashbang](https://img.shields.io/badge/Win32-Zero--Flash%20Lifecycle-emerald.svg)](rust-desktop/src/main.rs)
 [![Search Engine](https://img.shields.io/badge/Indexing-Ranked%20Multi--Token%20Search-purple.svg)](rust-desktop/src/db.rs)
 
-**TeleDrive** is an unlimited-capacity cloud & desktop drive backed by Telegram cloud storage and local vault persistence.
+**TeleDrive** is an unlimited-capacity cloud & desktop drive backed by a private Telegram channel. Document bytes live in Telegram; the PC keeps only the metadata index, thumbnails, and short-lived upload staging files.
 
 Files of arbitrary size are cryptographically verified, split into parts, and streamed with low-latency HTTP Range support (enabling pausing/resuming transfers and instant random-access seeking for 4K video playback).
 
@@ -77,13 +77,14 @@ flowchart TD
 ```
 
 ### Key Architectural Pillars
-- **Built-in Local Vault (default)**: New installs start empty and write documents to `%APPDATA%\TeleDrive\data\vault\files`. Local files are served straight off disk with Range support — no temp copies and no memory spike.
-- **Real Disk Awareness**: The app reports real free/total bytes for the vault volume, shows them in the sidebar and Storage settings, and rejects a new upload with HTTP 507 before it can fill the disk.
-- **Self-Maintaining Storage**: Trash older than 30 days is purged automatically, abandoned staging files are swept, and unreferenced vault parts are cleaned up on startup and daily thereafter.
-- **Vault Health Check**: Settings → Storage can verify every local part exists at the expected size and report orphaned files without re-reading gigabytes of content.
+- **Telegram-Only Document Storage**: Every new upload is sent to your private Telegram storage channel through the bundled local Bot API. The local `vault` folder is legacy read-only; no new document bytes are written there.
+- **Lightweight Local Footprint**: The PC stores only the metadata index (`teledrive.json`), thumbnails, streaming cache, and temporary upload slices. Staging files are deleted as soon as their part is stored in Telegram.
+- **Real Disk Awareness**: The app reports real free/total bytes for the metadata/staging volume, shows them in the sidebar and Storage settings, and rejects a new upload with HTTP 507 before staging can fill the disk.
+- **Self-Maintaining Storage**: Trash older than 30 days is purged automatically, abandoned staging files are swept, and orphaned Telegram-part records are recovered on startup and cleaned up daily.
+- **Drive Health Check**: Settings → System can verify the local metadata index and report missing staging parts or orphaned Telegram uploads without re-reading gigabytes of content.
 - **Zero Raw File Limits**: Files of any size (100 MB to 1 TB+) are split into parts (default 512 MB, adjustable up to 2 GB), then streamed into parallel HTTP slices.
 - **Restart-Safe Resumability**: Upload sessions persist to `uploads/<id>/session.json`, and paused downloads resume with `Range: bytes=<offset>-`. Large downloads stream directly into a user-chosen file through the File System Access API, so multi-gigabyte files never have to fit in browser memory.
-- **Optional Telegram Engine**: Existing Telegram-backed files stay readable, and Settings → Storage can switch new uploads back to a private channel when bot tokens are configured.
+- **Automatic Recovery**: If an older build lost a file record, startup imports records from the legacy WinUI database and backup state, then matches orphaned Telegram parts to their original document names. Completed uploads reappear in the drive without re-uploading.
 - **Content-Addressable Deduplication**: Files with identical content share the same underlying `blob_id`. Copying or moving files is an instant $O(1)$ operation that consumes zero additional storage.
 
 ---
@@ -117,7 +118,7 @@ sequenceDiagram
 ```
 
 ### 1. Resumable Chunking Pipeline
-- Files are logically divided into parts ($P_0, P_1, \dots, P_n$); the part size is adjustable from 5 MB up to 2000 MB in local vault mode (45 MB for the public Telegram Bot API), and the choice is saved across restarts.
+- Files are logically divided into parts ($P_0, P_1, \dots, P_n$); the part size is adjustable from 5 MB up to 2000 MB with the bundled local Bot API (45 MB when using the public Telegram Bot API), and the choice is saved across restarts.
 - Parts are transferred as smaller HTTP slices (32 MB by default, configurable). If a network interruption occurs, the client fetches the fresh slice map and resumes exactly from the last durable slice.
 - SHA-256 checksums are calculated per part and stored with the Telegram message reference; completed uploads are validated before the file is marked ready.
 

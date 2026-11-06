@@ -9,6 +9,13 @@ if (!fs.existsSync(exeSrc)) {
 const iconSrc = path.resolve(__dirname, '../resources/icon.ico');
 const botApiSrc = path.resolve(__dirname, '../resources/bot-api');
 const botApiFiles = ['telegram-bot-api.exe', 'libcrypto-3-x64.dll', 'libssl-3-x64.dll', 'z.dll'];
+// Optional per-install credentials. Existing users keep their credentials in
+// %APPDATA%\TeleDrive\.env; a bundled copy makes a fresh install work without
+// any manual setup. The file is never committed or logged.
+const envSources = [
+  path.resolve(__dirname, '../../.env'),
+  path.resolve(__dirname, '../.env'),
+];
 
 // Derive the Windows-side paths at runtime — no user profile is hardcoded.
 // A powershell one-liner resolves a Windows path; wslpath converts it back to
@@ -52,8 +59,17 @@ for (const name of botApiFiles) {
   if (!fs.existsSync(source)) throw new Error(`Bundled Bot API payload missing: ${name}`);
   fs.copyFileSync(source, path.join(winTemp, 'app', 'bot-api', name));
 }
+const envSource = envSources.find((candidate) => fs.existsSync(candidate));
+if (envSource) {
+  fs.copyFileSync(envSource, path.join(winTemp, 'app', '.env'));
+  console.log('   Included Telegram credentials in the installer payload.');
+}
 
 console.log('3. Generating WiX manifest for Native Rust application (TeleDriveR)...');
+const envComponent = fs.existsSync(path.join(winTemp, 'app', '.env')) ? `
+      <Component Id="C_Env" Guid="*" Directory="INSTALLFOLDER">
+        <File Id="F_Env" Source="app\\.env" KeyPath="yes" />
+      </Component>` : '';
 const wxs = `<?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Product Id="*" 
@@ -119,7 +135,7 @@ const wxs = `<?xml version="1.0" encoding="UTF-8"?>
     <ComponentGroup Id="ProductComponents">
       <Component Id="C_MainExe" Guid="*" Directory="INSTALLFOLDER">
         <File Id="F_MainExe" Source="app\\TeleDriveR.exe" KeyPath="yes" />
-      </Component>
+      </Component>${envComponent}
       <Component Id="C_BotApi" Guid="*" Directory="BOTAPIFOLDER">
         <File Id="F_BotApi" Source="app\\bot-api\\telegram-bot-api.exe" KeyPath="yes" />
       </Component>

@@ -29,7 +29,7 @@ pub fn render_settings_view(
             .inner_margin(egui::Margin::same(12))
             .show(ui, |ui| {
                 let current_dir = download_mgr.get_download_dir();
-                ui.label(RichText::new("Files downloaded from your drive will be saved here:").size(11.5).color(TEXT_MUTED));
+                ui.label(RichText::new("Files downloaded from your Telegram drive will be saved here:").size(11.5).color(TEXT_MUTED));
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(current_dir.to_string_lossy()).size(13.0).strong().color(TEXT_PRIMARY));
@@ -71,7 +71,9 @@ pub fn render_settings_view(
                 });
 
                 ui.add_space(6.0);
-                ui.label(RichText::new("The local Telegram Bot API server runs natively as an isolated child process, enabling direct up to 2,000 MiB multi-part transfers directly to Telegram storage channels.").size(11.0).color(TEXT_MUTED));
+                ui.label(RichText::new("The bundled Telegram Bot API server runs natively as an isolated child process, enabling direct up to 2,000 MiB multi-part transfers to your private Telegram storage channel.").size(11.0).color(TEXT_MUTED));
+                ui.add_space(4.0);
+                ui.label(RichText::new("Documents live in Telegram. This PC keeps only the metadata index, thumbnails, and temporary upload staging files, which are deleted as soon as the transfer finishes.").size(11.0).color(TEXT_MUTED));
             });
 
         ui.add_space(16.0);
@@ -133,9 +135,10 @@ pub fn render_settings_view(
                 render_setting_row(ui, "Architecture", "Pure Native Rust (x86_64)");
                 render_setting_row(ui, "GUI Engine", "egui 0.31 / eframe (Zero JavaScript, Zero WebView2)");
                 render_setting_row(ui, "Application Version", "3.1.7");
+                render_setting_row(ui, "Storage Engine", "Private Telegram Channel");
                 render_setting_row(ui, "Total Cloud Files", &format!("{}", state.files.len()));
                 render_setting_row(ui, "Total Cloud Folders", &format!("{}", state.folders.len()));
-                render_setting_row(ui, "Total Vault Size", &fmt_bytes(state.files.iter().map(|f| f.size).sum()));
+                render_setting_row(ui, "Telegram Storage Used", &fmt_bytes(state.files.iter().map(|f| f.size).sum()));
             });
     });
 }

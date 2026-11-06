@@ -108,7 +108,7 @@ pub fn render_recent_view(
                     ui.label(RichText::new("⬇").size(48.0).color(TEXT_MUTED));
                     ui.add_space(8.0);
                     ui.label(RichText::new("No downloads yet").size(16.0).strong().color(TEXT_PRIMARY));
-                    ui.label(RichText::new("Downloaded files stream directly to your local drive without browser popups or Edge warnings.").size(12.0).color(TEXT_MUTED));
+                    ui.label(RichText::new("Downloaded files stream from Telegram directly to your chosen download folder.").size(12.0).color(TEXT_MUTED));
                 });
             } else {
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -156,7 +156,7 @@ fn render_all_summary(
 
     ui.horizontal(|ui| {
         // Card 1: Cloud Files
-        render_stat_card(ui, "📁 Cloud Files", &format!("{}", files.len()), "In recent vault view", ACCENT);
+        render_stat_card(ui, "📁 Cloud Files", &format!("{}", files.len()), "In your Telegram drive", ACCENT);
         ui.add_space(8.0);
 
         // Card 2: Downloads

@@ -880,6 +880,10 @@ impl AppServer {
             native_feeders: Arc::new(Mutex::new(std::collections::HashSet::new())),
         };
         server.load_persisted_uploads();
+        // A crash after every part reached Telegram but before the file record
+        // was written leaves a complete session with all parts stored. Finish
+        // those before starting new feeders so they appear in the drive.
+        server.finalize_stored_uploads();
         server.start_native_feeders();
         server.trigger_mirror_sync();
         server
@@ -1103,7 +1107,12 @@ impl AppServer {
                 let _ = std::fs::remove_dir_all(&dir);
                 continue;
             };
-            if now - session.created_at > 48 * 3600 * 1000 {
+            let all_stored = !session.parts.is_empty()
+                && session.parts.iter().all(|part| part.status == "stored");
+            // Keep completed sessions past the normal resumable window: their
+            // bytes are already in Telegram and only the local file record is
+            // missing. finalize_stored_uploads() will finish them after load.
+            if now - session.created_at > 48 * 3600 * 1000 && !all_stored {
                 let _ = std::fs::remove_dir_all(&dir);
                 continue;
             }
@@ -1237,6 +1246,38 @@ impl AppServer {
         if changed {
             self.persist_session_by_id(upload_id);
         }
+    }
+
+    /// Finalize any persisted session whose parts all reached Telegram. This
+    /// is the crash-recovery path for an upload that completed while the app
+    /// was closing: the bytes are already in the channel, only the local file
+    /// record is missing.
+    pub(crate) fn finalize_stored_uploads(&self) -> usize {
+        let ready: Vec<String> = {
+            let uploads = self.active_uploads.read_safe();
+            uploads
+                .values()
+                .filter(|session| {
+                    !session.parts.is_empty()
+                        && session.parts.iter().all(|part| part.status == "stored")
+                })
+                .map(|session| session.id.clone())
+                .collect()
+        };
+        let mut finalized = 0;
+        for upload_id in ready {
+            if !self.try_begin_finalize(&upload_id) {
+                continue;
+            }
+            match self.finalize_and_drop(&upload_id) {
+                Ok(_) => finalized += 1,
+                Err(error) => eprintln!(
+                    "[TeleDrive] Stored upload {} could not be finalized yet: {}",
+                    upload_id, error
+                ),
+            }
+        }
+        finalized
     }
 
     /// Atomically move an upload into 'finalizing'. Only one completion or
@@ -1716,8 +1757,17 @@ fn create_store_zip_and_hash(src_path: &Path, zip_path: &Path, entry_name: &str)
 
         let mut part_rows: Vec<PartRecord> = {
             let state = self.db.state.read_safe();
-            state.parts.iter().filter(|p| p.blob_id == session.blob_id).cloned().collect()
+            state.parts.iter()
+                .filter(|p| {
+                    p.blob_id == session.blob_id
+                        && p.part_index >= 0
+                        && (p.part_index as usize) < session.parts.len()
+                })
+                .cloned()
+                .collect()
         };
+        part_rows.sort_by_key(|p| p.part_index);
+        part_rows.dedup_by_key(|p| p.part_index);
         // Rebuild durable rows from the session when a save raced with completion.
         for p in &session.parts {
             if part_rows.iter().any(|r| r.part_index == p.idx as i64) {
@@ -1742,6 +1792,14 @@ fn create_store_zip_and_hash(src_path: &Path, zip_path: &Path, entry_name: &str)
         part_rows.sort_by_key(|p| p.part_index);
         if part_rows.len() != session.parts.len() {
             return Err(format!("expected {} parts, found {}", session.parts.len(), part_rows.len()));
+        }
+        if let Some(part) = part_rows.iter().find(|part| {
+            part.telegram_message_id <= 0
+                || part.telegram_file_id.trim().is_empty()
+                || part.telegram_file_id.starts_with("local:")
+                || part.telegram_file_id.starts_with("part_")
+        }) {
+            return Err(format!("part {} has no real Telegram reference", part.part_index));
         }
         let total: u64 = part_rows.iter().map(|p| p.size).sum();
         if total != session.size {
@@ -1899,6 +1957,10 @@ fn create_store_zip_and_hash(src_path: &Path, zip_path: &Path, entry_name: &str)
             uploads.values()
                 .filter(|s| s.status != "finalizing"
                     && s.created_at < cutoff
+                    // Every part is already durable in Telegram; keep the
+                    // session so finalize_stored_uploads can retry instead of
+                    // deleting the only record that points at those parts.
+                    && !(!s.parts.is_empty() && s.parts.iter().all(|p| p.status == "stored"))
                     && !s.parts.iter().any(|p| p.status == "uploading"))
                 .cloned()
                 .collect()
@@ -1910,6 +1972,12 @@ fn create_store_zip_and_hash(src_path: &Path, zip_path: &Path, entry_name: &str)
     }
 
     fn run_housekeeping(&self) -> (usize, usize, usize, usize) {
+        // Retry a finalization that failed transiently (for example a locked
+        // state file). The parts are already in Telegram, so this is safe.
+        let finalized = self.finalize_stored_uploads();
+        if finalized > 0 {
+            println!("[TeleDrive] Finalized {} completed upload(s) during maintenance.", finalized);
+        }
         let purged = self.purge_expired_trash(crate::db::TRASH_RETENTION_DAYS);
         let expired_uploads = self.purge_expired_uploads();
         let staged_parts: std::collections::HashSet<String> = self.active_uploads.read_safe()

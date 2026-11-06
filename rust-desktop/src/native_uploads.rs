@@ -236,7 +236,18 @@ impl AppServer {
                 if Self::session_status(&session) == "failed" { return; }
                 let next = session.parts.iter().find(|p| p.status == "pending")
                     .map(|p| p.idx);
-                let Some(idx) = next else { return; };
+                let Some(idx) = next else {
+                    // Nothing left to send. If every part is already durable in
+                    // Telegram, the previous process may have stopped between
+                    // "last part stored" and "file record written".
+                    if !session.parts.is_empty()
+                        && session.parts.iter().all(|p| p.status == "stored")
+                        && self.try_begin_finalize(&upload_id)
+                    {
+                        let _ = self.finalize_and_drop(&upload_id);
+                    }
+                    return;
+                };
                 let part = session.parts.get(idx).unwrap();
                 let staged = part.received_slices.len() >= part.slice_count
                     && self.part_file(&upload_id, idx).exists();

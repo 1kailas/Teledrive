@@ -69,6 +69,11 @@ pub struct DatabaseState {
     pub download_concurrency: u64,
     #[serde(default = "default_cache_limit_gb")]
     pub cache_limit_gb: u64,
+    /// Orphaned blobs that the startup Telegram recovery has already inspected.
+    /// Kept so a channel full of superseded retry uploads is not re-scanned (and
+    /// temporarily forwarded) on every launch.
+    #[serde(default)]
+    pub recovery_scanned_blobs: Vec<String>,
 }
 
 pub struct Database {
@@ -317,6 +322,37 @@ impl Database {
             recovered = true;
         }
 
+        // Recover records that earlier builds left behind. The native app used
+        // to share this data directory with the WinUI build (which kept its own
+        // teledrive-db.json), and a few native releases could persist Telegram
+        // parts without the matching file record. Import those records before
+        // the UI is shown so a completed upload is never invisible.
+        let imported_legacy = crate::recovery::import_legacy_winui_state(&mut state, &data_dir);
+        let imported_backup = crate::recovery::import_missing_from_backup(
+            &mut state,
+            &data_dir.join("teledrive.json.bak"),
+        );
+        if imported_legacy + imported_backup > 0 {
+            eprintln!(
+                "[TeleDrive] Recovered {} file record(s) from previous local databases.",
+                imported_legacy + imported_backup
+            );
+            recovered = true;
+        }
+
+        // A file whose folder no longer exists is unreachable in every view;
+        // move it back to the drive root instead of hiding it forever.
+        let folder_ids: std::collections::HashSet<String> =
+            state.folders.iter().map(|f| f.id.clone()).collect();
+        for file in &mut state.files {
+            if let Some(folder_id) = file.folder_id.as_deref() {
+                if !folder_ids.contains(folder_id) {
+                    file.folder_id = None;
+                    recovered = true;
+                }
+            }
+        }
+
         // Backfill / update file categories so videos, photos, and music appear correctly
         for file in &mut state.files {
             if file.category == "document" || file.category.is_empty() {
@@ -425,6 +461,7 @@ impl Database {
             download_dir: None,
             download_concurrency: default_download_concurrency(),
             cache_limit_gb: default_cache_limit_gb(),
+            recovery_scanned_blobs: Vec::new(),
         }
     }
 

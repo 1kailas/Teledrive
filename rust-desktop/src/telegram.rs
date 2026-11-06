@@ -189,6 +189,66 @@ impl TelegramEngine {
         Err(format!("getFile failed: {}", body_text))
     }
 
+    /// Telegram file references expire. A stored `file_id` from an old upload
+    /// can therefore fail `getFile` even though the message is still in the
+    /// channel. Forwarding that message returns a fresh `file_id`; delete the
+    /// temporary forward immediately and persist the refreshed value so future
+    /// downloads (and the next app launch) use it directly.
+    async fn refresh_part_file_id(&self, token: &str, part: &PartRecord) -> Result<String, String> {
+        if part.telegram_message_id <= 0 {
+            return Err("part has no Telegram message id to refresh".to_string());
+        }
+        let channel = self.channel_id.clone();
+        let message = self.forward_message(
+            token,
+            &channel,
+            &channel,
+            part.telegram_message_id,
+        ).await?;
+        let forwarded_id = message.get("message_id").and_then(|value| value.as_i64());
+        let fresh = message
+            .get("document")
+            .and_then(|document| document.get("file_id"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_string();
+        if let Some(forwarded_id) = forwarded_id {
+            let _ = self.delete_message(token, &channel, forwarded_id).await;
+        }
+        if fresh.is_empty() {
+            return Err("Telegram message has no document file id".to_string());
+        }
+        {
+            let mut state = self.db.state.write_safe();
+            if let Some(row) = state.parts.iter_mut().find(|row| {
+                row.blob_id == part.blob_id && row.part_index == part.part_index
+            }) {
+                row.telegram_file_id = fresh.clone();
+            }
+        }
+        self.db.save();
+        eprintln!(
+            "[TeleDrive] Refreshed expired Telegram file reference for part {}.",
+            part.part_index
+        );
+        Ok(fresh)
+    }
+
+    async fn get_file_path_for_part(
+        &self,
+        token: &str,
+        part: &PartRecord,
+    ) -> Result<(String, String), String> {
+        match self.get_file_path(token, &part.telegram_file_id).await {
+            Ok(value) => Ok(value),
+            Err(error) if error.to_lowercase().contains("invalid file_id") => {
+                let fresh = self.refresh_part_file_id(token, part).await?;
+                self.get_file_path(token, &fresh).await
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     /// Fetch only the first bytes of a part. Thumbnails and metadata only
     /// need a small prefix, so never buffer a multi-gigabyte part for them.
     pub async fn fetch_part_prefix(&self, part: &PartRecord, max_bytes: usize) -> Result<Vec<u8>, String> {
@@ -201,7 +261,7 @@ impl TelegramEngine {
             return Ok(strip_zip_header_if_present(out));
         }
         let token = self.bot_token(part)?;
-        let (base_url, file_path) = self.get_file_path(&token, &part.telegram_file_id).await?;
+        let (base_url, file_path) = self.get_file_path_for_part(&token, part).await?;
         if Path::new(&file_path).is_absolute() {
             let file = tokio::fs::File::open(&file_path).await.map_err(|e| e.to_string())?;
             let mut out = Vec::with_capacity(max_bytes.min(4 * 1024 * 1024));
@@ -289,7 +349,7 @@ impl TelegramEngine {
                     if let Ok(next_token) = self.bot_token(&next_p) {
                         let self_clone = self.clone();
                         let handle = tokio::spawn(async move {
-                            self_clone.get_file_path(&next_token, &next_p.telegram_file_id).await
+                            self_clone.get_file_path_for_part(&next_token, &next_p).await
                         });
                         prefetch_slot = Some((next_seq, handle));
                     }
@@ -379,7 +439,7 @@ impl TelegramEngine {
                 }
                 (b_url, f_path)
             } else {
-                let get_path_fut = self.get_file_path(&token, &part.telegram_file_id);
+                let get_path_fut = self.get_file_path_for_part(&token, &part);
                 tokio::pin!(get_path_fut);
 
                 let (b_url, f_path) = loop {
@@ -477,7 +537,7 @@ impl TelegramEngine {
             return unpack_part_to_file(&path, dest);
         }
         let token = self.bot_token(part)?;
-        let (base_url, file_path) = self.get_file_path(&token, &part.telegram_file_id).await?;
+        let (base_url, file_path) = self.get_file_path_for_part(&token, part).await?;
         if Path::new(&file_path).is_absolute() {
             return unpack_part_to_file(Path::new(&file_path), dest);
         }
@@ -623,7 +683,45 @@ impl TelegramEngine {
         Ok((msg_id, file_id))
     }
 
-pub async fn delete_message(&self, token: &str, chat_id: &str, message_id: i64) -> Result<(), String> {
+    /// Forward a channel post to the same channel and return the resulting
+    /// Message object. Recovery uses this to read a document's original file
+    /// name: the public Bot API has no history method. The caller deletes the
+    /// temporary forward immediately.
+    pub async fn forward_message(
+        &self,
+        token: &str,
+        chat_id: &str,
+        from_chat_id: &str,
+        message_id: i64,
+    ) -> Result<serde_json::Value, String> {
+        self.bot_api.check_available()?;
+        let url = format!("{}/bot{}/forwardMessage", self.primary(), token);
+        let form = vec![
+            ("chat_id".to_string(), chat_id.to_string()),
+            ("from_chat_id".to_string(), from_chat_id.to_string()),
+            ("message_id".to_string(), message_id.to_string()),
+        ];
+        let response = self.client
+            .post(&url)
+            .form(&form)
+            .send()
+            .await
+            .map_err(|_| "Self-hosted Bot API forward request failed".to_string())?;
+        let status = response.status();
+        let body = response.text().await.map_err(|error| error.to_string())?;
+        let json: serde_json::Value = serde_json::from_str(&body)
+            .map_err(|_| format!("Telegram forward failed (HTTP {})", status.as_u16()))?;
+        if !json.get("ok").and_then(|value| value.as_bool()).unwrap_or(false) {
+            let description = json
+                .get("description")
+                .and_then(|value| value.as_str())
+                .unwrap_or("Telegram forward failed");
+            return Err(format!("{} (HTTP {})", description, status.as_u16()));
+        }
+        Ok(json.get("result").cloned().unwrap_or(serde_json::Value::Null))
+    }
+
+    pub async fn delete_message(&self, token: &str, chat_id: &str, message_id: i64) -> Result<(), String> {
         if message_id < 0 {
             if let Some(path) = self.db.local_path_for_message_id(message_id) {
                 match tokio::fs::remove_file(&path).await {
