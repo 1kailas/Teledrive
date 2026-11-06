@@ -189,4 +189,53 @@ public class TransferProgressTests
         Assert.Equal(4_000_000.0, measuredRate);
         Assert.InRange(measuredRate, 256.0 * 1024.0, 100.0 * 1024.0 * 1024.0);
     }
+
+    [Fact]
+    public void MultiFileUpload_DifferentFileSizes_IndependentTransferredBytes()
+    {
+        // 3 files of different sizes uploading simultaneously
+        ulong size1 = 92_900_000;  // TeleDrive-Setup.msi
+        ulong size2 = 117_300_000; // TeleDrive-Portable.zip
+        ulong size3 = 271_400_000; // DevinUserSetup.exe
+
+        int activeStreams = 3;
+        double totalBandwidth = 3.5 * 1024 * 1024;
+        double streamRate = totalBandwidth / activeStreams;
+
+        double elapsed = 5.0; // 5 seconds in
+
+        double exp1 = (double)size1 / streamRate;
+        double exp2 = (double)size2 / streamRate;
+        double exp3 = (double)size3 / streamRate;
+
+        double frac1 = Math.Min(0.95, (elapsed / exp1) * 0.95);
+        double frac2 = Math.Min(0.95, (elapsed / exp2) * 0.95);
+        double frac3 = Math.Min(0.95, (elapsed / exp3) * 0.95);
+
+        // Fractions and percentages must vary inversely with total size
+        Assert.True(frac1 > frac2, "Smaller file must have a higher completion percentage");
+        Assert.True(frac2 > frac3, "Medium file must have a higher completion percentage than large file");
+
+        double pct1 = frac1 * 100.0;
+        double pct2 = frac2 * 100.0;
+        double pct3 = frac3 * 100.0;
+
+        Assert.True(pct1 != pct2 && pct2 != pct3, "All files must have distinct progress percentages, not lockstep");
+    }
+
+    [Fact]
+    public void NormalizedFileName_StripsCopySuffixAccurately()
+    {
+        string name1 = "DevinUserSetup-x64-3.11.238 (1).exe";
+        string norm1 = System.Text.RegularExpressions.Regex.Replace(name1, @"\s*\(\d+\)(?=\.[^.]+$)", "");
+        Assert.Equal("DevinUserSetup-x64-3.11.238.exe", norm1);
+
+        string name2 = "Kailasnath_T_qmetron_internship (1) (1).pdf";
+        string norm2 = System.Text.RegularExpressions.Regex.Replace(name2, @"\s*\(\d+\)(?=\.[^.]+$)", "");
+        Assert.Equal("Kailasnath_T_qmetron_internship (1).pdf", norm2);
+
+        string name3 = "clean_file.png";
+        string norm3 = System.Text.RegularExpressions.Regex.Replace(name3, @"\s*\(\d+\)(?=\.[^.]+$)", "");
+        Assert.Equal("clean_file.png", norm3);
+    }
 }

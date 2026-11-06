@@ -48,38 +48,128 @@ public class ThumbnailCacheService
 
         // Pre-warm common Windows Shell icons in background
         _ = Task.Run(PrewarmShellIconsAsync);
+
+        // Clean up any stale 409,750-byte placeholder BMPs
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                if (Directory.Exists(_localCacheThumbsDir))
+                {
+                    foreach (var file in Directory.GetFiles(_localCacheThumbsDir, "*.jpg"))
+                    {
+                        if (new FileInfo(file).Length == 409750)
+                        {
+                            try { File.Delete(file); } catch { }
+                        }
+                    }
+                    foreach (var file in Directory.GetFiles(_localCacheThumbsDir, "*.png"))
+                    {
+                        if (new FileInfo(file).Length == 409750)
+                        {
+                            try { File.Delete(file); } catch { }
+                        }
+                    }
+                }
+            }
+            catch { }
+        });
     }
 
     /// <summary>
     /// Resolves the fastest local thumbnail path if already cached on disk.
+    /// Supports checking by fileId, fileName (including local_{hashKey}.png), and normalized fileName.
+    /// Automatically purges any stale 409,750-byte placeholder BMPs so authentic icons take precedence.
     /// </summary>
-    public string? GetExistingLocalThumbnailPath(string fileId)
+    public string? GetExistingLocalThumbnailPath(string fileId, string? fileName = null)
     {
-        if (string.IsNullOrEmpty(fileId)) return null;
-
-        var extensions = new[] { ".jpg", ".webp", ".png", ".jpeg" };
-
-        // 1. Check Roaming AppData thumbnails (written by Rust daemon)
-        foreach (var ext in extensions)
+        // 0. If fileName is provided, check for authentic local_{hashKey}.png or local_{fileName}.png
+        if (!string.IsNullOrEmpty(fileName))
         {
-            var path = Path.Combine(_appDataThumbsDir, fileId + ext);
-            if (File.Exists(path))
+            var hashKey = GetSafeCacheKey(fileName);
+            var candidates = new List<string>
             {
-                return path;
+                Path.Combine(_localCacheThumbsDir, $"local_{hashKey}.png"),
+                Path.Combine(_localCacheThumbsDir, $"local_{Uri.EscapeDataString(fileName)}.png"),
+                Path.Combine(_localCacheThumbsDir, $"local_{fileName}.png")
+            };
+
+            // Also check normalized fileName (e.g. "DevinUserSetup-x64-3.11.238 (1).exe" -> "DevinUserSetup-x64-3.11.238.exe")
+            var normName = System.Text.RegularExpressions.Regex.Replace(fileName, @"\s*\(\d+\)(?=\.[^.]+$)", "");
+            if (!string.Equals(normName, fileName, StringComparison.OrdinalIgnoreCase))
+            {
+                var normHash = GetSafeCacheKey(normName);
+                candidates.Add(Path.Combine(_localCacheThumbsDir, $"local_{normHash}.png"));
+                candidates.Add(Path.Combine(_localCacheThumbsDir, $"local_{Uri.EscapeDataString(normName)}.png"));
+                candidates.Add(Path.Combine(_localCacheThumbsDir, $"local_{normName}.png"));
+            }
+
+            foreach (var cand in candidates)
+            {
+                if (File.Exists(cand))
+                {
+                    var len = new FileInfo(cand).Length;
+                    if (len > 500 && len != 409750)
+                    {
+                        // Ensure it's also mapped to fileId if fileId is provided
+                        if (!string.IsNullOrEmpty(fileId))
+                        {
+                            var targetPng = Path.Combine(_localCacheThumbsDir, $"{fileId}.png");
+                            if (!File.Exists(targetPng) || new FileInfo(targetPng).Length == 409750)
+                            {
+                                try { File.Copy(cand, targetPng, true); } catch { }
+                            }
+                        }
+                        return cand;
+                    }
+                }
             }
         }
 
-        // 2. Check LocalAppData thumbnail cache
+        if (string.IsNullOrEmpty(fileId)) return null;
+
+        var extensions = new[] { ".png", ".webp", ".jpg", ".jpeg" };
+
+        // 1. Check LocalAppData thumbnail cache first (preferring PNG authentic icons)
         foreach (var ext in extensions)
         {
             var path = Path.Combine(_localCacheThumbsDir, fileId + ext);
             if (File.Exists(path))
             {
-                return path;
+                var len = new FileInfo(path).Length;
+                if (len == 409750)
+                {
+                    // Generic dummy BMP placeholder — delete it so authentic icons can shine
+                    try { File.Delete(path); } catch { }
+                    continue;
+                }
+                if (len > 500)
+                {
+                    return path;
+                }
+            }
+        }
+
+        // 2. Check Roaming AppData thumbnails (written by Rust daemon)
+        foreach (var ext in extensions)
+        {
+            var path = Path.Combine(_appDataThumbsDir, fileId + ext);
+            if (File.Exists(path))
+            {
+                var len = new FileInfo(path).Length;
+                if (len > 500 && len != 409750)
+                {
+                    return path;
+                }
             }
         }
 
         return null;
+    }
+
+    public string? GetExistingLocalThumbnailPath(string fileId)
+    {
+        return GetExistingLocalThumbnailPath(fileId, null);
     }
 
     private static string GetSafeCacheKey(string key)
@@ -150,14 +240,12 @@ public class ThumbnailCacheService
         }
 
         // 2. Check existing custom thumbnail on disk
-        if (!string.IsNullOrEmpty(fileId))
+        var local = GetExistingLocalThumbnailPath(fileId, fileName);
+        if (!string.IsNullOrEmpty(local))
         {
-            var local = GetExistingLocalThumbnailPath(fileId);
-            if (!string.IsNullOrEmpty(local))
-            {
-                _memoryCache[fileId] = local;
-                return new Uri(local).AbsoluteUri;
-            }
+            if (!string.IsNullOrEmpty(fileId)) _memoryCache[fileId] = local;
+            if (!string.IsNullOrEmpty(fileName)) _memoryCacheByFileName[fileName] = local;
+            return new Uri(local).AbsoluteUri;
         }
 
         // 3. Trigger extraction from local disk (known uploads, Downloads, Desktop)
@@ -343,7 +431,7 @@ public class ThumbnailCacheService
 
     /// <summary>
     /// Extracts a rich native Windows Shell thumbnail for images, videos, audio, executables, and PDFs,
-    /// caches it locally, and syncs it to the TeleDrive server.
+    /// caches it locally as authentic PNG, and syncs it to the TeleDrive server.
     /// </summary>
     public async Task<string?> GenerateAndUploadNativeThumbnailAsync(string fileId, string localFilePath)
     {
@@ -351,18 +439,33 @@ public class ThumbnailCacheService
         {
             if (!File.Exists(localFilePath)) return null;
 
+            var fileName = Path.GetFileName(localFilePath);
+            var hashKey = GetSafeCacheKey(fileName);
+            var localPng = Path.Combine(_localCacheThumbsDir, $"local_{hashKey}.png");
+
             var storageFile = await StorageFile.GetFileFromPathAsync(localFilePath);
-            using var thumb = await storageFile.GetThumbnailAsync(ThumbnailMode.SingleItem, 320, ThumbnailOptions.ResizeThumbnail);
+            using var thumb = await storageFile.GetThumbnailAsync(ThumbnailMode.SingleItem, 256, ThumbnailOptions.ResizeThumbnail);
             if (thumb != null && thumb.Size > 0)
             {
-                var targetFile = Path.Combine(_localCacheThumbsDir, $"{fileId}.jpg");
-                using var outStream = File.Create(targetFile);
-                var stream = thumb.AsStream();
-                await stream.CopyToAsync(outStream);
-                outStream.Flush();
+                var targetFile = Path.Combine(_localCacheThumbsDir, $"{fileId}.png");
+                using (var outStream = File.Create(targetFile))
+                {
+                    using var stream = thumb.AsStream();
+                    await stream.CopyToAsync(outStream);
+                    outStream.Flush();
+                }
+
+                if (new FileInfo(targetFile).Length == 409750)
+                {
+                    // Generic dummy BMP — delete it so it never overrides authentic icons
+                    try { File.Delete(targetFile); } catch { }
+                    return null;
+                }
+
+                // Also persist to local_{hashKey}.png
+                try { File.Copy(targetFile, localPng, true); } catch { }
 
                 _memoryCache[fileId] = targetFile;
-                var fileName = Path.GetFileName(localFilePath);
                 _memoryCacheByFileName[fileName] = targetFile;
 
                 OnThumbnailResolved?.Invoke(fileId, targetFile);

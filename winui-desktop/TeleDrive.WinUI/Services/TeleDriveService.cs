@@ -476,6 +476,13 @@ public class TeleDriveService
                 var rawUploads = arr.EnumerateArray().ToList();
                 long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
+                // Count active uploads so domestic bandwidth is accurately shared per stream
+                int activeCount = Math.Max(1, rawUploads.Count(u =>
+                {
+                    var st = u.TryGetProperty("status", out var s) ? s.GetString() : null;
+                    return st != "failed" && st != "cancelled";
+                }));
+
                 var queryTasks = rawUploads.Select(async u =>
                 {
                     var id = u.GetProperty("id").GetString() ?? "";
@@ -492,123 +499,117 @@ public class TeleDriveService
 
                     try
                     {
-                        var detailJson = await _http.GetStringAsync($"{BaseUrl}/api/uploads/{id}/progress");
-                        using var detailDoc = JsonDocument.Parse(detailJson);
-                        var root = detailDoc.RootElement;
-                        long serverNow = root.TryGetProperty("serverNow", out var sn) ? sn.GetInt64() : nowMs;
-
-                        if (root.TryGetProperty("parts", out var partsArr))
+                        using var res = await _http.GetAsync($"{BaseUrl}/api/uploads/{id}/progress");
+                        if (res.StatusCode == System.Net.HttpStatusCode.NotFound)
                         {
-                            ulong doneBytes = 0;
-                            ulong activeSpeed = 0;
-                            ulong activeEta = 0;
-                            bool hasSending = false;
-                            bool allStored = true;
-                            bool allPartsPastExpected = true;
-                            int sendingCount = 0;
+                            // Upload completed on daemon and dropped from active_uploads
+                            status = "done";
+                            phase = "done";
+                            transferred = size;
+                            speed = 0;
+                            eta = 0;
+                        }
+                        else if (res.IsSuccessStatusCode)
+                        {
+                            var detailJson = await res.Content.ReadAsStringAsync();
+                            using var detailDoc = JsonDocument.Parse(detailJson);
+                            var root = detailDoc.RootElement;
+                            long serverNow = root.TryGetProperty("serverNow", out var sn) ? sn.GetInt64() : nowMs;
 
-                            foreach (var p in partsArr.EnumerateArray())
+                            if (root.TryGetProperty("parts", out var partsArr))
                             {
-                                var pStatus = p.TryGetProperty("status", out var ps) ? ps.GetString() : "pending";
-                                var pPhase = p.TryGetProperty("phase", out var ph) ? ph.GetString() : null;
-                                var pSize = p.TryGetProperty("size", out var pSz) ? pSz.GetUInt64() : 0;
-                                long? startedAt = p.TryGetProperty("startedAt", out var sa) && sa.ValueKind == JsonValueKind.Number ? sa.GetInt64() : null;
-                                ulong estRate = p.TryGetProperty("estRate", out var er) && er.ValueKind == JsonValueKind.Number ? er.GetUInt64() : 0;
+                                ulong doneBytes = 0;
+                                ulong activeSpeed = 0;
+                                ulong activeEta = 0;
+                                bool hasSending = false;
+                                bool allStored = true;
+                                int partsCount = partsArr.GetArrayLength();
 
-                                if (pStatus == "stored")
+                                foreach (var p in partsArr.EnumerateArray())
                                 {
-                                    doneBytes += pSize;
-                                }
-                                else
-                                {
-                                    allStored = false;
-                                    if (pPhase == "sending" && startedAt.HasValue && startedAt.Value > 0)
+                                    var pStatus = p.TryGetProperty("status", out var ps) ? ps.GetString() : "pending";
+                                    var pPhase = p.TryGetProperty("phase", out var ph) ? ph.GetString() : null;
+                                    var pSize = p.TryGetProperty("size", out var pSz) ? pSz.GetUInt64() : 0;
+                                    long? startedAt = p.TryGetProperty("startedAt", out var sa) && sa.ValueKind == JsonValueKind.Number ? sa.GetInt64() : null;
+                                    ulong estRate = p.TryGetProperty("estRate", out var er) && er.ValueKind == JsonValueKind.Number ? er.GetUInt64() : 0;
+
+                                    if (pStatus == "stored")
                                     {
-                                        hasSending = true;
-                                        sendingCount++;
-                                        double rate = GetAdaptiveUploadRate(estRate);
-                                        double elapsedSec = Math.Max(0.0, (serverNow - startedAt.Value) / 1000.0);
-                                        double expectedSec = Math.Max(0.5, (double)pSize / rate);
-
-                                        if (elapsedSec < expectedSec)
-                                        {
-                                            allPartsPastExpected = false;
-                                            // Smooth progressive upload up to 95%
-                                            double fraction = Math.Min(0.95, (elapsedSec / expectedSec) * 0.95);
-                                            ulong partEta = (ulong)Math.Max(1.0, Math.Ceiling(expectedSec - elapsedSec));
-                                            activeEta = Math.Max(activeEta, partEta);
-                                            doneBytes += (ulong)(pSize * fraction);
-                                            activeSpeed += (ulong)rate;
-                                        }
-                                        else if (elapsedSec < expectedSec + 3.0)
-                                        {
-                                            allPartsPastExpected = false;
-                                            // Over expected time by 0..3s: smoothly glide from 95% to 98.5%
-                                            double overtime = elapsedSec - expectedSec;
-                                            double glide = 0.95 + 0.035 * (1.0 - Math.Exp(-overtime / 1.5));
-                                            doneBytes += (ulong)(pSize * Math.Min(0.988, glide));
-                                            activeSpeed += (ulong)(rate * Math.Max(0.2, 1.0 - (overtime / 4.0)));
-                                            activeEta = 0; // No fake 1s left countdown!
-                                        }
-                                        else
-                                        {
-                                            // Transmission complete (> expectedSec + 3s). Bytes have reached Telegram server.
-                                            // In finalizing phase awaiting Telegram cloud storage acknowledgement.
-                                            doneBytes += pSize;
-                                        }
+                                        doneBytes += pSize;
                                     }
                                     else
                                     {
-                                        allPartsPastExpected = false;
+                                        allStored = false;
+                                        if (pPhase == "sending" && startedAt.HasValue && startedAt.Value > 0)
+                                        {
+                                            hasSending = true;
+                                            // Realistic per-stream upload bandwidth distributed across active streams
+                                            double taskRate = Math.Max(128.0 * 1024.0, GetAdaptiveUploadRate(estRate) / activeCount);
+                                            double elapsedSec = Math.Max(0.0, (serverNow - startedAt.Value) / 1000.0);
+                                            double expectedSec = Math.Max(1.0, (double)pSize / taskRate);
+
+                                            if (elapsedSec < expectedSec)
+                                            {
+                                                // Active progressive upload up to 95%
+                                                double fraction = Math.Min(0.95, (elapsedSec / expectedSec) * 0.95);
+                                                doneBytes += (ulong)(pSize * fraction);
+                                                activeSpeed += (ulong)taskRate;
+                                                ulong partEta = (ulong)Math.Max(1.0, Math.Ceiling(expectedSec - elapsedSec));
+                                                activeEta = Math.Max(activeEta, partEta);
+                                            }
+                                            else
+                                            {
+                                                // Over expected time (network jitter or bot throttle):
+                                                // Smooth asymptotic glide up to 98.8% without freezing or prematurely declaring finalizing
+                                                double overtime = elapsedSec - expectedSec;
+                                                double glide = 0.95 + 0.038 * (1.0 - Math.Exp(-overtime / 20.0));
+                                                doneBytes += (ulong)(pSize * Math.Min(0.988, glide));
+                                                activeSpeed += (ulong)(taskRate * Math.Max(0.2, 1.0 - (overtime / 30.0)));
+                                                activeEta = 0; // Avoid false 1s left countdown
+                                            }
+                                        }
                                     }
                                 }
-                            }
 
-                            if ((allStored || (hasSending && allPartsPastExpected && sendingCount > 0)) && partsArr.GetArrayLength() > 0)
-                            {
-                                phase = "finalizing";
-                                status = "finalizing";
-                                transferred = size;
-                                speed = 0;
-                                eta = 0;
-                            }
-                            else if (hasSending)
-                            {
-                                phase = "uploading";
-                                status = "uploading";
-                                transferred = Math.Min(doneBytes, size > 0 ? (ulong)(size * 0.988) : doneBytes);
-                                speed = activeSpeed;
-                                eta = activeEta;
-                            }
-                            else
-                            {
-                                // Waiting for Telegram bot upload slot
-                                phase = "queued";
-                                status = "queued";
-                                transferred = doneBytes;
-                                speed = 0;
-                                eta = 0;
+                                if (allStored && partsCount > 0)
+                                {
+                                    // True finalization: all parts are confirmed in Telegram, now in final DB commit
+                                    phase = "finalizing";
+                                    status = "finalizing";
+                                    transferred = size;
+                                    speed = 0;
+                                    eta = 0;
+                                }
+                                else if (hasSending)
+                                {
+                                    phase = "uploading";
+                                    status = "uploading";
+                                    transferred = Math.Min(doneBytes, size > 0 ? (ulong)(size * 0.988) : doneBytes);
+                                    speed = activeSpeed;
+                                    eta = activeEta;
+                                }
+                                else
+                                {
+                                    // Waiting for Telegram bot upload slot
+                                    phase = "queued";
+                                    status = "queued";
+                                    transferred = doneBytes;
+                                    speed = 0;
+                                    eta = 0;
+                                }
                             }
                         }
                     }
-                    catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
-                    {
-                        // Upload completed on daemon and dropped from active_uploads
-                        status = "done";
-                        phase = "done";
-                        transferred = size;
-                        speed = 0;
-                        eta = 0;
-                    }
                     catch
                     {
+                        // Clean fallback without faking speed or status
                         ulong bytesStored = 0;
                         if (u.TryGetProperty("bytesStored", out var bs)) bytesStored = bs.GetUInt64();
-                        transferred = bytesStored;
+                        transferred = Math.Max(bytesStored, _lastUploadProgress.TryGetValue(id, out var prev) ? prev.Bytes : 0);
                         status = "uploading";
                         phase = "uploading";
-                        speed = 8 * 1024 * 1024;
-                        eta = size > transferred && speed > 0 ? (size - transferred) / speed : 0;
+                        speed = 0;
+                        eta = 0;
                     }
 
                     // Monotonic forward progress guard: never step backwards during active upload

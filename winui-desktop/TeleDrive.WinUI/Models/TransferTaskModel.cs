@@ -188,7 +188,7 @@ public partial class TransferTaskModel : ObservableObject
                     : $"⚡ {FileModel.FormatBytes(Speed)}/s";
             }
 
-            return IsUpload ? "⬆ Uploading..." : "⬇ Downloading...";
+            return IsUpload ? "⚡ Finishing upload..." : "⬇ Downloading...";
         }
     }
 
