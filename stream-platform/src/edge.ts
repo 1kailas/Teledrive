@@ -191,15 +191,32 @@ async function readCatalogFromOrigin(response: Response): Promise<{ files?: Reco
 }
 
 function getBotToken(botId: string | undefined, env: EdgeEnv): string | undefined {
+  const map = new Map<string, string>();
+
+  // 1. Check if BOT_TOKENS is JSON object
   if (env.BOT_TOKENS) {
     try {
-      const map = JSON.parse(env.BOT_TOKENS) as Record<string, string>;
-      if (botId && map[botId]) return map[botId];
-      const first = Object.values(map)[0];
-      if (first) return first;
+      const json = JSON.parse(env.BOT_TOKENS) as Record<string, string>;
+      for (const [k, v] of Object.entries(json)) {
+        if (typeof v === 'string' && v.includes(':')) {
+          map.set(k, v.trim());
+          map.set(v.trim().split(':')[0]!, v.trim());
+        }
+      }
     } catch {}
   }
-  return env.TELEGRAM_BOT_TOKEN;
+
+  // 2. Parse comma, space, or newline-separated tokens from BOT_TOKENS or TELEGRAM_BOT_TOKEN
+  const rawSources = [env.BOT_TOKENS, env.TELEGRAM_BOT_TOKEN].filter(Boolean).join(',');
+  const tokens = rawSources.split(/[\s,;\n\r]+/).map((t) => t.trim()).filter((t) => t.includes(':'));
+  for (const t of tokens) {
+    const id = t.split(':')[0]!;
+    if (!map.has(id)) map.set(id, t);
+    if (!map.has('default')) map.set('default', t);
+  }
+
+  if (botId && map.has(botId)) return map.get(botId);
+  return map.get('default') || tokens[0] || env.TELEGRAM_BOT_TOKEN;
 }
 
 async function getTelegramFilePath(fileId: string, botToken: string, fetcher: Fetcher): Promise<string | null> {
