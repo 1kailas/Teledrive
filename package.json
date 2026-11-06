@@ -15,7 +15,7 @@
     "dev:mock": "concurrently -k -n telegram,server,web \"npm:mock:telegram\" \"env NODE_ENV=development PORT=8080 TELEGRAM_BOT_API_URL=http://127.0.0.1:8082 TELEGRAM_BOT_API_DIR=./data/mock-bot-api TELEGRAM_BOT_TOKENS=1111111:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,2222222:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB TELEGRAM_CHANNEL_ID=-1001234567890 ADMIN_PASSWORD=admin12345 npm run dev -w server\" \"npm run dev -w web\"",
     "mock:telegram": "env MOCK_DIR=./data/mock-bot-api npm run mock:telegram -w server",
     "build": "npm run build -w web && npm run build -w server",
-    "build:winui": "powershell.exe -NoProfile -Command \"Set-Location 'winui-desktop/TeleDrive.WinUI'; & 'C:\\Program Files\\dotnet\\dotnet.exe' publish -c Release -p:Platform=x64 --self-contained true -o publish\"",
+    "build:winui": "powershell.exe -NoProfile -Command \"Set-Location 'winui-desktop/TeleDrive.WinUI'; & 'C:\\Program Files\\dotnet\\dotnet.exe' publish -c Release -p:Platform=x64 --self-contained true -o publish\" < /dev/null",
     "start": "node server/dist/index.js",
     "test": "npm test -w server && npm test -w web",
     "test:desktop": "powershell.exe -NoProfile -Command \"& 'C:\\Program Files\\dotnet\\dotnet.exe' test 'winui-desktop\\TeleDrive.Tests\\TeleDrive.Tests.csproj'\" < /dev/null",

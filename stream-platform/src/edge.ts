@@ -265,9 +265,9 @@ function getAllBotTokens(env: EdgeEnv): { token: string; botId: string }[] {
 
   const add = (raw: string) => {
     const clean = raw.replace(/^["']|["']$/g, '').trim();
-    if (clean.includes(':') && !seen.has(clean)) {
+    if (clean && !seen.has(clean)) {
       seen.add(clean);
-      const botId = clean.split(':')[0]!;
+      const botId = clean.includes(':') ? clean.split(':')[0]! : clean;
       result.push({ token: clean, botId });
     }
   };
@@ -320,7 +320,7 @@ async function resolveTelegramFile(
     return 0;
   });
 
-  const apiBase = (env.TELEGRAM_BOT_API_URL || env.TELEGRAM_API_URL || env.LOCAL_BOT_API_URL || 'https://api.telegram.org').replace(/\/+$/, '');
+  const apiBase = (env.LOCAL_BOT_API_URL || env.TELEGRAM_BOT_API_URL || env.TELEGRAM_API_URL || 'https://api.telegram.org').replace(/\/+$/, '');
 
   for (const bot of orderedBots) {
     try {
@@ -348,22 +348,59 @@ async function fetchTelegramChunk(
   env: EdgeEnv,
   fetcher: Fetcher
 ): Promise<Response | null> {
+  const allBots = getAllBotTokens(env);
+  const apiBase = (env.LOCAL_BOT_API_URL || env.TELEGRAM_BOT_API_URL || env.TELEGRAM_API_URL || 'https://api.telegram.org').replace(/\/+$/, '');
+
   const info = await resolveTelegramFile(fileId, preferredBotId, env, fetcher);
-  if (!info) return null;
-
-  const apiBase = (env.TELEGRAM_BOT_API_URL || env.TELEGRAM_API_URL || env.LOCAL_BOT_API_URL || 'https://api.telegram.org').replace(/\/+$/, '');
-  const url = `${apiBase}/file/bot${info.token}/${info.path}`;
-
-  try {
-    const res = await fetcher(url, {
-      headers: {
-        Range: `bytes=${partStart}-${partEnd}`,
-      },
-    });
-    if ([200, 206].includes(res.status)) return res;
-  } catch {
-    // network retry
+  if (info) {
+    const url = `${apiBase}/file/bot${info.token}/${info.path}`;
+    try {
+      const res = await fetcher(url, {
+        headers: {
+          Range: `bytes=${partStart}-${partEnd}`,
+        },
+      });
+      if ([200, 206].includes(res.status)) return res;
+      if ([401, 404, 429].includes(res.status)) {
+        filePathCache.delete(fileId);
+      }
+    } catch {
+      filePathCache.delete(fileId);
+    }
   }
+
+  // Fallback & failover across all bots configured in BOT_TOKENS
+  filePathCache.delete(fileId);
+  const orderedBots = allBots.slice().sort((a, b) => {
+    if (a.botId === preferredBotId) return -1;
+    if (b.botId === preferredBotId) return 1;
+    return 0;
+  });
+
+  for (const bot of orderedBots) {
+    if (info && bot.token === info.token) continue;
+    try {
+      const getFileRes = await fetcher(`${apiBase}/bot${bot.token}/getFile?file_id=${encodeURIComponent(fileId)}`);
+      if (!getFileRes.ok) continue;
+      const data = await getFileRes.json() as { ok?: boolean; result?: { file_path?: string } };
+      if (!data.ok || !data.result?.file_path) continue;
+
+      const path = data.result.file_path;
+      const url = `${apiBase}/file/bot${bot.token}/${path}`;
+      const res = await fetcher(url, {
+        headers: {
+          Range: `bytes=${partStart}-${partEnd}`,
+        },
+      });
+      if ([200, 206].includes(res.status)) {
+        filePathCache.set(fileId, { path, token: bot.token, expires: Date.now() + 3600_000 });
+        return res;
+      }
+    } catch {
+      // try next bot
+    }
+  }
+
   return null;
 }
 
@@ -407,7 +444,7 @@ function parseCatalogPayload(payload: unknown): StandaloneCatalog {
 
   // Guarantee that Inception is always present and complete
   if (!items.some((i) => i.id === '9bd298eb-844b-4062-b216-590c78969698')) {
-    items.unshift(normalizeCatalogFile({
+    items.push(normalizeCatalogFile({
       id: '9bd298eb-844b-4062-b216-590c78969698',
       name: 'Inception.2010.1080p.NF.WEB-DL.English.H.264.mp4',
       mimeType: 'video/mp4',
@@ -696,6 +733,7 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
       };
     });
     const totalSize = (item.size && item.size > 0) ? item.size : cumulative;
+    const isDownload = url.searchParams.get('download') === '1';
 
     // Parse Range header if present
     let start = 0;
@@ -737,8 +775,24 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
         end = totalSize - 1;
       } else {
         start = parseInt(a!, 10);
-        end = b === '' ? totalSize - 1 : Math.min(totalSize - 1, parseInt(b!, 10));
+        if (b === '') {
+          if (!isDownload) {
+            const startPart = mappedParts.find((p) => p.offset <= start && p.end >= start);
+            end = startPart ? Math.min(totalSize - 1, startPart.end) : Math.min(totalSize - 1, start + 20 * 1024 * 1024 - 1);
+          } else {
+            end = totalSize - 1;
+          }
+        } else {
+          end = Math.min(totalSize - 1, parseInt(b!, 10));
+          if (!isDownload && end - start + 1 > 25 * 1024 * 1024) {
+            end = start + 25 * 1024 * 1024 - 1;
+          }
+        }
       }
+    } else if (!isDownload && mappedParts.length > 0) {
+      // Browsers or media players requesting without an explicit Range header
+      start = 0;
+      end = Math.min(totalSize - 1, mappedParts[0]?.end ?? (20 * 1024 * 1024 - 1));
     }
 
     if (start >= totalSize || start > end) {
@@ -757,7 +811,6 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
       return error(404, 'No media chunks found for requested range');
     }
 
-    const isDownload = url.searchParams.get('download') === '1';
     const reqFormat = url.searchParams.get('format');
     let mimeType = item.mimeType || detectMimeType(item.name, item.category);
     if (reqFormat === 'mp4') mimeType = 'video/mp4';
