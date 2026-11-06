@@ -2597,6 +2597,11 @@ public sealed partial class MainPage : Page
                    ?? FilesGridView.SelectedItem as FileModel;
         if (file != null)
         {
+            if (file.IsVideo)
+            {
+                await PlayOrStreamVideoAsync(file);
+                return;
+            }
             await StartDownloadWithToastAsync(file.Id, file.Name);
             await RefreshTransfersAsync();
         }
@@ -2607,6 +2612,33 @@ public sealed partial class MainPage : Page
         var file = (e.OriginalSource as FrameworkElement)?.DataContext as FileModel
                    ?? FilesListView.SelectedItem as FileModel;
         if (file != null)
+        {
+            if (file.IsVideo)
+            {
+                await PlayOrStreamVideoAsync(file);
+                return;
+            }
+            await StartDownloadWithToastAsync(file.Id, file.Name);
+            await RefreshTransfersAsync();
+        }
+    }
+
+    private async void FilePlayBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is FileModel file && file.IsVideo)
+        {
+            await PlayOrStreamVideoAsync(file);
+        }
+    }
+
+    private async Task PlayOrStreamVideoAsync(FileModel file)
+    {
+        try
+        {
+            var streamUrl = $"https://teledrive-stream.pages.dev/?play={Uri.EscapeDataString(file.Id)}";
+            await Windows.System.Launcher.LaunchUriAsync(new Uri(streamUrl));
+        }
+        catch
         {
             await StartDownloadWithToastAsync(file.Id, file.Name);
             await RefreshTransfersAsync();

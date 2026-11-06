@@ -450,22 +450,38 @@
                                                         <FontIcon
                                                             Grid.Column="0"
                                                             FontSize="22"
-                                                            Foreground="#F59E0B"
-                                                            Glyph="&#xE8B7;"
+                                                            Foreground="{x:Bind FolderBrush, Mode=OneWay}"
+                                                            Glyph="{x:Bind FolderGlyph, Mode=OneWay}"
                                                             VerticalAlignment="Center" />
 
                                                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                                            <TextBlock
-                                                                FontWeight="SemiBold"
-                                                                FontSize="12.5"
-                                                                MaxLines="1"
-                                                                Text="{x:Bind Name}"
-                                                                TextTrimming="CharacterEllipsis"
-                                                                VerticalAlignment="Center" />
+                                                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                                <TextBlock
+                                                                    FontWeight="SemiBold"
+                                                                    FontSize="12.5"
+                                                                    MaxLines="1"
+                                                                    Text="{x:Bind Name}"
+                                                                    TextTrimming="CharacterEllipsis"
+                                                                    VerticalAlignment="Center" />
+                                                                <Border
+                                                                    Visibility="{x:Bind SeriesBadgeVisibility, Mode=OneWay}"
+                                                                    Background="#1E1B4B"
+                                                                    BorderBrush="#4338CA"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="4"
+                                                                    Padding="4,0.5"
+                                                                    VerticalAlignment="Center">
+                                                                    <TextBlock
+                                                                        FontSize="9"
+                                                                        FontWeight="Bold"
+                                                                        Foreground="#818CF8"
+                                                                        Text="{x:Bind SeriesBadgeText, Mode=OneWay}" />
+                                                                </Border>
+                                                            </StackPanel>
                                                             <TextBlock
                                                                 FontSize="11"
                                                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                                Text="{x:Bind FormattedItemCount}"
+                                                                Text="{x:Bind FormattedItemCount, Mode=OneWay}"
                                                                 VerticalAlignment="Center" />
                                                         </StackPanel>
 
@@ -626,7 +642,41 @@
                                                                     Source="{x:Bind EffectiveThumbnailUrl, Mode=OneWay}"
                                                                     Stretch="Uniform" />
 
-                                                                <!-- Selection Checkmark Badge (Top-Right) -->
+                                                                <!-- Video Duration Badge (Top-Left) -->
+                                                                <Border
+                                                                    HorizontalAlignment="Left"
+                                                                    VerticalAlignment="Top"
+                                                                    Margin="4"
+                                                                    Padding="4,1"
+                                                                    CornerRadius="3"
+                                                                    Background="#CC000000"
+                                                                    Visibility="{x:Bind DurationVisibility, Mode=OneWay}">
+                                                                    <TextBlock
+                                                                        FontSize="9"
+                                                                        FontWeight="SemiBold"
+                                                                        Foreground="#F8FAFC"
+                                                                        Text="{x:Bind FormattedDuration, Mode=OneWay}" />
+                                                                </Border>
+
+                                                                <!-- Video Format Badge (Top-Right) -->
+                                                                <Border
+                                                                    HorizontalAlignment="Right"
+                                                                    VerticalAlignment="Top"
+                                                                    Margin="4"
+                                                                    Padding="4,1"
+                                                                    CornerRadius="3"
+                                                                    Background="#CC1E1B4B"
+                                                                    BorderBrush="#4338CA"
+                                                                    BorderThickness="1"
+                                                                    Visibility="{x:Bind VideoBadgeVisibility, Mode=OneWay}">
+                                                                    <TextBlock
+                                                                        FontSize="8.5"
+                                                                        FontWeight="Bold"
+                                                                        Foreground="#A5B4FC"
+                                                                        Text="{x:Bind VideoFormatBadge, Mode=OneWay}" />
+                                                                </Border>
+
+                                                                <!-- Selection Checkmark Badge (Top-Right overlay) -->
                                                                 <Border
                                                                     HorizontalAlignment="Right"
                                                                     VerticalAlignment="Top"
@@ -660,7 +710,7 @@
                                                                 VerticalAlignment="Top"
                                                                 ToolTipService.ToolTip="{x:Bind Name}" />
 
-                                                            <!-- Bottom Action Bar: Size (Left) + 2 Action Buttons (Right: Download + Star) -->
+                                                            <!-- Bottom Action Bar: Size (Left) + Actions (Right: Play + Download + Star) -->
                                                             <Grid VerticalAlignment="Center">
                                                                 <Grid.ColumnDefinitions>
                                                                     <ColumnDefinition Width="*" />
@@ -676,6 +726,18 @@
                                                                     TextTrimming="CharacterEllipsis" />
 
                                                                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                                                                    <Button
+                                                                        Width="20"
+                                                                        Height="20"
+                                                                        Padding="0"
+                                                                        Background="Transparent"
+                                                                        BorderThickness="0"
+                                                                        CornerRadius="4"
+                                                                        Click="FilePlayBtn_Click"
+                                                                        Visibility="{x:Bind VideoBadgeVisibility, Mode=OneWay}"
+                                                                        ToolTipService.ToolTip="Play / Stream in Browser">
+                                                                        <FontIcon FontSize="9.5" Foreground="#A855F7" Glyph="&#xE768;" />
+                                                                    </Button>
                                                                     <Button
                                                                         Width="20"
                                                                         Height="20"

@@ -296,19 +296,102 @@ if (fs.existsSync(sqliteDbPath)) {
   }
 }
 
-// Fallback to JSON databases
-const jsonSources = [p2, p1];
+// Read JSON databases (Windows AppData teledrive.json)
+const jsonSources = [p1, p2];
 for (const p of jsonSources) {
   if (!fs.existsSync(p)) continue;
   try {
     const raw = fs.readFileSync(p, 'utf8');
     const db = JSON.parse(raw);
-    const files = db.files || [];
-    const parts = db.parts || [];
-    for (const f of files) {
+    const jFolders: any[] = db.folders || [];
+    const jFiles: any[] = db.files || [];
+    const jParts: any[] = db.parts || [];
+
+    // Identify series folders inside Videos or stream
+    const videosFolder = jFolders.find((f: any) => f.name === 'Videos' && !f.parent_id && !f.trashed_at);
+    const vId = videosFolder ? videosFolder.id : null;
+
+    // Series folders are folders whose parent is Videos or stream (or contains 'Season' subfolders)
+    const streamFolders = jFolders.filter((f: any) => f.name === 'stream' && !f.trashed_at);
+    const streamIds = new Set(streamFolders.map((sf: any) => sf.id));
+
+    const potentialSeriesFolders = jFolders.filter((f: any) => {
+      if (f.trashed_at) return false;
+      if (f.name === 'stream' || f.name === 'Videos') return false;
+      if (streamIds.has(f.parent_id)) return true;
+      if (vId && f.parent_id === vId) return true;
+      return false;
+    });
+
+    for (const sFolder of potentialSeriesFolders) {
+      const seasonFolders = jFolders.filter((f: any) => f.parent_id === sFolder.id && !f.trashed_at);
+      const seasons: SeasonItem[] = [];
+      let totalEpisodes = 0;
+
+      if (seasonFolders.length > 0) {
+        for (const seFolder of seasonFolders) {
+          const seMatch = /(?:season\s*|s)(\d+)/i.exec(seFolder.name);
+          const seNum = seMatch ? parseInt(seMatch[1]!, 10) : seasons.length + 1;
+          const epFiles = jFiles.filter((f: any) => f.folder_id === seFolder.id && f.category === 'video' && !f.trashed_at);
+          const episodes: EpisodeItem[] = epFiles.map((f: any, epIdx: number) => {
+            seen.add(f.id);
+            const info = parseEp(f.name, seNum, epIdx + 1);
+            const fParts = jParts.filter((pt: any) => pt.blob_id === f.blob_id);
+            return {
+              id: f.id,
+              episodeNumber: info.episode,
+              seasonNumber: seNum,
+              seriesId: sFolder.id,
+              seriesName: sFolder.name,
+              episodeTitle: info.title,
+              name: f.name,
+              category: 'video',
+              mimeType: f.mime_type || 'video/mp4',
+              size: f.size,
+              duration: f.duration || 2400,
+              hasThumbnail: Boolean(f.has_thumbnail),
+              updatedAt: f.updated_at || Date.now(),
+              artist: '',
+              album: '',
+              description: f.description || '',
+              parts: fParts.map((pt: any) => ({
+                partIndex: pt.part_index ?? pt.idx ?? 0,
+                size: pt.size,
+                telegramFileId: pt.telegram_file_id,
+                botId: pt.bot_id,
+              })),
+            };
+          });
+          episodes.sort((a, b) => a.episodeNumber - b.episodeNumber);
+          totalEpisodes += episodes.length;
+          seasons.push({ seasonNumber: seNum, name: seFolder.name, episodes });
+        }
+        seasons.sort((a, b) => a.seasonNumber - b.seasonNumber);
+      }
+
+      if (seasons.length > 0) {
+        const seriesIdx = series.findIndex((s) => s.id === sFolder.id || s.name.toLowerCase() === sFolder.name.toLowerCase());
+        const sEntry: SeriesItem = {
+          id: sFolder.id,
+          name: sFolder.name,
+          folderName: sFolder.name,
+          description: `TV Series · ${seasons.length} Season${seasons.length > 1 ? 's' : ''} · ${totalEpisodes} Episode${totalEpisodes > 1 ? 's' : ''}`,
+          seasonsCount: seasons.length,
+          episodesCount: totalEpisodes,
+          seasons,
+          updatedAt: sFolder.updated_at || Date.now(),
+          hasThumbnail: seasons[0]?.episodes[0]?.hasThumbnail ?? false,
+        };
+        if (seriesIdx >= 0) series[seriesIdx] = sEntry;
+        else series.push(sEntry);
+      }
+    }
+
+    // Process standalone files
+    for (const f of jFiles) {
       if (!['video', 'audio'].includes(f.category) || seen.has(f.id)) continue;
       seen.add(f.id);
-      const fParts = parts.filter((pt: any) => pt.blob_id === f.blob_id);
+      const fParts = jParts.filter((pt: any) => pt.blob_id === f.blob_id);
       items.push({
         id: f.id,
         name: f.name,

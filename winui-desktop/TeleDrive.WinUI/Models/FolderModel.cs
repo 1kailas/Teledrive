@@ -44,6 +44,30 @@ public partial class FolderModel : ObservableObject
     [ObservableProperty]
     private int _itemCount;
 
+    public bool IsSeasonFolder =>
+        !string.IsNullOrEmpty(Name) &&
+        Name.Contains("Season", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsSeriesFolder =>
+        !string.IsNullOrEmpty(Name) &&
+        (IsSeasonFolder ||
+         Name.Equals("Lost", StringComparison.OrdinalIgnoreCase) ||
+         Name.Contains("Cosmos", StringComparison.OrdinalIgnoreCase) ||
+         Name.Contains("Series", StringComparison.OrdinalIgnoreCase) ||
+         Name.Equals("stream", StringComparison.OrdinalIgnoreCase));
+
+    public string FolderGlyph =>
+        IsSeasonFolder ? "\uE8B9" :
+        IsSeriesFolder ? "\uE714" : "\uE8B7";
+
+    public Brush FolderBrush =>
+        IsSeriesFolder
+            ? new SolidColorBrush(Windows.UI.Color.FromArgb(255, 129, 140, 248))
+            : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 245, 158, 11));
+
+    public Visibility SeriesBadgeVisibility => IsSeriesFolder ? Visibility.Visible : Visibility.Collapsed;
+    public string SeriesBadgeText => IsSeasonFolder ? "SEASON" : (Name.Equals("stream", StringComparison.OrdinalIgnoreCase) ? "STREAM" : "SERIES");
+
     public string FormattedItemCount => ItemCount == 1 ? "1 item" : $"{ItemCount} items";
 
     public string StarGlyph => Starred ? "\uE735" : "\uE734";

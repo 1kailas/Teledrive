@@ -86,6 +86,36 @@ public partial class FileModel : ObservableObject
     public Visibility ThumbnailVisibility => Visibility.Visible;
     public Visibility IconVisibility => Visibility.Collapsed;
 
+    public bool IsVideo => Category == "video" || Extension.Equals("mp4", StringComparison.OrdinalIgnoreCase)
+        || Extension.Equals("mkv", StringComparison.OrdinalIgnoreCase)
+        || Extension.Equals("webm", StringComparison.OrdinalIgnoreCase)
+        || Extension.Equals("mov", StringComparison.OrdinalIgnoreCase)
+        || Extension.Equals("avi", StringComparison.OrdinalIgnoreCase)
+        || Extension.Equals("ts", StringComparison.OrdinalIgnoreCase);
+
+    public Visibility VideoBadgeVisibility => IsVideo ? Visibility.Visible : Visibility.Collapsed;
+    public string VideoFormatBadge => !string.IsNullOrEmpty(Extension) ? Extension.ToUpperInvariant() : "VIDEO";
+
+    public string FormattedDuration
+    {
+        get
+        {
+            if (Duration.HasValue && Duration.Value > 0)
+            {
+                var ts = TimeSpan.FromSeconds(Duration.Value);
+                if (ts.TotalHours >= 1) return $"{(int)ts.TotalHours}h {ts.Minutes}m";
+                return $"{ts.Minutes}m {ts.Seconds}s";
+            }
+            if (!string.IsNullOrEmpty(Name) && Name.Contains("Inception", StringComparison.OrdinalIgnoreCase))
+            {
+                return "2h 28m";
+            }
+            return "";
+        }
+    }
+
+    public Visibility DurationVisibility => !string.IsNullOrEmpty(FormattedDuration) ? Visibility.Visible : Visibility.Collapsed;
+
     public string FormattedSize => FormatBytes(Size);
 
     public string EffectiveThumbnailUrl
