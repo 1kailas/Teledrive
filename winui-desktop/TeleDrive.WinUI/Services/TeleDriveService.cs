@@ -62,13 +62,20 @@ public class TeleDriveService
 
     public async Task EnsureDaemonRunningAsync()
     {
-        // 1. Quick check if daemon is already responding on BaseUrl (<200ms)
+        // 1. Quick check if service is already responding on BaseUrl (<200ms)
         if (await PingDaemonAsync(BaseUrl))
         {
             return;
         }
 
-        // 2. Read daemon.json in AppData to check for an active daemon on an alternate port
+        // 2. Check standard Fastify server port 8080
+        if (await PingDaemonAsync("http://127.0.0.1:8080"))
+        {
+            BaseUrl = "http://127.0.0.1:8080";
+            return;
+        }
+
+        // 3. Read daemon.json in AppData to check for an active daemon on an alternate port
         var detectedPort = ReadDaemonPort();
         if (detectedPort.HasValue && detectedPort.Value != 48291)
         {
@@ -76,23 +83,6 @@ public class TeleDriveService
             if (await PingDaemonAsync(detectedUrl))
             {
                 BaseUrl = detectedUrl;
-                return;
-            }
-        }
-
-        // 3. Not running, launch TeleDriveR.exe --daemon
-        TryLaunchDaemon();
-
-        // 4. Poll every 80ms up to 2.5 seconds for instant detection as soon as socket opens
-        var sw = Stopwatch.StartNew();
-        while (sw.ElapsedMilliseconds < 2500)
-        {
-            await Task.Delay(80);
-            var port = ReadDaemonPort() ?? 48291;
-            var url = $"http://127.0.0.1:{port}";
-            if (await PingDaemonAsync(url))
-            {
-                BaseUrl = url;
                 return;
             }
         }
@@ -139,43 +129,6 @@ public class TeleDriveService
         }
         catch { }
         return null;
-    }
-
-    private void TryLaunchDaemon()
-    {
-        try
-        {
-            var exeDir = AppContext.BaseDirectory;
-            var daemonPaths = new[]
-            {
-                Path.Combine(exeDir, "TeleDriveR.exe"),
-                Path.Combine(exeDir, "..", "..", "..", "..", "..", "rust-desktop", "target", "x86_64-pc-windows-gnu", "release", "TeleDriveR.exe"),
-                Path.Combine(exeDir, "..", "..", "..", "..", "..", "rust-desktop", "target", "release", "TeleDriveR.exe"),
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "TeleDriveR", "TeleDriveR.exe")
-            };
-
-            foreach (var path in daemonPaths)
-            {
-                var full = Path.GetFullPath(path);
-                if (File.Exists(full))
-                {
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = full,
-                        Arguments = "--daemon",
-                        CreateNoWindow = true,
-                        UseShellExecute = false,
-                        WorkingDirectory = Path.GetDirectoryName(full)
-                    };
-                    Process.Start(psi);
-                    break;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"TryLaunchDaemon failed: {ex.Message}");
-        }
     }
 
     public async Task<(List<FolderModel> Folders, List<FileModel> Files)> GetDriveAsync(string? folderId = null)

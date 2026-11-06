@@ -95,45 +95,9 @@ jobs:
           name: TeleDrive-Setup
           path: TeleDrive-Setup.msi
 
-  build-rust-engine:
-    name: Build TeleDriveR Rust Daemon (Windows x64)
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Rust Stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-
-      - name: Run Rust Core Engine Tests
-        run: |
-          cd rust-desktop
-          cargo test
-
-      - name: Compile Rust Release Binary
-        run: |
-          cd rust-desktop
-          cargo build --release
-
-      - name: Package Rust Daemon
-        run: |
-          mkdir TeleDriveR-Daemon-win-x64
-          cp rust-desktop/target/release/TeleDriveR.exe TeleDriveR-Daemon-win-x64/
-          if (Test-Path rust-desktop/resources/bot-api) {
-            cp -r rust-desktop/resources/bot-api TeleDriveR-Daemon-win-x64/
-          }
-          Compress-Archive -Path TeleDriveR-Daemon-win-x64 -DestinationPath TeleDriveR-Daemon-win-x64.zip
-
-      - name: Upload Rust Daemon Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: TeleDriveR-Daemon-win-x64
-          path: TeleDriveR-Daemon-win-x64.zip
-
   create-release:
     name: Publish GitHub Release
-    needs: [build-web-server, build-winui-desktop, build-rust-engine]
+    needs: [build-web-server, build-winui-desktop]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

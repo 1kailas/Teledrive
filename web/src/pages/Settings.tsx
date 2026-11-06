@@ -386,7 +386,7 @@ function SecurityTab() {
           <div>
             <h3 className="font-semibold text-sm text-text">Desktop Security & Privacy</h3>
             <p className="text-3 text-xs mt-1 leading-relaxed">
-              TeleDriveR runs locally on your computer and transmits directly to your private Telegram storage channel.
+              TeleDrive runs locally on your computer and transmits directly to your private Telegram storage channel.
               There is no third-party intermediary server or tracking.
             </p>
           </div>

@@ -252,13 +252,10 @@ function TopBar() {
         <img
           src="/icon.png"
           className="w-9 h-9 rounded-xl object-contain shadow-xs shrink-0"
-          alt="TeleDriveR"
+          alt="TeleDrive"
         />
         <div className="flex items-baseline gap-1.5">
-          <span className="font-semibold text-[17px] tracking-tight text-text">TeleDriveR</span>
-          <span className="text-[10px] font-bold tracking-widest px-1.5 py-0.5 rounded-sm uppercase bg-accent-soft text-accent border border-accent/20">
-            Rust
-          </span>
+          <span className="font-semibold text-[17px] tracking-tight text-text">TeleDrive</span>
         </div>
       </div>
 
