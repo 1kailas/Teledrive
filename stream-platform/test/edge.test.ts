@@ -206,6 +206,45 @@ test('standalone direct Telegram mode streams media Range without origin or tunn
   assert.equal(await mediaRes.text(), 'chunk-data');
 });
 
+test('artwork endpoint generates an SVG cover when a thumbnail is missing', async () => {
+  const artEnv: EdgeEnv = {
+    TELEGRAM_BOT_TOKEN: 'test-token',
+    TELEDRIVE_CATALOG: JSON.stringify({
+      items: [
+        {
+          id,
+          name: 'The Quiet Signal.2024.1080p.mp4',
+          category: 'video',
+          mimeType: 'video/mp4',
+          size: 5000000,
+          duration: 7200,
+          hasThumbnail: false,
+          updatedAt: 12345,
+          parts: [],
+        },
+      ],
+    }),
+    ALLOW_PUBLIC: 'true',
+  };
+  const noNetwork = (async () => new Response(null, { status: 404 })) as typeof fetch;
+
+  const artRes = await handleApi(new Request(`https://stream.example/api/art/${id}`), artEnv, noNetwork);
+  assert.equal(artRes.status, 200);
+  assert.equal(artRes.headers.get('Content-Type'), 'image/svg+xml; charset=utf-8');
+  const svg = await artRes.text();
+  assert.match(svg, /^<svg/);
+  assert.match(svg, /The Quiet Signal/);
+  assert.doesNotMatch(svg, /1080p/);
+
+  const headRes = await handleApi(
+    new Request(`https://stream.example/api/art/${id}`, { method: 'HEAD' }),
+    artEnv,
+    noNetwork,
+  );
+  assert.equal(headRes.status, 200);
+  assert.equal(await headRes.text(), '');
+});
+
 test('standalone mode routes multi-part media across multiple Telegram bots based on byte offsets', async () => {
   const multiPartEnv: EdgeEnv = {
     BOT_TOKENS: '1111:TOKEN1,2222:TOKEN2,3333:TOKEN3',

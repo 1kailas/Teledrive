@@ -4,6 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
+import { posterSvg } from './src/poster.ts';
+import { cleanTitle } from './src/title.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -202,8 +204,29 @@ function localStreamDevPlugin(): Plugin {
           const id = artMatch[1];
           const thumb = findThumbnail(id);
           if (!thumb) {
-            res.writeHead(404, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Artwork unavailable' }));
+            const item = getCatalog().find((entry) => entry.id === id);
+            if (!item) {
+              res.writeHead(404, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Artwork unavailable' }));
+              return;
+            }
+            const audio = item.category === 'audio';
+            const subtitle = audio
+              ? [item.artist, item.album].filter(Boolean).join(' · ')
+              : 'Private library';
+            const svg = posterSvg({
+              seed: item.id,
+              title: cleanTitle(item.name) || 'Untitled',
+              subtitle,
+              label: audio ? 'Album' : 'Film',
+              category: item.category,
+              shape: audio ? 'square' : 'wide',
+            });
+            res.writeHead(200, {
+              'Content-Type': 'image/svg+xml; charset=utf-8',
+              'Cache-Control': 'public, max-age=3600',
+            });
+            res.end(svg);
             return;
           }
           res.writeHead(200, {

@@ -1,10 +1,10 @@
 import { Play, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   formatOf, sizeOf, timeOf, titleOf,
   type EpisodeItem, type SeriesItem,
 } from '../library';
-import { Artwork } from './ui';
+import { Artwork, useExit } from './ui';
 
 interface SeriesHubProps {
   series: SeriesItem;
@@ -16,6 +16,7 @@ interface SeriesHubProps {
 export function SeriesHub({ series, playingId, onClose, onPlay }: SeriesHubProps) {
   const [seasonNumber, setSeasonNumber] = useState(series.seasons[0]?.seasonNumber ?? 1);
   const panelRef = useRef<HTMLDivElement>(null);
+  const { closing, close, cancel } = useExit(onClose, 190);
 
   useEffect(() => {
     setSeasonNumber(series.seasons[0]?.seasonNumber ?? 1);
@@ -24,11 +25,16 @@ export function SeriesHub({ series, playingId, onClose, onPlay }: SeriesHubProps
   useEffect(() => {
     panelRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') close();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  }, [close]);
+
+  function startEpisode(episode: EpisodeItem) {
+    cancel();
+    onPlay(episode, series);
+  }
 
   const season = series.seasons.find((entry) => entry.seasonNumber === seasonNumber)
     ?? series.seasons[0];
@@ -41,26 +47,26 @@ export function SeriesHub({ series, playingId, onClose, onPlay }: SeriesHubProps
 
   return (
     <div
-      className="overlay series-overlay"
+      className={`overlay series-overlay ${closing ? 'is-closing' : ''}`}
       role="presentation"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) close();
       }}
     >
       <div
         ref={panelRef}
-        className="series-hub"
+        className={`series-hub ${closing ? 'is-closing' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label={`${series.name} series details`}
         tabIndex={-1}
       >
-        <button type="button" className="modal-close series-close" onClick={onClose} aria-label="Close series">
+        <button type="button" className="modal-close series-close" onClick={close} aria-label="Close series">
           <X size={18} />
         </button>
 
         <div className="series-hero">
-          <Artwork item={firstEpisode} title={series.name} className="series-hero-art" eager />
+          <Artwork item={firstEpisode} title={series.name} label="Series" subtitle={meta} className="series-hero-art" eager />
           <div className="series-hero-shade" aria-hidden="true" />
           <div className="series-hero-copy">
             <span className="eyebrow">Series</span>
@@ -75,7 +81,7 @@ export function SeriesHub({ series, playingId, onClose, onPlay }: SeriesHubProps
                 <button
                   type="button"
                   className="button button-primary"
-                  onClick={() => onPlay(firstEpisode, series)}
+                  onClick={() => startEpisode(firstEpisode)}
                 >
                   <Play size={16} fill="currentColor" />
                   Play S{firstEpisode.seasonNumber} E{firstEpisode.episodeNumber}
@@ -109,22 +115,26 @@ export function SeriesHub({ series, playingId, onClose, onPlay }: SeriesHubProps
             )}
           </div>
 
-          <div className="episode-list">
+          <div className="episode-list" key={season?.seasonNumber ?? 'season'}>
             {episodes.length === 0 ? (
               <p className="episode-empty">No episodes found in this season.</p>
-            ) : episodes.map((episode) => {
+            ) : episodes.map((episode, index) => {
               const isPlaying = episode.id === playingId;
               const name = episode.episodeTitle || titleOf(episode);
               return (
-                <div key={episode.id} className={`episode-row ${isPlaying ? 'is-playing' : ''}`}>
+                <div
+                  key={episode.id}
+                  className={`episode-row ${isPlaying ? 'is-playing' : ''}`}
+                  style={{ '--i': Math.min(index, 11) } as CSSProperties}
+                >
                   <span className="episode-number">{String(episode.episodeNumber).padStart(2, '0')}</span>
                   <button
                     type="button"
                     className="episode-thumb"
-                    onClick={() => onPlay(episode, series)}
+                    onClick={() => startEpisode(episode)}
                     aria-label={`Play ${name}`}
                   >
-                    <Artwork item={episode} title={name} />
+                    <Artwork item={episode} title={name} dense />
                     <span className="episode-thumb-play" aria-hidden="true">
                       <Play size={15} fill="currentColor" />
                     </span>
@@ -132,7 +142,7 @@ export function SeriesHub({ series, playingId, onClose, onPlay }: SeriesHubProps
                   <button
                     type="button"
                     className="episode-main"
-                    onClick={() => onPlay(episode, series)}
+                    onClick={() => startEpisode(episode)}
                   >
                     <span className="episode-title">
                       {name}
@@ -149,7 +159,7 @@ export function SeriesHub({ series, playingId, onClose, onPlay }: SeriesHubProps
                   <button
                     type="button"
                     className="episode-play"
-                    onClick={() => onPlay(episode, series)}
+                    onClick={() => startEpisode(episode)}
                     aria-label={`Play ${name}`}
                   >
                     <Play size={14} fill="currentColor" />

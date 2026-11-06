@@ -1,3 +1,6 @@
+import { posterSvg } from './poster';
+import { cleanTitle } from './title';
+
 export interface EdgeEnv {
   ACCESS_TEAM?: string;
   ACCESS_AUD?: string;
@@ -80,6 +83,36 @@ const MAX_CATALOG_BYTES = 4 * 1024 * 1024;
 let cachedKeys: { team: string; keys: AccessJwk[]; until: number } | undefined;
 const filePathCache = new Map<string, { path: string; expires: number }>();
 let cachedStandaloneCatalog: { data: StandaloneCatalog; expires: number } | null = null;
+
+/**
+ * Deterministic SVG cover used whenever a media item has no stored thumbnail.
+ * Keeping this on the edge means every artwork URL resolves, even when the
+ * Telegram thumbnail was never generated or has expired.
+ */
+function generatedArtwork(file: CatalogFile): Response {
+  const audio = file.category === 'audio';
+  const title = cleanTitle(file.name) || 'Untitled';
+  const subtitle = audio
+    ? [file.artist, file.album].filter(Boolean).join(' · ')
+    : [file.format, 'Private library'].filter(Boolean).join(' · ');
+  const svg = posterSvg({
+    seed: file.id,
+    title,
+    subtitle,
+    label: audio ? 'Album' : 'Film',
+    category: file.category,
+    shape: audio ? 'square' : 'wide',
+  });
+  return new Response(svg, {
+    status: 200,
+    headers: {
+      'Content-Type': 'image/svg+xml; charset=utf-8',
+      'Cache-Control': 'public, max-age=86400',
+      'X-Content-Type-Options': 'nosniff',
+      'Access-Control-Allow-Origin': '*',
+    },
+  });
+}
 
 function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
   const binary = atob(value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '='));
@@ -473,11 +506,19 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
     if (isOriginMode) {
       const record = await getMediaFromOrigin(id, env, fetcher);
       if (!record) return error(404, 'Media not found');
-      if (kind === 'art' && record.file.hasThumbnail !== true) return error(404, 'Artwork unavailable');
+      const artworkFile = kind === 'art'
+        ? cleanCatalog(record.file, record.file.category as 'video' | 'audio')
+        : null;
+      if (kind === 'art' && (!artworkFile || record.file.hasThumbnail !== true)) {
+        return artworkFile ? withHead(generatedArtwork(artworkFile)) : error(404, 'Artwork unavailable');
+      }
 
       const response = await originRequest(env,
         kind === 'art' ? `/api/thumbnails/${id}` : `/api/files/${id}/content`,
         fetcher, kind === 'media' ? range ?? undefined : undefined, true);
+      if (kind === 'art' && response.status === 404 && artworkFile) {
+        return withHead(generatedArtwork(artworkFile));
+      }
       if (![200, 206, 416, 404].includes(response.status)) return error(502, 'TeleDrive stream unavailable');
 
       const headers = new Headers({
@@ -500,7 +541,7 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
     if (!item) return error(404, 'Media not found');
 
     if (kind === 'art') {
-      if (!item.hasThumbnail) return error(404, 'Artwork unavailable');
+      if (!item.hasThumbnail) return withHead(generatedArtwork(item));
       if (item.thumbnailTelegramFileId) {
         const botToken = getBotToken(undefined, env);
         if (botToken) {
@@ -521,7 +562,7 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
           }
         }
       }
-      return error(404, 'Artwork unavailable');
+      return withHead(generatedArtwork(item));
     }
 
     // kind === 'media' direct streaming

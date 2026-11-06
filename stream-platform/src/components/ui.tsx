@@ -2,12 +2,14 @@ import {
   Check, ChevronLeft, ChevronRight, Heart, Play, Plus, Tv,
 } from 'lucide-react';
 import {
-  useEffect, useRef, useState,
+  useCallback, useEffect, useMemo, useRef, useState,
   type CSSProperties, type ReactNode,
 } from 'react';
+import { posterDataUrl, type PosterShape } from '../poster';
+import { useCapturedFrame } from '../thumbs';
 import {
   artistOf, artwork, formatOf, timeOf, titleOf,
-  type MediaItem, type SeriesItem,
+  type EpisodeItem, type MediaItem, type SeriesItem,
 } from '../library';
 
 /* ------------------------------------------------------------------ */
@@ -39,43 +41,115 @@ interface ArtworkProps {
   item?: MediaItem | null;
   title?: string;
   label?: string;
+  subtitle?: string;
   compact?: boolean;
+  dense?: boolean;
+  shape?: 'wide' | 'square';
   className?: string;
   eager?: boolean;
 }
 
-export function Artwork({
-  item, title, label, compact = false, className = '', eager = false,
-}: ArtworkProps) {
-  const [failed, setFailed] = useState(false);
-  const src = item ? artwork(item) : undefined;
-  const displayTitle = title || (item ? titleOf(item) : 'Untitled');
-  const badge = label || (item ? formatOf(item) : '');
-  const seed = item?.id || displayTitle;
+function useNearViewport(enabled: boolean, immediate = false) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [near, setNear] = useState(immediate);
 
-  useEffect(() => { setFailed(false); }, [src, seed]);
+  useEffect(() => {
+    if (!enabled || near) return;
+    const node = ref.current;
+    if (!node) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setNear(true);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setNear(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '480px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [enabled, near]);
 
-  if (compact) {
-    return (
-      <div className={`artwork artwork-compact ${className}`} style={tintStyle(seed)}>
-        {src && !failed
-          ? <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} />
-          : <span className="artwork-initial" aria-hidden="true">{displayTitle.slice(0, 1).toUpperCase()}</span>}
-      </div>
-    );
+  return { ref, near: near || !enabled };
+}
+
+function badgeOf(item: MediaItem): string {
+  if ('episodeNumber' in item) {
+    const episode = item as EpisodeItem;
+    if (typeof episode.episodeNumber === 'number') {
+      return `S${String(episode.seasonNumber).padStart(2, '0')} E${String(episode.episodeNumber).padStart(2, '0')}`;
+    }
   }
+  return formatOf(item);
+}
+
+export function Artwork({
+  item, title, label, subtitle, compact = false, dense = false,
+  shape = 'wide', className = '', eager = false,
+}: ArtworkProps) {
+  const [serverFailed, setServerFailed] = useState(false);
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const [photoLoaded, setPhotoLoaded] = useState(false);
+
+  const displayTitle = title || (item ? titleOf(item) : 'Untitled');
+  const badge = label || (item ? badgeOf(item) : '');
+  const seed = item?.id || displayTitle;
+  const generatedShape: PosterShape = compact ? 'monogram' : shape;
+  const serverSrc = item?.hasThumbnail ? artwork(item) : undefined;
+  const { ref, near } = useNearViewport(item?.category === 'video', eager);
+  const captured = useCapturedFrame(
+    item,
+    near && item?.category === 'video' && (!serverSrc || serverFailed),
+  );
+  const source = serverSrc && !serverFailed ? serverSrc : captured;
+  const photo = source && !photoFailed ? source : undefined;
+  const subtitleValue = subtitle
+    ?? (item?.category === 'audio' ? [item.artist, item.album].filter(Boolean).join(' · ') : undefined);
+
+  const generated = useMemo(() => posterDataUrl({
+    seed,
+    title: displayTitle,
+    subtitle: subtitleValue,
+    label: badge,
+    category: item?.category,
+    shape: generatedShape,
+    dense,
+  }), [seed, displayTitle, subtitleValue, badge, item?.category, generatedShape, dense]);
+
+  useEffect(() => {
+    setPhotoFailed(false);
+    setPhotoLoaded(false);
+  }, [source]);
 
   return (
-    <div className={`artwork ${className}`} style={tintStyle(seed)}>
-      {src && !failed
-        ? <img src={src} alt="" loading={eager ? 'eager' : 'lazy'} onError={() => setFailed(true)} />
-        : (
-          <div className="artwork-fallback" aria-hidden="true">
-            <span className="artwork-frame" />
-            {badge ? <span className="artwork-format">{badge}</span> : null}
-            <span className="artwork-title">{displayTitle}</span>
-          </div>
-        )}
+    <div
+      ref={ref}
+      className={`artwork ${compact ? 'artwork-compact' : ''} ${className}`.trim()}
+      style={tintStyle(seed)}
+    >
+      <img
+        className="artwork-generated"
+        src={generated}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+      />
+      {photo ? (
+        <img
+          className={`artwork-photo ${photoLoaded ? 'is-loaded' : ''}`}
+          src={photo}
+          alt=""
+          loading={eager ? 'eager' : 'lazy'}
+          decoding="async"
+          draggable={false}
+          onLoad={() => setPhotoLoaded(true)}
+          onError={() => {
+            if (source === serverSrc) setServerFailed(true);
+            else setPhotoFailed(true);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -237,7 +311,7 @@ export function SeriesCard({ series, onOpen }: { series: SeriesItem; onOpen: () 
   return (
     <article className="media-card">
       <button className="media-poster" onClick={onOpen} aria-label={`Open series ${series.name}`}>
-        <Artwork item={first} title={series.name} label="Series" />
+        <Artwork item={first} title={series.name} label="Series" subtitle={meta} />
         <span className="media-scrim" aria-hidden="true" />
         <span className="media-format-badge">Series</span>
         <span className="media-episode-badge">{series.episodesCount} ep</span>
@@ -265,7 +339,7 @@ export function AlbumCard({
   return (
     <article className="album-card">
       <button className="album-cover" onClick={onOpen} aria-label={`Open album ${name}`}>
-        <Artwork item={item} title={name} label="Album" />
+        <Artwork item={item} title={name} label="Album" subtitle={artist} shape="square" />
         <span className="media-play album-play" aria-hidden="true">
           <Play size={18} fill="currentColor" />
         </span>
@@ -302,7 +376,10 @@ export function TrackRow({
   onSave: () => void;
 }) {
   return (
-    <div className={`track-row ${selected ? 'is-active' : ''}`}>
+    <div
+      className={`track-row ${selected ? 'is-active' : ''}`}
+      style={{ '--i': Math.min(index, 14) } as CSSProperties}
+    >
       <button
         type="button"
         className="track-index"
@@ -398,4 +475,83 @@ export function useBodyLock(locked: boolean) {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = previous; };
   }, [locked]);
+}
+
+/**
+ * Keeps a surface mounted while its exit animation plays. The caller renders
+ * when `mounted` is true and adds the closing class while `closing` is true.
+ */
+export function usePresence(open: boolean, duration = 180) {
+  const [mounted, setMounted] = useState(open);
+  const [closing, setClosing] = useState(false);
+  const mountedRef = useRef(open);
+  const timer = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (timer.current !== null) {
+      window.clearTimeout(timer.current);
+      timer.current = null;
+    }
+    if (open) {
+      mountedRef.current = true;
+      setMounted(true);
+      setClosing(false);
+      return;
+    }
+    if (!mountedRef.current) return;
+    setClosing(true);
+    timer.current = window.setTimeout(() => {
+      timer.current = null;
+      mountedRef.current = false;
+      setMounted(false);
+      setClosing(false);
+    }, duration);
+    return () => {
+      if (timer.current !== null) {
+        window.clearTimeout(timer.current);
+        timer.current = null;
+      }
+    };
+  }, [open, duration]);
+
+  useEffect(() => () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+  }, []);
+
+  return { mounted, closing };
+}
+
+/**
+ * Delays parent teardown long enough for an exit animation. `cancel` can be
+ * used when an action inside the surface should hand off without closing it
+ * later (for example, starting playback from a series sheet).
+ */
+export function useExit(onClose: () => void, duration = 190) {
+  const [closing, setClosing] = useState(false);
+  const timer = useRef<number | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+  }, []);
+
+  const cancel = useCallback(() => {
+    if (timer.current !== null) {
+      window.clearTimeout(timer.current);
+      timer.current = null;
+    }
+    setClosing(false);
+  }, []);
+
+  const close = useCallback(() => {
+    if (timer.current !== null) return;
+    setClosing(true);
+    timer.current = window.setTimeout(() => {
+      timer.current = null;
+      onCloseRef.current();
+    }, duration);
+  }, [duration]);
+
+  return { closing, close, cancel };
 }

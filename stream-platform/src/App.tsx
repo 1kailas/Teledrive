@@ -8,8 +8,10 @@ import { SeriesHub } from './components/SeriesHub';
 import { VideoTheatre } from './components/VideoTheatre';
 import {
   AlbumCard, Artwork, EmptyState, LoadingView, MediaCard, SeriesCard, Shelf,
-  TrackRow, tintStyle, useBodyLock,
+  TrackRow, useBodyLock, usePresence,
 } from './components/ui';
+import { posterDataUrl } from './poster';
+import { useCapturedFrame } from './thumbs';
 import {
   artistOf, artwork, formatOf, getPositions, getWatchlist,
   saveWatchlist, sizeOf, timeOf, titleOf,
@@ -47,25 +49,43 @@ function plural(count: number, singular: string, pluralForm = `${singular}s`): s
 }
 
 function HeroBackdrop({ item, title }: { item: MediaItem; title: string }) {
-  const [failed, setFailed] = useState(false);
-  const src = artwork(item);
+  const [serverFailed, setServerFailed] = useState(false);
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const [photoLoaded, setPhotoLoaded] = useState(false);
 
-  useEffect(() => { setFailed(false); }, [src]);
+  const serverSrc = !serverFailed ? artwork(item) : undefined;
+  const captured = useCapturedFrame(item, !serverSrc);
+  const photoSrc = serverSrc || captured || undefined;
+  const source = photoSrc && !photoFailed ? photoSrc : undefined;
 
-  if (src && !failed) {
-    return (
-      <img
-        className="hero-image"
-        src={src}
-        alt=""
-        onError={() => setFailed(true)}
-      />
-    );
-  }
+  const generated = useMemo(() => posterDataUrl({
+    seed: item.id || title,
+    title,
+    category: item.category,
+    shape: 'backdrop',
+  }), [item.id, item.category, title]);
+
+  useEffect(() => {
+    setPhotoFailed(false);
+    setPhotoLoaded(false);
+  }, [source]);
 
   return (
-    <div className="hero-fallback" style={tintStyle(item.id || title)} aria-hidden="true">
-      <span className="hero-watermark">{title}</span>
+    <div className="hero-media" aria-hidden="true">
+      <img className="hero-generated" src={generated} alt="" draggable={false} />
+      {source ? (
+        <img
+          className={`hero-image ${photoLoaded ? 'is-loaded' : ''}`}
+          src={source}
+          alt=""
+          draggable={false}
+          onLoad={() => setPhotoLoaded(true)}
+          onError={() => {
+            if (source === serverSrc) setServerFailed(true);
+            else setPhotoFailed(true);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -114,7 +134,9 @@ export default function App() {
   const [audioDuration, setAudioDuration] = useState(0);
   const [volume, setVolume] = useState(0.85);
   const [audioError, setAudioError] = useState('');
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
+  const [toastOpen, setToastOpen] = useState(false);
+  const toastState = usePresence(toastOpen, 240);
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const queueRef = useRef<MediaItem[]>([]);
@@ -292,9 +314,10 @@ export default function App() {
   /* ---------------------------------------------------------------- */
 
   function notify(message: string) {
-    setToast(message);
+    setToast({ id: Date.now(), text: message });
+    setToastOpen(true);
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 4200);
+    toastTimer.current = window.setTimeout(() => setToastOpen(false), 4000);
   }
 
   function go(nextView: View) {
@@ -464,6 +487,7 @@ export default function App() {
   /* ---------------------------------------------------------------- */
 
   const isHome = view === 'home' && !isSearching;
+  const viewKey = error ? 'error' : loading ? 'loading' : isSearching ? 'search' : isHome ? 'home' : view;
   const showHero = isHome && Boolean(heroItem);
   const hasLibrary = videos.length > 0 || series.length > 0 || songs.length > 0;
   const headerSolid = scrolled || view !== 'home' || isSearching || loading || Boolean(error) || !showHero;
@@ -537,6 +561,7 @@ export default function App() {
         id="main"
         className={`main ${isHome ? 'main-home' : ''} ${showHero ? 'has-hero' : ''}`}
       >
+        <div className="view-enter" key={viewKey}>
         {error ? (
           <div className="content">
             <div className="state-page">
@@ -1067,6 +1092,7 @@ export default function App() {
             ) : null}
           </div>
         )}
+        </div>
       </main>
 
       <audio
@@ -1151,10 +1177,10 @@ export default function App() {
         />
       ) : null}
 
-      {toast ? (
-        <div className="toast" role="status">
+      {toast && toastState.mounted ? (
+        <div key={toast.id} className={`toast ${toastState.closing ? 'is-closing' : ''}`} role="status">
           <Check size={16} />
-          <span>{toast}</span>
+          <span>{toast.text}</span>
         </div>
       ) : null}
     </div>

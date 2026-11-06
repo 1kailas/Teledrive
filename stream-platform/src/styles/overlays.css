@@ -11,7 +11,11 @@
   padding: 24px;
   background: rgba(4, 5, 7, .8);
   backdrop-filter: blur(10px);
-  animation: fade-in .2s ease;
+  animation: overlay-in .22s ease both;
+}
+.overlay.is-closing {
+  animation: overlay-out .18s ease forwards;
+  pointer-events: none;
 }
 .series-overlay { z-index: 110; }
 
@@ -45,7 +49,11 @@
   border-radius: 14px;
   background: var(--bg-soft);
   box-shadow: 0 42px 110px rgba(0, 0, 0, .62);
-  animation: modal-in .34s var(--ease);
+  animation: modal-in .34s var(--ease) both;
+}
+.series-hub.is-closing {
+  animation: modal-out .18s var(--ease) forwards;
+  pointer-events: none;
 }
 .series-hub:focus { outline: none; }
 .series-close {
@@ -170,6 +178,7 @@
   display: grid;
   gap: 2px;
   margin: 0 -8px;
+  animation: episode-list-in .32s var(--ease) both;
 }
 .episode-row {
   display: grid;
@@ -180,6 +189,8 @@
   border: 1px solid transparent;
   border-radius: 8px;
   transition: background .15s ease, border-color .15s ease;
+  animation: episode-row-in .36s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 22ms);
 }
 .episode-row:hover {
   border-color: rgba(255, 255, 255, .05);
@@ -300,8 +311,30 @@
   text-align: center;
 }
 
+@keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes overlay-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes modal-in {
   from { opacity: 0; transform: translateY(14px) scale(.988); }
   to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes modal-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(10px) scale(.99); }
+}
+@keyframes sheet-in {
+  from { opacity: .6; transform: translateY(100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes sheet-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(100%); }
+}
+@keyframes episode-list-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes episode-row-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }

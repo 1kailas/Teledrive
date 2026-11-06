@@ -9,9 +9,13 @@
   display: flex;
   flex-direction: column;
   background: #050608;
-  animation: fade-in .2s ease;
+  animation: theatre-in .26s var(--ease) both;
 }
 .theatre:focus { outline: none; }
+.theatre.is-closing {
+  animation: theatre-out .2s ease forwards;
+  pointer-events: none;
+}
 
 .theatre-header {
   position: relative;
@@ -120,7 +124,6 @@
   width: 100%;
   max-height: calc(100vh - 250px);
   background: #000;
-  transition: aspect-ratio .2s ease, object-fit .2s ease;
 }
 .video-frame video.aspect-fit { object-fit: contain; }
 .video-frame video.aspect-16-9 { aspect-ratio: 16 / 9; object-fit: cover; }
@@ -144,7 +147,11 @@
   border-radius: 12px;
   background: #111217;
   box-shadow: 0 26px 68px rgba(0, 0, 0, .68);
-  animation: menu-in .16s var(--ease);
+  animation: menu-in .16s var(--ease) both;
+}
+.menu-popover.is-closing {
+  animation: menu-out .14s ease forwards;
+  pointer-events: none;
 }
 .subtitle-menu { width: 286px; }
 .more-menu { width: 274px; padding: 6px; }
@@ -331,6 +338,7 @@
   padding: 20px;
   background: rgba(4, 5, 7, .84);
   backdrop-filter: blur(9px);
+  animation: overlay-in .26s ease both;
 }
 .autoplay-card {
   width: min(390px, 100%);
@@ -340,6 +348,7 @@
   background: #101116;
   box-shadow: 0 28px 70px rgba(0, 0, 0, .6);
   text-align: center;
+  animation: modal-in .34s var(--ease) both;
 }
 .autoplay-card .eyebrow {
   justify-content: center;
@@ -377,6 +386,7 @@
   border-radius: 10px;
   background: rgba(255, 77, 51, .075);
   color: var(--danger);
+  animation: error-in .3s var(--ease) both;
 }
 .playback-error > svg { flex: none; margin-top: 1px; }
 .playback-error-copy { flex: 1; min-width: 200px; }
@@ -454,7 +464,11 @@
   width: min(380px, 100%);
   border-left: 1px solid var(--line-strong);
   background: #0b0c0f;
-  animation: drawer-in .25s var(--ease);
+  animation: drawer-in .25s var(--ease) both;
+}
+.episode-drawer.is-closing {
+  animation: drawer-out .18s ease forwards;
+  pointer-events: none;
 }
 .drawer-head {
   display: flex;
@@ -540,7 +554,11 @@
   border-radius: 14px;
   background: var(--bg-soft);
   box-shadow: 0 34px 90px rgba(0, 0, 0, .65);
-  animation: modal-in .25s var(--ease);
+  animation: modal-in .25s var(--ease) both;
+}
+.help-card.is-closing {
+  animation: modal-out .17s ease forwards;
+  pointer-events: none;
 }
 .help-head {
   display: flex;
@@ -584,7 +602,27 @@
   from { opacity: 0; transform: translateY(-5px) scale(.985); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
+@keyframes menu-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(-4px) scale(.99); }
+}
 @keyframes drawer-in {
   from { transform: translateX(100%); }
   to { transform: translateX(0); }
+}
+@keyframes drawer-out {
+  from { transform: translateX(0); }
+  to { transform: translateX(100%); }
+}
+@keyframes theatre-in {
+  from { opacity: 0; transform: scale(.995); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes theatre-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(.995); }
+}
+@keyframes error-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }

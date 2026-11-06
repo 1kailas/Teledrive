@@ -4,13 +4,15 @@ import {
   RectangleHorizontal, RefreshCw, Share2, SkipBack, SkipForward,
   SlidersHorizontal, Subtitles, X,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { posterDataUrl } from '../poster';
+import { useCapturedFrame } from '../thumbs';
 import {
-  formatOf, getAudioPrefs, getPositions, saveAudioPrefs, savePosition,
+  artwork, formatOf, getAudioPrefs, getPositions, saveAudioPrefs, savePosition,
   sizeOf, timeOf, titleOf,
   type AudioPreferences, type AudioProfile, type EpisodeItem, type MediaItem,
 } from '../library';
-import { Artwork } from './ui';
+import { useExit, usePresence } from './ui';
 
 interface VideoTheatreProps {
   video: MediaItem;
@@ -69,6 +71,13 @@ export function VideoTheatre({
   const [playbackError, setPlaybackError] = useState('');
   const [autoplayCountdown, setAutoplayCountdown] = useState<number | null>(null);
 
+  const { closing, close: closeWithAnimation } = useExit(onClose, 200);
+  const subtitleMenu = usePresence(showSubtitleMenu, 150);
+  const audioMenu = usePresence(showAudioMenu, 150);
+  const moreMenu = usePresence(showMoreMenu, 150);
+  const episodeDrawer = usePresence(showEpisodeDrawer && Boolean(activeEpisode), 180);
+  const helpOverlay = usePresence(showHelp, 170);
+
   const theatreRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const subtitleInputRef = useRef<HTMLInputElement>(null);
@@ -89,6 +98,15 @@ export function VideoTheatre({
     : titleOf(video);
   const anyMenuOpen = showAudioMenu || showSubtitleMenu || showMoreMenu;
   const isInception = /inception/i.test(video.name);
+
+  const capturedPoster = useCapturedFrame(video, !video.hasThumbnail);
+  const generatedPoster = useMemo(() => posterDataUrl({
+    seed: video.id,
+    title,
+    category: 'video',
+    shape: 'backdrop',
+  }), [video.id, title]);
+  const poster = artwork(video) ?? capturedPoster ?? generatedPoster;
 
   /* ---------------------------------------------------------------- */
   /*  Audio processing                                                 */
@@ -271,7 +289,8 @@ export function VideoTheatre({
         element.currentTime < element.duration - 10 ? element.currentTime : null,
       );
     }
-    onClose();
+    element?.pause();
+    closeWithAnimation();
   };
 
   const retryPlayback = () => {
@@ -503,7 +522,7 @@ export function VideoTheatre({
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [anyMenuOpen, showEpisodeDrawer, showHelp, onClose, audioPrefs]);
+  }, [anyMenuOpen, showEpisodeDrawer, showHelp, closeWithAnimation, audioPrefs, video.id]);
 
   /* ---------------------------------------------------------------- */
   /*  Render                                                           */
@@ -512,7 +531,7 @@ export function VideoTheatre({
   return (
     <div
       ref={theatreRef}
-      className={`theatre ${isFullscreen ? 'is-fullscreen' : ''}`}
+      className={`theatre ${isFullscreen ? 'is-fullscreen' : ''} ${closing ? 'is-closing' : ''}`}
       role="dialog"
       aria-modal="true"
       aria-label={`Watching ${title}`}
@@ -544,8 +563,11 @@ export function VideoTheatre({
               <Subtitles size={18} />
               <span className="tool-label">CC</span>
             </button>
-            {showSubtitleMenu ? (
-              <div className="menu-popover subtitle-menu" onMouseDown={(event) => event.stopPropagation()}>
+            {subtitleMenu.mounted ? (
+              <div
+                className={`menu-popover subtitle-menu ${subtitleMenu.closing ? 'is-closing' : ''}`}
+                onMouseDown={(event) => event.stopPropagation()}
+              >
                 <div className="menu-head">
                   <strong>Subtitles</strong>
                   <button type="button" onClick={() => setShowSubtitleMenu(false)} aria-label="Close subtitles">
@@ -623,8 +645,11 @@ export function VideoTheatre({
               <SlidersHorizontal size={18} />
               {audioPrefs.profile !== 'flat' ? <span className="tool-dot" /> : null}
             </button>
-            {showAudioMenu ? (
-              <div className="menu-popover audio-menu" onMouseDown={(event) => event.stopPropagation()}>
+            {audioMenu.mounted ? (
+              <div
+                className={`menu-popover audio-menu ${audioMenu.closing ? 'is-closing' : ''}`}
+                onMouseDown={(event) => event.stopPropagation()}
+              >
                 <div className="menu-head">
                   <strong>Audio & playback</strong>
                   <button type="button" onClick={() => setShowAudioMenu(false)} aria-label="Close audio settings">
@@ -721,8 +746,11 @@ export function VideoTheatre({
             >
               <MoreHorizontal size={19} />
             </button>
-            {showMoreMenu ? (
-              <div className="menu-popover more-menu" onMouseDown={(event) => event.stopPropagation()}>
+            {moreMenu.mounted ? (
+              <div
+                className={`menu-popover more-menu ${moreMenu.closing ? 'is-closing' : ''}`}
+                onMouseDown={(event) => event.stopPropagation()}
+              >
                 <div className="menu-list">
                   <button type="button" className="menu-row" onClick={cycleAspect}>
                     <RectangleHorizontal size={16} />
@@ -770,7 +798,7 @@ export function VideoTheatre({
             <video
               ref={videoRef}
               className={`aspect-${aspectRatio}`}
-              poster={video.hasThumbnail ? `/api/art/${video.id}` : undefined}
+              poster={poster}
               controls
               autoPlay
               playsInline
@@ -939,8 +967,11 @@ export function VideoTheatre({
         </div>
       </div>
 
-      {showEpisodeDrawer && activeEpisode ? (
-        <aside className="episode-drawer" aria-label="Episodes">
+      {episodeDrawer.mounted && activeEpisode ? (
+        <aside
+          className={`episode-drawer ${episodeDrawer.closing ? 'is-closing' : ''}`}
+          aria-label="Episodes"
+        >
           <div className="drawer-head">
             <div>
               <span className="eyebrow">Episodes</span>
@@ -977,9 +1008,18 @@ export function VideoTheatre({
         </aside>
       ) : null}
 
-      {showHelp ? (
-        <div className="overlay help-overlay" onClick={() => setShowHelp(false)}>
-          <div className="help-card" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" onClick={(event) => event.stopPropagation()}>
+      {helpOverlay.mounted ? (
+        <div
+          className={`overlay help-overlay ${helpOverlay.closing ? 'is-closing' : ''}`}
+          onClick={() => setShowHelp(false)}
+        >
+          <div
+            className={`help-card ${helpOverlay.closing ? 'is-closing' : ''}`}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Keyboard shortcuts"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="help-head">
               <div>
                 <span className="eyebrow">Player</span>

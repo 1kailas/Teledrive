@@ -24,6 +24,10 @@
   --page-x: clamp(20px, 4vw, 56px);
   --max: 1760px;
   --ease: cubic-bezier(.22, 1, .36, 1);
+  --ease-in: cubic-bezier(.4, 0, 1, 1);
+  --dur-fast: 150ms;
+  --dur: 220ms;
+  --dur-slow: 420ms;
   --noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
 }
 
@@ -115,7 +119,7 @@ kbd {
   inset: 0 0 auto;
   height: var(--header-h);
   border-bottom: 1px solid transparent;
-  transition: background .25s ease, border-color .25s ease, backdrop-filter .25s ease;
+  transition: border-color .25s ease;
 }
 .site-header::before {
   content: "";
@@ -126,12 +130,22 @@ kbd {
   transition: opacity .25s ease;
   pointer-events: none;
 }
-.site-header.is-solid {
+.site-header::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
   background: rgba(8, 9, 11, .84);
-  border-bottom-color: var(--line);
   backdrop-filter: blur(18px) saturate(1.15);
+  opacity: 0;
+  transition: opacity .25s ease;
+  pointer-events: none;
+}
+.site-header.is-solid {
+  border-bottom-color: var(--line);
 }
 .site-header.is-solid::before { opacity: 0; }
+.site-header.is-solid::after { opacity: 1; }
 
 .header-inner {
   display: flex;
@@ -173,7 +187,7 @@ kbd {
 }
 .primary-nav button:hover { color: var(--white); }
 .primary-nav button.is-active { color: var(--white); }
-.primary-nav button.is-active::after {
+.primary-nav button::after {
   content: "";
   position: absolute;
   right: 0;
@@ -182,6 +196,13 @@ kbd {
   height: 2px;
   border-radius: 2px;
   background: var(--accent);
+  opacity: 0;
+  transform: scaleX(.45);
+  transition: opacity .22s ease, transform .3s var(--ease);
+}
+.primary-nav button.is-active::after {
+  opacity: 1;
+  transform: scaleX(1);
 }
 .nav-count {
   display: grid;
@@ -275,6 +296,8 @@ kbd {
 }
 .main.has-hero { padding-top: 0; }
 
+.view-enter { animation: view-in .42s var(--ease); }
+
 .content {
   width: min(100%, var(--max));
   margin: 0 auto;
@@ -367,36 +390,42 @@ kbd {
   overflow: hidden;
   isolation: isolate;
 }
+.hero-media {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+}
+.hero-generated,
 .hero-image {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center 28%;
+}
+.hero-generated {
+  object-position: center;
   transform: scale(1.015);
+  animation: hero-art-in 1.2s var(--ease) both;
 }
-.hero-fallback {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(95% 130% at 78% -6%, var(--tint-c), transparent 60%),
-    linear-gradient(145deg, var(--tint-a), var(--tint-b) 72%);
+.hero-image {
+  z-index: 1;
+  object-position: center 28%;
+  opacity: 0;
+  transform: scale(1.035);
+  transition: opacity .8s ease, transform 1.1s var(--ease);
 }
-.hero-watermark {
-  position: absolute;
-  right: -2vw;
-  bottom: -4.2vw;
-  max-width: 118%;
-  overflow: hidden;
-  color: rgba(255, 255, 255, .045);
-  font-size: clamp(120px, 20vw, 360px);
-  font-weight: 700;
-  line-height: .78;
-  letter-spacing: -.075em;
-  white-space: nowrap;
-  user-select: none;
+.hero-image.is-loaded { opacity: 1; transform: scale(1.015); }
+.hero-content > * {
+  animation: hero-copy-in .7s var(--ease) both;
 }
+.hero-content > :nth-child(1) { animation-delay: .04s; }
+.hero-content > :nth-child(2) { animation-delay: .1s; }
+.hero-content > :nth-child(3) { animation-delay: .16s; }
+.hero-content > :nth-child(4) { animation-delay: .22s; }
+.hero-content > :nth-child(5) { animation-delay: .28s; }
+.hero-content > :nth-child(6) { animation-delay: .34s; }
 .hero::after {
   content: "";
   position: absolute;
@@ -700,6 +729,26 @@ kbd {
 /* -------------------------------------------------------------------------- */
 
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes view-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes hero-copy-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes hero-art-in {
+  from { opacity: 0; transform: scale(1.055); }
+  to { opacity: 1; transform: scale(1.015); }
+}
+@keyframes shelf-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes row-in {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 @keyframes shimmer {
   0% { background-position: 100% 0; }
   100% { background-position: -100% 0; }
