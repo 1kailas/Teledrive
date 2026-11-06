@@ -68,7 +68,21 @@ public partial class FolderModel : ObservableObject
     public Visibility SeriesBadgeVisibility => IsSeriesFolder ? Visibility.Visible : Visibility.Collapsed;
     public string SeriesBadgeText => IsSeasonFolder ? "SEASON" : (Name.Equals("stream", StringComparison.OrdinalIgnoreCase) ? "STREAM" : "SERIES");
 
-    public string FormattedItemCount => ItemCount == 1 ? "1 item" : $"{ItemCount} items";
+    public string FormattedItemCount
+    {
+        get
+        {
+            if (IsSeriesFolder && !IsSeasonFolder)
+            {
+                return ItemCount == 1 ? "1 season" : (ItemCount > 0 ? $"{ItemCount} seasons" : "Series");
+            }
+            if (IsSeasonFolder)
+            {
+                return ItemCount == 1 ? "1 episode" : (ItemCount > 0 ? $"{ItemCount} episodes" : "Season");
+            }
+            return ItemCount == 1 ? "1 item" : $"{ItemCount} items";
+        }
+    }
 
     public string StarGlyph => Starred ? "\uE735" : "\uE734";
 

@@ -114,8 +114,6 @@ public partial class FileModel : ObservableObject
         }
     }
 
-    public Visibility DurationVisibility => !string.IsNullOrEmpty(FormattedDuration) ? Visibility.Visible : Visibility.Collapsed;
-
     public string FormattedSize => FormatBytes(Size);
 
     public string EffectiveThumbnailUrl
@@ -172,11 +170,12 @@ public partial class FileModel : ObservableObject
     public string DimensionsSummary => HasDimensions ? $"{Width} × {Height} px" : "";
     public Visibility DimensionsVisibility => HasDimensions ? Visibility.Visible : Visibility.Collapsed;
 
-    public bool HasDuration => Duration.HasValue && Duration > 0;
+    public bool HasDuration => (Duration.HasValue && Duration > 0) || !string.IsNullOrEmpty(FormattedDuration);
     public string DurationSummary
     {
         get
         {
+            if (!string.IsNullOrEmpty(FormattedDuration)) return FormattedDuration;
             if (!HasDuration) return "";
             var ts = TimeSpan.FromSeconds(Duration!.Value);
             return ts.TotalHours >= 1 ? ts.ToString(@"hh\:mm\:ss") : ts.ToString(@"mm\:ss");

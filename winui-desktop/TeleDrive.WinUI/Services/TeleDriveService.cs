@@ -153,7 +153,9 @@ public class TeleDriveService
                         Starred = f.TryGetProperty("starred", out var st) && st.GetBoolean(),
                         CreatedAt = f.TryGetProperty("createdAt", out var ca) ? ca.GetInt64() : 0,
                         UpdatedAt = f.TryGetProperty("updatedAt", out var ua) ? ua.GetInt64() : 0,
-                        ItemCount = f.TryGetProperty("itemCount", out var ic) ? ic.GetInt32() : 0,
+                        ItemCount = f.TryGetProperty("itemCount", out var ic) ? ic.GetInt32()
+                            : (f.TryGetProperty("childCount", out var cc) ? cc.GetInt32()
+                            : (f.TryGetProperty("count", out var cnt) ? cnt.GetInt32() : 0)),
                     });
                 }
             }
@@ -906,7 +908,9 @@ public class TeleDriveService
                         Starred = f.TryGetProperty("starred", out var st) && st.GetBoolean(),
                         CreatedAt = f.TryGetProperty("createdAt", out var ca) ? ca.GetInt64() : 0,
                         UpdatedAt = f.TryGetProperty("updatedAt", out var ua) ? ua.GetInt64() : 0,
-                        ItemCount = f.TryGetProperty("itemCount", out var ic) ? ic.GetInt32() : 0,
+                        ItemCount = f.TryGetProperty("itemCount", out var ic) ? ic.GetInt32()
+                            : (f.TryGetProperty("childCount", out var cc) ? cc.GetInt32()
+                            : (f.TryGetProperty("count", out var cnt) ? cnt.GetInt32() : 0)),
                     });
                 }
             }
