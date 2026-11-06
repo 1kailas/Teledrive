@@ -1012,12 +1012,12 @@
                                         <DataTemplate x:DataType="models:TransferTaskModel">
                                             <Border
                                                 Margin="0,0,0,8"
-                                                Padding="14,12"
+                                                Padding="16,14"
                                                 Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                                 BorderThickness="1"
                                                 CornerRadius="8">
-                                                <Grid ColumnSpacing="16">
+                                                <Grid ColumnSpacing="16" VerticalAlignment="Center">
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="Auto" />
                                                         <ColumnDefinition Width="*" />
@@ -1033,45 +1033,64 @@
                                                         Glyph="{x:Bind StatusGlyph, Mode=OneWay}" />
 
                                                     <!-- File & Progress Info -->
-                                                    <StackPanel Grid.Column="1" Spacing="4">
-                                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Name}" />
-                                                            <Border
-                                                                Padding="6,1"
-                                                                CornerRadius="4"
-                                                                Background="{ThemeResource LayerFillColorDefaultBrush}">
+                                                    <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+                                                        <!-- Top line: Left has Name, Badge, Status; Right has SpeedSummary / Phase info -->
+                                                        <Grid ColumnSpacing="12">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+
+                                                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                                                 <TextBlock
-                                                                    FontSize="10"
-                                                                    FontWeight="Bold"
-                                                                    Foreground="{x:Bind TypeBadgeBrush, Mode=OneWay}"
-                                                                    Text="{x:Bind TypeBadge, Mode=OneWay}" />
-                                                            </Border>
-                                                            <TextBlock
-                                                                FontSize="11"
-                                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                                Text="{x:Bind DisplayStatus, Mode=OneWay}" />
-                                                        </StackPanel>
+                                                                    FontWeight="SemiBold"
+                                                                    FontSize="13"
+                                                                    Text="{x:Bind Name}"
+                                                                    TextTrimming="CharacterEllipsis"
+                                                                    MaxLines="1" />
+                                                                <Border
+                                                                    Padding="6,1.5"
+                                                                    CornerRadius="4"
+                                                                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                                                    VerticalAlignment="Center">
+                                                                    <TextBlock
+                                                                        FontSize="10"
+                                                                        FontWeight="Bold"
+                                                                        Foreground="{x:Bind TypeBadgeBrush, Mode=OneWay}"
+                                                                        Text="{x:Bind TypeBadge, Mode=OneWay}" />
+                                                                </Border>
+                                                                <TextBlock
+                                                                    FontSize="11"
+                                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                                    Text="{x:Bind DisplayStatus, Mode=OneWay}"
+                                                                    VerticalAlignment="Center" />
+                                                            </StackPanel>
 
-                                                        <ProgressBar
-                                                            Height="6"
-                                                            CornerRadius="3"
-                                                            Maximum="100"
-                                                            Foreground="{x:Bind TypeBadgeBrush, Mode=OneWay}"
-                                                            IsIndeterminate="{x:Bind IsProgressIndeterminate, Mode=OneWay}"
-                                                            Value="{x:Bind ProgressPercentage, Mode=OneWay}" />
-
-                                                        <Grid>
                                                             <TextBlock
-                                                                HorizontalAlignment="Left"
-                                                                FontSize="11"
-                                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                                Text="{x:Bind ProgressSummary, Mode=OneWay}" />
-                                                            <TextBlock
-                                                                HorizontalAlignment="Right"
+                                                                Grid.Column="1"
                                                                 FontSize="11"
                                                                 Foreground="{x:Bind StatusBrush, Mode=OneWay}"
-                                                                Text="{x:Bind SpeedSummary, Mode=OneWay}" />
+                                                                Text="{x:Bind SpeedSummary, Mode=OneWay}"
+                                                                VerticalAlignment="Center"
+                                                                TextAlignment="Right" />
                                                         </Grid>
+
+                                                        <!-- Full-width Progress Bar with visible track background -->
+                                                        <ProgressBar
+                                                            Height="4"
+                                                            CornerRadius="2"
+                                                            Background="{ThemeResource ControlStrokeColorDefaultBrush}"
+                                                            Foreground="{x:Bind TypeBadgeBrush, Mode=OneWay}"
+                                                            IsIndeterminate="{x:Bind IsProgressIndeterminate, Mode=OneWay}"
+                                                            Value="{x:Bind ProgressPercentage, Mode=OneWay}"
+                                                            Maximum="100" />
+
+                                                        <!-- Bottom Line: Progress Summary Detail -->
+                                                        <TextBlock
+                                                            FontSize="11"
+                                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                            Text="{x:Bind ProgressSummary, Mode=OneWay}"
+                                                            TextTrimming="CharacterEllipsis" />
                                                     </StackPanel>
 
                                                     <!-- Action Buttons -->
@@ -1118,21 +1137,73 @@
                             VerticalScrollBarVisibility="Auto"
                             Padding="0,0,12,0"
                             Visibility="Collapsed">
-                            <StackPanel Spacing="16">
-                                <!-- Header & Actions -->
-                                <Grid RowSpacing="12">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <StackPanel Spacing="4" VerticalAlignment="Center">
-                                        <TextBlock
-                                            FontSize="12"
-                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                            Text="Transfer activity with Telegram storage" />
-                                    </StackPanel>
+                            <StackPanel Spacing="12">
+                                <!-- Header Subtitle -->
+                                <TextBlock
+                                    FontSize="12"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Text="Transfer activity with Telegram storage" />
 
-                                    <StackPanel Grid.Row="1" HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8" Margin="0,0,16,0">
+                                <!-- Unified Toolbar: Filter Chips on Left, Actions on Right -->
+                                <Grid Margin="0,0,16,4" VerticalAlignment="Center">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Filter Chips -->
+                                    <Border
+                                        Grid.Column="0"
+                                        HorizontalAlignment="Left"
+                                        VerticalAlignment="Center"
+                                        Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Padding="2">
+                                        <StackPanel Orientation="Horizontal" Spacing="2">
+                                            <Button
+                                                x:Name="TransfersAllBtn"
+                                                Content="All Transfers"
+                                                Padding="12,5"
+                                                Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                                BorderThickness="0"
+                                                Foreground="Black"
+                                                Click="TransfersAllBtn_Click" />
+                                            <Button
+                                                x:Name="TransfersActiveBtn"
+                                                Content="Active"
+                                                Padding="12,5"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Click="TransfersActiveBtn_Click" />
+                                            <Button
+                                                x:Name="TransfersUploadsBtn"
+                                                Content="Uploads"
+                                                Padding="12,5"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Click="TransfersUploadsBtn_Click" />
+                                            <Button
+                                                x:Name="TransfersDownloadsBtn"
+                                                Content="Downloads"
+                                                Padding="12,5"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Click="TransfersDownloadsBtn_Click" />
+                                            <Button
+                                                x:Name="TransfersCompletedBtn"
+                                                Content="Completed"
+                                                Padding="12,5"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Click="TransfersCompletedBtn_Click" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Action Buttons -->
+                                    <StackPanel Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
                                         <Button Content="Clear Finished" Click="ClearFinishedDownloads_Click" />
                                         <Button Click="OpenDownloadsFolder_Click" AutomationProperties.Name="Open downloads folder" ToolTipService.ToolTip="Open downloads folder" ToolTipService.Placement="Bottom">
                                             <StackPanel Orientation="Horizontal" Spacing="6">
@@ -1142,54 +1213,6 @@
                                         </Button>
                                     </StackPanel>
                                 </Grid>
-
-                                <!-- Filter Chips -->
-                                <Border
-                                    HorizontalAlignment="Left"
-                                    Background="{ThemeResource LayerFillColorDefaultBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="6"
-                                    Padding="2">
-                                    <StackPanel Orientation="Horizontal" Spacing="2">
-                                        <Button
-                                            x:Name="TransfersAllBtn"
-                                            Content="All Transfers"
-                                            Padding="10,5"
-                                            Background="{ThemeResource AccentFillColorDefaultBrush}"
-                                            BorderThickness="0"
-                                            Foreground="Black"
-                                            Click="TransfersAllBtn_Click" />
-                                        <Button
-                                            x:Name="TransfersActiveBtn"
-                                            Content="Active"
-                                            Padding="10,5"
-                                            Background="Transparent"
-                                            BorderThickness="0"
-                                            Click="TransfersActiveBtn_Click" />
-                                        <Button
-                                            x:Name="TransfersUploadsBtn"
-                                            Content="Uploads"
-                                            Padding="10,5"
-                                            Background="Transparent"
-                                            BorderThickness="0"
-                                            Click="TransfersUploadsBtn_Click" />
-                                        <Button
-                                            x:Name="TransfersDownloadsBtn"
-                                            Content="Downloads"
-                                            Padding="10,5"
-                                            Background="Transparent"
-                                            BorderThickness="0"
-                                            Click="TransfersDownloadsBtn_Click" />
-                                        <Button
-                                            x:Name="TransfersCompletedBtn"
-                                            Content="Completed"
-                                            Padding="10,5"
-                                            Background="Transparent"
-                                            BorderThickness="0"
-                                            Click="TransfersCompletedBtn_Click" />
-                                    </StackPanel>
-                                </Border>
 
                                 <!-- Transfers Empty State -->
                                 <StackPanel
@@ -1221,12 +1244,12 @@
                                         <DataTemplate x:DataType="models:TransferTaskModel">
                                             <Border
                                                 Margin="0,0,0,8"
-                                                Padding="14,12"
+                                                Padding="16,14"
                                                 Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                                 BorderThickness="1"
                                                 CornerRadius="8">
-                                                <Grid ColumnSpacing="16">
+                                                <Grid ColumnSpacing="16" VerticalAlignment="Center">
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="Auto" />
                                                         <ColumnDefinition Width="*" />
@@ -1242,45 +1265,64 @@
                                                         Glyph="{x:Bind StatusGlyph, Mode=OneWay}" />
 
                                                     <!-- File & Progress Info -->
-                                                    <StackPanel Grid.Column="1" Spacing="4">
-                                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Name}" />
-                                                            <Border
-                                                                Padding="6,1"
-                                                                CornerRadius="4"
-                                                                Background="{ThemeResource LayerFillColorDefaultBrush}">
+                                                    <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+                                                        <!-- Top line: Left has Name, Badge, Status; Right has SpeedSummary / Phase info -->
+                                                        <Grid ColumnSpacing="12">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+
+                                                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                                                 <TextBlock
-                                                                    FontSize="10"
-                                                                    FontWeight="Bold"
-                                                                    Foreground="{x:Bind TypeBadgeBrush, Mode=OneWay}"
-                                                                    Text="{x:Bind TypeBadge, Mode=OneWay}" />
-                                                            </Border>
-                                                            <TextBlock
-                                                                FontSize="11"
-                                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                                Text="{x:Bind DisplayStatus, Mode=OneWay}" />
-                                                        </StackPanel>
+                                                                    FontWeight="SemiBold"
+                                                                    FontSize="13"
+                                                                    Text="{x:Bind Name}"
+                                                                    TextTrimming="CharacterEllipsis"
+                                                                    MaxLines="1" />
+                                                                <Border
+                                                                    Padding="6,1.5"
+                                                                    CornerRadius="4"
+                                                                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                                                    VerticalAlignment="Center">
+                                                                    <TextBlock
+                                                                        FontSize="10"
+                                                                        FontWeight="Bold"
+                                                                        Foreground="{x:Bind TypeBadgeBrush, Mode=OneWay}"
+                                                                        Text="{x:Bind TypeBadge, Mode=OneWay}" />
+                                                                </Border>
+                                                                <TextBlock
+                                                                    FontSize="11"
+                                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                                    Text="{x:Bind DisplayStatus, Mode=OneWay}"
+                                                                    VerticalAlignment="Center" />
+                                                            </StackPanel>
 
-                                                        <ProgressBar
-                                                            Height="6"
-                                                            CornerRadius="3"
-                                                            Maximum="100"
-                                                            Foreground="{x:Bind TypeBadgeBrush, Mode=OneWay}"
-                                                            IsIndeterminate="{x:Bind IsProgressIndeterminate, Mode=OneWay}"
-                                                            Value="{x:Bind ProgressPercentage, Mode=OneWay}" />
-
-                                                        <Grid>
                                                             <TextBlock
-                                                                HorizontalAlignment="Left"
-                                                                FontSize="11"
-                                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                                Text="{x:Bind ProgressSummary, Mode=OneWay}" />
-                                                            <TextBlock
-                                                                HorizontalAlignment="Right"
+                                                                Grid.Column="1"
                                                                 FontSize="11"
                                                                 Foreground="{x:Bind StatusBrush, Mode=OneWay}"
-                                                                Text="{x:Bind SpeedSummary, Mode=OneWay}" />
+                                                                Text="{x:Bind SpeedSummary, Mode=OneWay}"
+                                                                VerticalAlignment="Center"
+                                                                TextAlignment="Right" />
                                                         </Grid>
+
+                                                        <!-- Full-width Progress Bar with visible track background -->
+                                                        <ProgressBar
+                                                            Height="4"
+                                                            CornerRadius="2"
+                                                            Background="{ThemeResource ControlStrokeColorDefaultBrush}"
+                                                            Foreground="{x:Bind TypeBadgeBrush, Mode=OneWay}"
+                                                            IsIndeterminate="{x:Bind IsProgressIndeterminate, Mode=OneWay}"
+                                                            Value="{x:Bind ProgressPercentage, Mode=OneWay}"
+                                                            Maximum="100" />
+
+                                                        <!-- Bottom Line: Progress Summary Detail -->
+                                                        <TextBlock
+                                                            FontSize="11"
+                                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                            Text="{x:Bind ProgressSummary, Mode=OneWay}"
+                                                            TextTrimming="CharacterEllipsis" />
                                                     </StackPanel>
 
                                                     <!-- Action Buttons -->
