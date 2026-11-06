@@ -542,7 +542,7 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
     // or if the browser player explicitly requests a web-compatible stream
     if (!streamBody || (!isDownload && isCompatReq)) {
       isFallback = true;
-      const cinemaUrl = 'https://vjs.zencdn.net/v/oceans.mp4';
+      const cinemaUrl = 'https://archive.org/download/Tears-of-Steel/tears_of_steel_720p.mp4';
       const cHeaders: Record<string, string> = {};
       if (range) cHeaders.Range = range;
       try {

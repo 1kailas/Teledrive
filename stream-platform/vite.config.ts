@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from 'vite';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -154,6 +155,11 @@ function localStreamDevPlugin(): Plugin {
     ];
     for (const dir of searchDirs) {
       if (!fs.existsSync(dir)) continue;
+
+      // Match MP4 counterpart if available
+      const mp4ByName = path.join(dir, item.name.replace(/\.[^.]+$/, '.mp4'));
+      if (fs.existsSync(mp4ByName)) return mp4ByName;
+
       const directByName = path.join(dir, item.name);
       if (fs.existsSync(directByName)) return directByName;
       const directById = path.join(dir, item.id);
@@ -227,57 +233,85 @@ function localStreamDevPlugin(): Plugin {
           }
 
           const isDownload = parsedUrl.searchParams.get('download') === '1';
-          const isCompat = parsedUrl.searchParams.get('compat') === '1' || parsedUrl.searchParams.get('stream') === 'web';
-          const isMkv = item.name.toLowerCase().endsWith('.mkv');
 
-          // For in-browser streaming of MKV files or when compat mode is requested,
-          // stream a high-compatibility H.264 / AAC web cinema stream so Chrome / Firefox / Safari can decode immediately
-          if (!isDownload && (isCompat || isMkv)) {
-            try {
-              const cinemaUrl = 'https://vjs.zencdn.net/v/oceans.mp4';
-              const forwardHeaders: Record<string, string> = {};
-              if (req.headers.range) forwardHeaders.range = req.headers.range;
-              void fetch(cinemaUrl, { headers: forwardHeaders, redirect: 'follow' }).then((remoteRes) => {
-                if ([200, 206].includes(remoteRes.status) && remoteRes.body) {
-                  const headHeaders: Record<string, string> = {
-                    'Content-Type': 'video/mp4',
-                    'Accept-Ranges': 'bytes',
-                    'Access-Control-Allow-Origin': '*',
-                    'Cache-Control': 'no-cache',
-                    'X-Content-Type-Options': 'nosniff',
-                  };
-                  const cr = remoteRes.headers.get('content-range');
-                  if (cr) headHeaders['Content-Range'] = cr;
-                  const cl = remoteRes.headers.get('content-length');
-                  if (cl) headHeaders['Content-Length'] = cl;
-                  const etag = remoteRes.headers.get('etag');
-                  if (etag) headHeaders['ETag'] = etag;
-
-                  res.writeHead(remoteRes.status, headHeaders);
-                  Readable.fromWeb(remoteRes.body as any).pipe(res);
-                  return;
-                }
-                fallbackLocal();
-              }).catch(() => {
-                fallbackLocal();
-              });
-              return;
-            } catch {
-              // fallback below
-            }
+          // If downloading, ALWAYS send the full original file as an attachment
+          if (isDownload) {
+            streamLocalStaticFile(resolvedPath, item.name, true);
+            return;
           }
 
-          function fallbackLocal() {
-            const stat = fs.statSync(resolvedPath!);
+          // Check if an already converted MP4 counterpart exists and has completed faststart (moov atom)
+          const mp4Candidate = resolvedPath.replace(/\.mkv$/i, '.mp4');
+          if (mp4Candidate !== resolvedPath && fs.existsSync(mp4Candidate)) {
+            try {
+              const fd = fs.openSync(mp4Candidate, 'r');
+              const buf = Buffer.alloc(32768);
+              const readBytes = fs.readSync(fd, buf, 0, 32768, 0);
+              fs.closeSync(fd);
+              if (readBytes > 100 && buf.includes('moov')) {
+                // Completed faststart MP4 available! Stream directly with HTTP 206 Range requests
+                streamLocalStaticFile(mp4Candidate, item.name.replace(/\.mkv$/i, '.mp4'), false, 'video/mp4');
+                return;
+              }
+            } catch {}
+          }
+
+          // If file is already MP4 or WebM (browser-native)
+          const lowerName = resolvedPath.toLowerCase();
+          if (lowerName.endsWith('.mp4') || lowerName.endsWith('.webm')) {
+            streamLocalStaticFile(resolvedPath, item.name, false, lowerName.endsWith('.mp4') ? 'video/mp4' : 'video/webm');
+            return;
+          }
+
+          // For MKV files with multi-channel EAC3 / DTS audio:
+          // Stream the actual movie on-the-fly using ffmpeg transmuxing (copying video, converting audio to AAC)
+          const ffmpegHome = path.join(process.env.HOME || '/home/Kailasnath', '.local/bin/ffmpeg');
+          const ffmpegBin = fs.existsSync(ffmpegHome) ? ffmpegHome : 'ffmpeg';
+
+          if (lowerName.endsWith('.mkv')) {
+            const timeParam = parseFloat(parsedUrl.searchParams.get('t') ?? '0') || 0;
+            const args = [
+              '-hide_banner',
+              '-loglevel', 'error',
+              ...(timeParam > 0 ? ['-ss', String(timeParam)] : []),
+              '-i', resolvedPath,
+              '-map', '0:v:0',
+              '-map', '0:a:0',
+              '-c:v', 'copy',
+              '-c:a', 'aac',
+              '-b:a', '192k',
+              '-f', 'mp4',
+              '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+              'pipe:1',
+            ];
+
+            res.writeHead(200, {
+              'Content-Type': 'video/mp4',
+              'Cache-Control': 'no-cache, no-store',
+              'Access-Control-Allow-Origin': '*',
+              'X-Content-Type-Options': 'nosniff',
+            });
+
+            const proc = spawn(ffmpegBin, args, { stdio: ['ignore', 'pipe', 'ignore'] });
+            proc.stdout.pipe(res);
+
+            req.on('close', () => {
+              proc.kill('SIGKILL');
+            });
+            return;
+          }
+
+          function streamLocalStaticFile(filePath: string, fileName: string, asDownload = false, customMime?: string) {
+            const stat = fs.statSync(filePath);
             const fileSize = stat.size;
             const range = req.headers.range;
-            const mimeType = isDownload
-              ? (item.mimeType || 'application/octet-stream')
-              : (item.mimeType || 'video/mp4');
+            const mimeType = asDownload
+              ? 'application/octet-stream'
+              : (customMime || item.mimeType || 'video/mp4');
 
             const dispositionHeaders: Record<string, string> = {};
-            if (isDownload) {
-              dispositionHeaders['Content-Disposition'] = `attachment; filename="${encodeURIComponent(item.name)}"; filename*=UTF-8''${encodeURIComponent(item.name)}`;
+            if (asDownload) {
+              dispositionHeaders['Content-Disposition'] = `attachment; filename="${encodeURIComponent(fileName)}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
             }
 
             if (range) {
@@ -312,7 +346,7 @@ function localStreamDevPlugin(): Plugin {
                 'X-Content-Type-Options': 'nosniff',
                 ...dispositionHeaders,
               });
-              fs.createReadStream(resolvedPath!, { start, end }).pipe(res);
+              fs.createReadStream(filePath, { start, end }).pipe(res);
             } else {
               res.writeHead(200, {
                 'Content-Length': String(fileSize),
@@ -322,11 +356,11 @@ function localStreamDevPlugin(): Plugin {
                 'X-Content-Type-Options': 'nosniff',
                 ...dispositionHeaders,
               });
-              fs.createReadStream(resolvedPath!).pipe(res);
+              fs.createReadStream(filePath).pipe(res);
             }
           }
 
-          fallbackLocal();
+          streamLocalStaticFile(resolvedPath, item.name, false, item.mimeType || 'video/mp4');
           return;
         }
 

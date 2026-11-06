@@ -665,7 +665,7 @@ export default function App() {
         <div ref={modalRef} className={`video-modal ${isFullscreen ? 'fullscreen' : ''}`} role="dialog" aria-modal="true" aria-label={`Watching ${titleOf(video)}`}>
           <div className="modal-header">
             <div className="modal-title-block">
-              <span className="modal-tag">NOW PLAYING · {formatOf(video)} {streamMode === 'compat' ? '· WEB CINEMA' : ''} · {sizeOf(video.size)}</span>
+              <span className="modal-tag">NOW PLAYING · {formatOf(video)} · {sizeOf(video.size)}</span>
               <strong title={titleOf(video)}>{titleOf(video)}</strong>
             </div>
             <div className="modal-actions">
@@ -850,14 +850,14 @@ export default function App() {
           <div className="video-player-container">
             <video
               ref={videoRef}
-              key={`${video.id}-${streamMode}`}
+              key={video.id}
               poster={artwork(video)}
               controls
               autoPlay
               playsInline
               preload="metadata"
               crossOrigin="anonymous"
-              src={`/api/media/${video.id}${streamMode === 'compat' ? '?compat=1' : ''}`}
+              src={`/api/media/${video.id}`}
               onLoadedMetadata={(event) => {
                 inspectMediaTracks();
                 const position = getPositions()[video.id];
@@ -874,12 +874,14 @@ export default function App() {
               }}
               onEnded={() => { savePosition(video.id, null); setPositions(getPositions()); }}
               onError={() => {
-                if (streamMode === 'direct') {
-                  setStreamMode('compat');
-                } else {
-                  setPlaybackError('In-Browser Codec Restriction: This movie could not be decoded directly by your web browser.');
-                }
+                setPlaybackError('Playback error: Unable to stream media. Check your connection or external media player.');
               }}>
+              <track
+                kind="subtitles"
+                src="/subtitles/inception.vtt"
+                srcLang="en"
+                label="English (Original)"
+              />
               {customSubtitleUrl && (
                 <track kind="subtitles" src={customSubtitleUrl} label="Custom Subtitles" default />
               )}
