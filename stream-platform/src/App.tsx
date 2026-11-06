@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, ArrowDownRight, AudioLines, Bookmark, Check, CheckCircle2, ChevronRight,
-  Clapperboard, Copy, Disc3, Download, ExternalLink, Heart, Home, ListMusic, Maximize, Minimize,
+  Clapperboard, Copy, Disc3, Download, ExternalLink, Heart, HelpCircle, Home, ListMusic, Maximize, Minimize,
   Music2, Pause, PictureInPicture2, Play, RefreshCw,
   Search, Share2, SkipBack, SkipForward, SlidersHorizontal, Subtitles,
   Volume2, VolumeX, X,
@@ -116,6 +116,9 @@ export default function App() {
   const [customSubtitleUrl, setCustomSubtitleUrl] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [aspectRatio, setAspectRatio] = useState<'fit' | '16-9' | '21-9' | 'fill'>('fit');
+  const [showHelp, setShowHelp] = useState(false);
+  const [subOffset, setSubOffset] = useState(0);
 
   const copyStreamUrl = (id: string) => {
     const fullUrl = `${window.location.origin}/api/media/${id}`;
@@ -139,6 +142,73 @@ export default function App() {
       void videoRef.current.play().catch(() => {});
     }
   };
+
+  useEffect(() => {
+    if (!video) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
+      const v = videoRef.current;
+      if (!v) return;
+
+      switch (e.key) {
+        case ' ':
+        case 'k':
+        case 'K':
+          e.preventDefault();
+          if (v.paused) v.play().catch(() => {});
+          else v.pause();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          v.currentTime = Math.max(0, v.currentTime - 5);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          v.currentTime = Math.min(v.duration || 8884, v.currentTime + 5);
+          break;
+        case 'j':
+        case 'J':
+          e.preventDefault();
+          v.currentTime = Math.max(0, v.currentTime - 10);
+          break;
+        case 'l':
+        case 'L':
+          e.preventDefault();
+          v.currentTime = Math.min(v.duration || 8884, v.currentTime + 10);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          v.volume = Math.min(1, v.volume + 0.05);
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          v.volume = Math.max(0, v.volume - 0.05);
+          break;
+        case 'm':
+        case 'M':
+          e.preventDefault();
+          v.muted = !v.muted;
+          break;
+        case 'f':
+        case 'F':
+          e.preventDefault();
+          toggleFullscreen();
+          break;
+        case 'p':
+        case 'P':
+          e.preventDefault();
+          togglePiP();
+          break;
+        case '?':
+          e.preventDefault();
+          setShowHelp((h) => !h);
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [video]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -822,10 +892,39 @@ export default function App() {
                           Add Subtitle (.srt / .vtt)
                         </button>
                       </div>
+
+                      {/* Subtitle Sync Offset */}
+                      <div className="sub-sync-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '11px', color: '#c7d6cb' }}>
+                        <span>Sync Offset</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <button
+                            className="player-tool-btn"
+                            style={{ height: '24px', padding: '0 8px', fontSize: '10px' }}
+                            onClick={() => setSubOffset((o) => o - 0.5)}>
+                            -0.5s
+                          </button>
+                          <span style={{ fontFamily: 'monospace', minWidth: '32px', textAlign: 'center' }}>{subOffset > 0 ? `+${subOffset}` : subOffset}s</span>
+                          <button
+                            className="player-tool-btn"
+                            style={{ height: '24px', padding: '0 8px', fontSize: '10px' }}
+                            onClick={() => setSubOffset((o) => o + 0.5)}>
+                            +0.5s
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
               </div>
+
+              {/* Aspect Ratio Switcher */}
+              <button
+                className="player-tool-btn"
+                onClick={() => setAspectRatio((r) => r === 'fit' ? '16-9' : r === '16-9' ? '21-9' : r === '21-9' ? 'fill' : 'fit')}
+                title="Aspect Ratio (Fit / 16:9 / 21:9 Cinema Scope / Fill)"
+                aria-label="Aspect Ratio">
+                <span>{aspectRatio.toUpperCase()}</span>
+              </button>
 
               {/* VLC Stream Link */}
               <button
@@ -840,6 +939,15 @@ export default function App() {
               {/* Picture in Picture */}
               <button className="player-tool-btn" onClick={togglePiP} title="Picture in Picture" aria-label="Picture in Picture">
                 <PictureInPicture2 size={15} />
+              </button>
+
+              {/* Keyboard Shortcuts */}
+              <button
+                className="player-tool-btn"
+                onClick={() => setShowHelp((h) => !h)}
+                title="Keyboard Shortcuts (?)"
+                aria-label="Shortcuts">
+                <HelpCircle size={15} />
               </button>
 
               {/* Fullscreen */}
@@ -858,6 +966,7 @@ export default function App() {
             <video
               ref={videoRef}
               key={video.id}
+              className={`aspect-${aspectRatio}`}
               poster={artwork(video)}
               controls
               autoPlay
@@ -953,6 +1062,27 @@ export default function App() {
           </div>
         </div>
       </div>}
+
+      {showHelp && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setShowHelp(false)}>
+          <div className="audio-menu-popover" style={{ width: 'min(440px, 92vw)', padding: '20px', borderRadius: '16px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="popover-head" style={{ marginBottom: '16px' }}>
+              <strong style={{ fontSize: '15px' }}>Keyboard Shortcuts</strong>
+              <button className="icon-button close-pop" onClick={() => setShowHelp(false)}><X size={16} /></button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px', color: '#c7d6cb' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px' }}><span>Play / Pause</span><kbd style={{ fontFamily: 'monospace', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', color: '#f5f6ed' }}>Space / K</kbd></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px' }}><span>Seek -5s / +5s</span><kbd style={{ fontFamily: 'monospace', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', color: '#f5f6ed' }}>← / →</kbd></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px' }}><span>Skip -10s / +10s</span><kbd style={{ fontFamily: 'monospace', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', color: '#f5f6ed' }}>J / L</kbd></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px' }}><span>Volume</span><kbd style={{ fontFamily: 'monospace', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', color: '#f5f6ed' }}>↑ / ↓</kbd></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px' }}><span>Mute</span><kbd style={{ fontFamily: 'monospace', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', color: '#f5f6ed' }}>M</kbd></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px' }}><span>Fullscreen</span><kbd style={{ fontFamily: 'monospace', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', color: '#f5f6ed' }}>F</kbd></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px' }}><span>Picture in Picture</span><kbd style={{ fontFamily: 'monospace', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', color: '#f5f6ed' }}>P</kbd></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px' }}><span>Shortcuts Guide</span><kbd style={{ fontFamily: 'monospace', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', color: '#f5f6ed' }}>?</kbd></div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mobile-nav" aria-label="Mobile navigation">{nav.map(({ id, icon: Icon, label }) =>
         <button key={id} className={view === id ? 'current' : ''} onClick={() => setView(id)}><Icon size={20} /><span>{label}</span></button>)}</div>

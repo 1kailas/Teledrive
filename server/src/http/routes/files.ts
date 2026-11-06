@@ -12,6 +12,7 @@ import { toFileDTO } from '../dto.js';
 import { badRequest, conflict, notFound } from '../errors.js';
 import { parseRangeHeader, rangeToSegments, createBlobStream } from '../../services/streaming.js';
 import { applyMediaResult, extractMedia } from '../../services/media.js';
+import { createTransmuxStream } from '../../services/mediaEngine.js';
 import { thumbnailPath } from '../../db/index.js';
 import { categorize, fileExtension, sanitizeFileName, uniqueName } from '../../util.js';
 import { derefBlob, updateContentHash } from '../../services/blobs.js';
@@ -232,6 +233,48 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
     const file = getFile(db, id);
     if (!file || file.trashed_at) throw notFound('file not found');
     return sendFileContent(ctx, req, reply, file, { download: q['download'] === '1' });
+  });
+
+  app.get('/api/files/:id/stream', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const query = (req.query ?? {}) as { direct?: string; ss?: string };
+    const file = getFile(db, id);
+    if (!file || file.trashed_at) throw notFound('file not found');
+    if (!['video', 'audio'].includes(file.category)) throw badRequest('media streaming only supports video and audio');
+
+    const parts = partsByBlob(db, file.blob_id!);
+    if (parts.some((p) => p.status !== 'stored')) throw conflict('media not ready');
+
+    const ext = (fileExtension(file.name) || '').toLowerCase();
+    const isDirectNative = query.direct === '1' || (!['mkv', 'avi', 'flv', 'ts', 'vob'].includes(ext) && file.mime_type === 'video/mp4');
+
+    if (isDirectNative || !ctx.tools.ffmpeg || parts.length === 0) {
+      return sendFileContent(ctx, req, reply, file, { download: false });
+    }
+
+    try {
+      const part0 = parts[0]!;
+      const localPath = await ctx.cache.ensureLocal(part0);
+      const startTime = parseFloat(query.ss ?? '0') || 0;
+      const transmux = createTransmuxStream(localPath, startTime, ctx.tools);
+
+      if (!transmux) {
+        return sendFileContent(ctx, req, reply, file, { download: false });
+      }
+
+      reply.header('Content-Type', 'video/mp4');
+      reply.header('Cache-Control', 'no-cache');
+      reply.header('X-Content-Type-Options', 'nosniff');
+      reply.header('Access-Control-Allow-Origin', '*');
+
+      reply.raw.on('close', () => {
+        try { transmux.proc.kill('SIGKILL'); } catch {}
+      });
+
+      return reply.send(transmux.stream);
+    } catch {
+      return sendFileContent(ctx, req, reply, file, { download: false });
+    }
   });
 
   app.get('/api/files/:id/thumbnail', async (req, reply) => {

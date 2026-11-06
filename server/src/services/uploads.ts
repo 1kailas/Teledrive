@@ -19,6 +19,8 @@ import type { FileRow, PartRow, UploadDTO, UploadPartDTO, UploadRow } from '../t
 import { categorize, fileExtension, sanitizeFileName, uniqueName } from '../util.js';
 import { badRequest, conflict, insufficientStorage, notFound, serviceUnavailable } from '../http/errors.js';
 import { updateContentHash } from './blobs.js';
+import { syncTeleDriveToCatalog } from './mediaEngine.js';
+import { REPO_ROOT } from '../config.js';
 
 export interface PartPlan {
   idx: number;
@@ -370,7 +372,17 @@ export function maybeFinalizeBlob(ctx: AppContext, blobId: string): boolean {
     }
   })();
   logger.info({ blobId, fileId: file?.id }, 'upload finalized');
-  if (file) bus.emit('file.updated', { fileId: file.id, status: 'ready' });
+  if (file) {
+    bus.emit('file.updated', { fileId: file.id, status: 'ready' });
+    if (['video', 'audio'].includes(file.category)) {
+      try {
+        const catPath = path.resolve(REPO_ROOT, 'stream-platform/public/catalog.json');
+        syncTeleDriveToCatalog(db, catPath);
+      } catch (e) {
+        logger.warn({ err: (e as Error).message }, 'catalog sync bypassed');
+      }
+    }
+  }
   bus.emit('storage.changed', {});
   return true;
 }

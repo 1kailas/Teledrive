@@ -65,6 +65,9 @@ async function main() {
   console.log(`Remaining parts to upload: ${remainingIndices.length}`);
   const fd = fs.openSync(moviePath, 'r');
 
+  const botApiUrl = (process.env.TELEGRAM_BOT_API_URL || 'http://127.0.0.1:8081').replace(/\/+$/, '');
+  console.log(`Using Bot API URL: ${botApiUrl}`);
+
   async function uploadPart(partIndex: number, bot: BotInfo, attempt = 1): Promise<UploadedPart> {
     const offset = partIndex * PART_SIZE;
     const currentPartSize = Math.min(PART_SIZE, fileSize - offset);
@@ -76,7 +79,7 @@ async function main() {
     formData.append('document', new Blob([buffer]), `inception_part_${partIndex}.mp4`);
 
     try {
-      const res = await fetch(`https://api.telegram.org/bot${bot.token}/sendDocument`, {
+      const res = await fetch(`${botApiUrl}/bot${bot.token}/sendDocument`, {
         method: 'POST',
         body: formData,
       });

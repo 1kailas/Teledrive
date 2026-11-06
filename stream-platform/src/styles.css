@@ -518,7 +518,11 @@ input[type=range]::-moz-range-thumb { width: 11px; height: 11px; background: var
 .modal-header .modal-title-block { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
 .modal-header span, .modal-bottom span { color: var(--accent); font-size: 10px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
 .modal-header strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--serif); font-size: 18px; font-weight: 600; color: #f5f6ed; }
-.video-modal video { display: block; width: 100%; max-height: min(70vh, 710px); background: #050807; }
+.video-modal video { display: block; width: 100%; max-height: min(70vh, 710px); background: #050807; transition: aspect-ratio 0.2s ease, object-fit 0.2s ease; }
+.video-modal video.aspect-fit { object-fit: contain; }
+.video-modal video.aspect-16-9 { aspect-ratio: 16/9; object-fit: cover; }
+.video-modal video.aspect-21-9 { aspect-ratio: 21/9; object-fit: cover; }
+.video-modal video.aspect-fill { object-fit: fill; }
 
 /* Enhanced Playback Error / Codec Restriction Card */
 .video-error-card {

@@ -64,6 +64,8 @@ interface FfprobeResult {
     bit_rate?: string;
     avg_frame_rate?: string;
     duration?: string;
+    sample_rate?: string;
+    channels?: number;
   }[];
 }
 
@@ -270,7 +272,8 @@ async function extractAudio(
 ): Promise<MediaResult> {
   if (!tools.ffprobe || !tools.ffmpeg) return extractWithMusicMetadata(dataDir, file, partPath, thumbSize);
   const probe = await ffprobeJson(tools.ffprobe, partPath);
-  const duration = parseFloat(probe.format?.duration ?? '0') || undefined;
+  const audio = probe.streams?.find((s) => s.codec_type === 'audio');
+  const duration = parseFloat(probe.format?.duration ?? audio?.duration ?? '0') || undefined;
   const tags = probe.format?.tags;
   const metadata: Record<string, unknown> = {
     title: firstTag(tags, ['title']),
@@ -279,6 +282,8 @@ async function extractAudio(
     genre: firstTag(tags, ['genre']),
     year: firstTag(tags, ['date', 'year']),
     bitrate: probe.format?.bit_rate ? Number(probe.format.bit_rate) : undefined,
+    sampleRate: audio?.sample_rate ? Number(audio.sample_rate) : undefined,
+    channels: audio?.channels,
   };
   Object.keys(metadata).forEach((k) => metadata[k] === undefined && delete metadata[k]);
   const result: MediaResult = { hasThumbnail: false, duration, metadata };

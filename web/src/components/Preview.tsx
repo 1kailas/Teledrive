@@ -11,6 +11,7 @@ import { fmtBytes, isTextEditable, cmLanguageExt, CATEGORY_COLORS, categoryIcon 
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { Thumb, Spinner } from './ui';
+import { CinemaPlayer } from './CinemaPlayer';
 
 const CodeMirror = lazy(() => import('@uiw/react-codemirror'));
 const langs = {
@@ -134,9 +135,10 @@ function PreviewBody({ file, contentUrl, publicMode, zoomCtl }: {
     case 'image': return <ImageView file={file} contentUrl={contentUrl} zoomCtl={zoomCtl} />;
     case 'video':
       return (
-        <div className="h-full flex items-center justify-center p-6">
-          <video src={contentUrl} controls autoPlay className="max-w-full max-h-full rounded-xl shadow-2xl"
-            poster={file.thumbnailUrl ?? undefined} />
+        <div className="h-full w-full flex items-center justify-center p-2 sm:p-4">
+          <div className="w-full h-full max-w-6xl max-h-[85vh] rounded-2xl overflow-hidden shadow-2xl border border-white/10">
+            <CinemaPlayer file={file} contentUrl={contentUrl} poster={file.thumbnailUrl ?? undefined} />
+          </div>
         </div>
       );
     case 'audio':
