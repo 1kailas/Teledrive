@@ -1,3 +1,4 @@
+import path from 'node:path';
 import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -7,10 +8,12 @@ import {
   childFolderNames,
   findChildFolder,
   folderTree,
+  generateTemplateFolders,
   getFolder,
   insertFolder,
   isDescendant,
 } from '../../db/repos/folders.js';
+import { syncTeleDriveToCatalog } from '../../services/mediaEngine.js';
 import { toFolderDTO } from '../dto.js';
 import { badRequest, conflict, notFound } from '../errors.js';
 import { sanitizeFileName, uniqueName } from '../../util.js';
@@ -39,6 +42,16 @@ export function registerFolderRoutes(app: FastifyInstance, ctx: AppContext): voi
       ctx.bus.emit('storage.changed', {});
     }
     return { folder: toFolderDTO(db, folder) };
+  });
+
+  app.post('/api/folders/templates', async () => {
+    const result = generateTemplateFolders(db);
+    ctx.bus.emit('storage.changed', {});
+    try {
+      const catPath = path.resolve(process.cwd(), 'stream-platform/public/catalog.json');
+      syncTeleDriveToCatalog(db, catPath);
+    } catch {}
+    return { ok: true, ...result };
   });
 
   app.post('/api/folders', async (req) => {

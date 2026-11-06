@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { prep, type Db } from '../index.js';
 import type { FolderRow } from '../../types.js';
 
@@ -127,4 +128,70 @@ export function findChildFolder(db: Db, parentId: string | null, name: string): 
       'SELECT * FROM folders WHERE parent_id IS ? AND name = ? COLLATE NOCASE AND trashed_at IS NULL',
     )
     .get(parentId, name) as FolderRow | undefined;
+}
+
+/** Ensure a child folder exists under parentId, creating or untrashing it if necessary. */
+export function ensureFolder(db: Db, parentId: string | null, name: string, color?: string | null): FolderRow {
+  let existing = findChildFolder(db, parentId, name);
+  if (!existing || existing.trashed_at) {
+    existing = insertFolder(db, { id: crypto.randomUUID(), parentId, name, color });
+  } else if (color && existing.color !== color) {
+    db.prepare('UPDATE folders SET color = ?, updated_at = ? WHERE id = ?').run(color, Date.now(), existing.id);
+    existing.color = color;
+  }
+  return existing;
+}
+
+/** Generates standard TeleDrive template folders including the Videos/stream TV series hierarchy. */
+export function generateTemplateFolders(db: Db): {
+  created: { id: string; name: string; path: string }[];
+} {
+  const created: { id: string; name: string; path: string }[] = [];
+
+  // 1. Videos & Streaming Hierarchy (Videos/stream/<Series>/<Season>)
+  const videos = ensureFolder(db, null, 'Videos', '#ef4444');
+  created.push({ id: videos.id, name: 'Videos', path: '/Videos' });
+
+  const stream = ensureFolder(db, videos.id, 'stream', '#10b981');
+  created.push({ id: stream.id, name: 'stream', path: '/Videos/stream' });
+
+  // Cosmos Series
+  const cosmos = ensureFolder(db, stream.id, 'Cosmos: Possible Worlds', '#3b82f6');
+  created.push({ id: cosmos.id, name: 'Cosmos: Possible Worlds', path: '/Videos/stream/Cosmos: Possible Worlds' });
+  const cosmosS1 = ensureFolder(db, cosmos.id, 'Season 1');
+  created.push({ id: cosmosS1.id, name: 'Season 1', path: '/Videos/stream/Cosmos: Possible Worlds/Season 1' });
+  const cosmosS2 = ensureFolder(db, cosmos.id, 'Season 2');
+  created.push({ id: cosmosS2.id, name: 'Season 2', path: '/Videos/stream/Cosmos: Possible Worlds/Season 2' });
+
+  // Example TV Series Template
+  const exampleSeries = ensureFolder(db, stream.id, 'Example TV Series', '#8b5cf6');
+  created.push({ id: exampleSeries.id, name: 'Example TV Series', path: '/Videos/stream/Example TV Series' });
+  const exampleS1 = ensureFolder(db, exampleSeries.id, 'Season 1');
+  created.push({ id: exampleS1.id, name: 'Season 1', path: '/Videos/stream/Example TV Series/Season 1' });
+  const exampleS2 = ensureFolder(db, exampleSeries.id, 'Season 2');
+  created.push({ id: exampleS2.id, name: 'Season 2', path: '/Videos/stream/Example TV Series/Season 2' });
+
+  // 2. Photos & Media Templates
+  const photos = ensureFolder(db, null, 'Photos', '#f59e0b');
+  created.push({ id: photos.id, name: 'Photos', path: '/Photos' });
+  const wallpapers = ensureFolder(db, photos.id, 'Wallpapers');
+  created.push({ id: wallpapers.id, name: 'Wallpapers', path: '/Photos/Wallpapers' });
+
+  // 3. Audio & Music Templates
+  const audio = ensureFolder(db, null, 'Audio', '#06b6d4');
+  created.push({ id: audio.id, name: 'Audio', path: '/Audio' });
+  const soundtracks = ensureFolder(db, audio.id, 'Soundtracks');
+  created.push({ id: soundtracks.id, name: 'Soundtracks', path: '/Audio/Soundtracks' });
+  const podcasts = ensureFolder(db, audio.id, 'Podcasts');
+  created.push({ id: podcasts.id, name: 'Podcasts', path: '/Audio/Podcasts' });
+
+  // 4. Documents Templates
+  const docs = ensureFolder(db, null, 'Documents', '#6366f1');
+  created.push({ id: docs.id, name: 'Documents', path: '/Documents' });
+  const work = ensureFolder(db, docs.id, 'Work');
+  created.push({ id: work.id, name: 'Work', path: '/Documents/Work' });
+  const personal = ensureFolder(db, docs.id, 'Personal');
+  created.push({ id: personal.id, name: 'Personal', path: '/Documents/Personal' });
+
+  return { created };
 }

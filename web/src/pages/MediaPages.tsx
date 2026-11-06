@@ -3,7 +3,7 @@ import { api, type DriveResponse, type FolderDTO } from '../api';
 import { Explorer } from '../components/Explorer';
 import { fmtBytes } from '../utils';
 import { Image, Video, FileText, Music, Sparkles, FolderPlus } from 'lucide-react';
-import { useDialog } from '../store';
+import { toast, useDialog } from '../store';
 
 interface MediaViewProps {
   title: string;
@@ -59,6 +59,26 @@ function MediaView({ title, category, icon: Icon, subtitle }: MediaViewProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          {category === 'videos' && (
+            <button
+              onClick={async () => {
+                try {
+                  await api.post('/api/folders/templates');
+                  toast.success('Generated template folders: Videos/stream/Series/Seasons');
+                  refresh();
+                  void qc.invalidateQueries({ queryKey: ['folder-tree'] });
+                } catch {
+                  toast.error('Failed to generate template folders');
+                }
+              }}
+              className="btn !py-1.5 !px-3 !text-xs flex items-center gap-1.5 cursor-pointer text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20"
+              title="Generate template folder structure for streaming website (Videos/stream/Series/Seasons)"
+            >
+              <Sparkles size={14} />
+              <span>Generate Stream Templates</span>
+            </button>
+          )}
+
           {category === 'videos' && (
             <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 text-xs font-medium">
               <Sparkles size={13} />

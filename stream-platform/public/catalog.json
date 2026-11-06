@@ -947,8 +947,8 @@
       "id": "4edc5b97-781a-4b17-921a-c7097f6d1a7d",
       "name": "Cosmos: Possible Worlds",
       "folderName": "Cosmos: Possible Worlds",
-      "description": "TV Series · 1 Season · 2 Episodes",
-      "seasonsCount": 1,
+      "description": "TV Series · 2 Seasons · 2 Episodes",
+      "seasonsCount": 2,
       "episodesCount": 2,
       "seasons": [
         {
@@ -963,15 +963,10 @@
               "seriesName": "Cosmos: Possible Worlds",
               "episodeTitle": "Cosmos Ladder to the Stars",
               "name": "Cosmos.S01E01.Ladder.to.the.Stars.mp4",
-              "category": "video",
-              "mimeType": "video/mp4",
-              "size": 1734087,
               "duration": null,
+              "size": 1734087,
+              "mimeType": "video/mp4",
               "hasThumbnail": true,
-              "updatedAt": 1793514739775,
-              "artist": "",
-              "album": "",
-              "description": "",
               "parts": [
                 {
                   "partIndex": 0,
@@ -989,15 +984,10 @@
               "seriesName": "Cosmos: Possible Worlds",
               "episodeTitle": "Cosmos Shadows of Forgotten Ancestors",
               "name": "Cosmos.S01E02.Shadows.of.Forgotten.Ancestors.mp4",
-              "category": "video",
-              "mimeType": "video/mp4",
-              "size": 287069,
               "duration": null,
+              "size": 287069,
+              "mimeType": "video/mp4",
               "hasThumbnail": true,
-              "updatedAt": 1793514740399,
-              "artist": "",
-              "album": "",
-              "description": "",
               "parts": [
                 {
                   "partIndex": 0,
@@ -1008,10 +998,37 @@
               ]
             }
           ]
+        },
+        {
+          "seasonNumber": 2,
+          "name": "Season 2",
+          "episodes": []
         }
       ],
-      "updatedAt": 1793958581835,
+      "updatedAt": 1793962484390,
       "hasThumbnail": true
+    },
+    {
+      "id": "e03bfca5-6b9d-4c99-a421-9aa00030271f",
+      "name": "Example TV Series",
+      "folderName": "Example TV Series",
+      "description": "TV Series · 2 Seasons · 0 Episode",
+      "seasonsCount": 2,
+      "episodesCount": 0,
+      "seasons": [
+        {
+          "seasonNumber": 1,
+          "name": "Season 1",
+          "episodes": []
+        },
+        {
+          "seasonNumber": 2,
+          "name": "Season 2",
+          "episodes": []
+        }
+      ],
+      "updatedAt": 1793962326729,
+      "hasThumbnail": false
     }
   ]
 }
