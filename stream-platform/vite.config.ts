@@ -26,9 +26,7 @@ interface CatalogFile {
 
 function localStreamDevPlugin(): Plugin {
   const teledriveJsonPath = '/mnt/c/Users/Kailasnath T/AppData/Roaming/TeleDrive/data/teledrive.json';
-  const teledriveDbJsonPath = '/mnt/c/Users/Kailasnath T/AppData/Roaming/TeleDrive/data/teledrive-db.json';
-  const extractedVideosDir = '/mnt/c/Users/Kailasnath T/Videos/extracted_videos';
-  const audioDir = path.join(__dirname, 'public/audio');
+
 
   function findThumbnail(id: string): { path: string; mime: string } | null {
     const thumbDirs = [
@@ -54,11 +52,39 @@ function localStreamDevPlugin(): Plugin {
     const list: (CatalogFile & { filePath?: string })[] = [];
     const seenIds = new Set<string>();
 
-    const dbPaths = [teledriveJsonPath, teledriveDbJsonPath];
-    for (const p of dbPaths) {
-      if (!fs.existsSync(p)) continue;
+    // Load from catalog.json if available
+    const catalogJsonPath = path.join(__dirname, 'public/catalog.json');
+    if (fs.existsSync(catalogJsonPath)) {
       try {
-        const raw = fs.readFileSync(p, 'utf8');
+        const raw = fs.readFileSync(catalogJsonPath, 'utf8');
+        const parsed = JSON.parse(raw);
+        const parsedItems = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.items) ? parsed.items : []);
+        for (const it of parsedItems) {
+          if (it.id && !seenIds.has(it.id)) {
+            seenIds.add(it.id);
+            list.push({
+              id: it.id,
+              name: it.name || 'Untitled',
+              category: it.category as 'video' | 'audio',
+              mimeType: it.mimeType || (it.category === 'video' ? 'video/mp4' : 'audio/mpeg'),
+              size: Number(it.size) || 0,
+              duration: typeof it.duration === 'number' ? it.duration : null,
+              hasThumbnail: Boolean(it.hasThumbnail) || Boolean(findThumbnail(it.id)),
+              updatedAt: Number(it.updatedAt) || Date.now(),
+              artist: typeof it.artist === 'string' ? it.artist : '',
+              album: typeof it.album === 'string' ? it.album : '',
+              description: typeof it.description === 'string' ? it.description : '',
+            });
+          }
+        }
+      } catch (e) {
+        console.error('[Stream Dev Plugin] Error reading catalog.json:', e);
+      }
+    }
+
+    if (fs.existsSync(teledriveJsonPath)) {
+      try {
+        const raw = fs.readFileSync(teledriveJsonPath, 'utf8');
         const db = JSON.parse(raw) as { files?: Record<string, unknown>[] };
         for (const f of db.files || []) {
           if ((f.category === 'video' || f.category === 'audio') && !f.trashed_at) {
@@ -94,53 +120,6 @@ function localStreamDevPlugin(): Plugin {
       }
     }
 
-    // Audio tracks for the music room
-    const audio1Path = path.join(audioDir, 'ambient_dreamscape.wav');
-    if (fs.existsSync(audio1Path)) {
-      const id = 'a1111111-1111-4111-a111-111111111111';
-      if (!seenIds.has(id)) {
-        seenIds.add(id);
-        const stat = fs.statSync(audio1Path);
-        list.push({
-          id,
-          name: 'Ambient Dreamscape.wav',
-          category: 'audio',
-          mimeType: 'audio/wav',
-          size: stat.size,
-          duration: 30,
-          hasThumbnail: false,
-          updatedAt: stat.mtimeMs,
-          artist: 'TeleDrive Soundscapes',
-          album: 'Folio Studio Sessions',
-          description: 'Multi-harmonic ambient progression streamed directly in high fidelity.',
-          filePath: audio1Path,
-        });
-      }
-    }
-
-    const audio2Path = path.join(audioDir, 'midnight_lofi.wav');
-    if (fs.existsSync(audio2Path)) {
-      const id = 'b2222222-2222-4222-b222-222222222222';
-      if (!seenIds.has(id)) {
-        seenIds.add(id);
-        const stat = fs.statSync(audio2Path);
-        list.push({
-          id,
-          name: 'Midnight Lo-Fi.wav',
-          category: 'audio',
-          mimeType: 'audio/wav',
-          size: stat.size,
-          duration: 24,
-          hasThumbnail: false,
-          updatedAt: stat.mtimeMs,
-          artist: 'Aurora Node',
-          album: 'TeleDrive Cloud',
-          description: 'Warm nocturnal chords with subtle stereo panning and gentle acoustic decay.',
-          filePath: audio2Path,
-        });
-      }
-    }
-
     return list;
   }
 
@@ -153,7 +132,7 @@ function localStreamDevPlugin(): Plugin {
       '/mnt/c/Users/Kailasnath T/Desktop',
       '/mnt/c/Users/Kailasnath T/AppData/Roaming/TeleDrive/data/vault/files',
       '/mnt/c/Users/Kailasnath T/AppData/Roaming/TeleDrive/data/cache',
-      audioDir,
+
     ];
     for (const dir of searchDirs) {
       if (!fs.existsSync(dir)) continue;

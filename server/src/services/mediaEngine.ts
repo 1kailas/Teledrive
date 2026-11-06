@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import type { Readable } from 'node:stream';
 import type { MediaTools } from './media.js';
 import type { Db } from '../db/index.js';
+import type { FileRow, PartRow } from '../types.js';
 
 const execFileP = promisify(execFile);
 
@@ -194,284 +195,234 @@ export async function extractSubtitlesToVtt(
   }
 }
 
-export interface EpisodeFile {
-  id: string;
-  episodeNumber: number;
-  seasonNumber: number;
-  seriesId: string;
-  seriesName: string;
-  episodeTitle: string;
-  name: string;
-  duration: number | null;
+interface CatalogPart {
+  partIndex: number;
   size: number;
-  mimeType: string;
-  hasThumbnail: boolean;
-  parts?: {
-    partIndex: number;
-    size: number;
-    telegramFileId?: string;
-    botId?: string;
-  }[];
+  telegramFileId?: string;
+  botId?: string;
 }
 
-export interface SeasonFile {
-  seasonNumber: number;
-  name: string;
-  episodes: EpisodeFile[];
-}
-
-export interface SeriesFile {
+interface CatalogItem {
   id: string;
   name: string;
-  folderName: string;
-  description: string;
-  seasonsCount: number;
-  episodesCount: number;
-  seasons: SeasonFile[];
-  genres?: string[];
-  year?: number | string;
+  category: 'video' | 'audio';
+  mimeType: string;
+  size: number;
+  duration: number | null;
+  hasThumbnail: boolean;
   updatedAt: number;
-  hasThumbnail?: boolean;
+  artist: string;
+  album: string;
+  description: string;
+  format?: string;
+  parts?: CatalogPart[];
 }
 
-function parseEp(filename: string, defaultSeason = 1, defaultEp = 1): {
-  season: number;
-  episode: number;
-  title: string;
-} {
-  const clean = filename.replace(/\.[^.]+$/, '');
-  const sMatch = /(?:s|season\s*)(\d+)/i.exec(clean);
-  const eMatch = /(?:e|ep|episode\s*|\bx\s*)(\d+)/i.exec(clean);
+/** Public Bot API cannot serve files larger than 20 MiB via getFile. */
+const PUBLIC_DOWNLOAD_LIMIT = 20 * 1024 * 1024;
 
-  const season = sMatch ? parseInt(sMatch[1]!, 10) : defaultSeason;
-  const episode = eMatch ? parseInt(eMatch[1]!, 10) : defaultEp;
+function textOf(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
 
-  let title = clean
-    .replace(/(?:s\d+\s*e\d+|season\s*\d+\s*episode\s*\d+|\b\d+x\d+\b)/gi, '')
-    .replace(/\b(1080p|720p|2160p|4k|uhd|web-dl|webrip|bluray|x264|h264|h\.264|ddp5\.1|ddp|eac3|aac|atmos)\b/gi, '')
-    .replace(/[-_.]+/g, ' ')
-    .trim();
-
-  if (!title || title.length < 2) {
-    title = `Episode ${episode}`;
+function metadataOf(value: unknown): Record<string, unknown> {
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
+    } catch {
+      return {};
+    }
   }
+  return value && typeof value === 'object' ? value as Record<string, unknown> : {};
+}
 
-  return { season, episode, title };
+function extensionOf(name: string): string | undefined {
+  const extension = name.split('.').pop();
+  return extension && extension !== name ? extension.toUpperCase() : undefined;
+}
+
+function mapParts(value: unknown): CatalogPart[] {
+  if (!Array.isArray(value)) return [];
+
+  const byIndex = new Map<number, CatalogPart>();
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue;
+    const raw = entry as Record<string, unknown>;
+    const partIndex = typeof raw.partIndex === 'number'
+      ? raw.partIndex
+      : typeof raw.part_index === 'number'
+        ? raw.part_index
+        : typeof raw.idx === 'number' ? raw.idx : Number.NaN;
+    const size = typeof raw.size === 'number' ? raw.size : Number.NaN;
+    if (!Number.isInteger(partIndex) || partIndex < 0 || !Number.isFinite(size) || size <= 0) continue;
+
+    const telegramFileId = [raw.telegramFileId, raw.telegram_file_id, raw.tg_file_id]
+      .find((candidate): candidate is string => typeof candidate === 'string' && candidate.trim().length > 0);
+    const botId = [raw.botId, raw.bot_id]
+      .find((candidate): candidate is string => typeof candidate === 'string' && candidate.trim().length > 0);
+
+    byIndex.set(partIndex, {
+      partIndex,
+      size,
+      ...(telegramFileId ? { telegramFileId: telegramFileId.trim() } : {}),
+      ...(botId ? { botId: botId.trim() } : {}),
+    });
+  }
+  return [...byIndex.values()].sort((a, b) => a.partIndex - b.partIndex);
+}
+
+function hasPlayableParts(parts: CatalogPart[] | undefined): boolean {
+  if (!parts || parts.length === 0) return false;
+  const indices = new Set(parts.map((part) => part.partIndex));
+  if (indices.size !== parts.length) return false;
+  for (let index = 0; index < parts.length; index += 1) {
+    if (!indices.has(index)) return false;
+  }
+  return parts.every((part) =>
+    Boolean(part.telegramFileId)
+    && part.size > 0
+    && part.size <= PUBLIC_DOWNLOAD_LIMIT,
+  );
+}
+
+function readExistingCatalog(catalogPath: string): CatalogItem[] {
+  if (!fs.existsSync(catalogPath)) return [];
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(catalogPath, 'utf8')) as unknown;
+    const rawItems: unknown[] = Array.isArray(parsed)
+      ? parsed
+      : parsed && typeof parsed === 'object' && Array.isArray((parsed as { items?: unknown[] }).items)
+        ? (parsed as { items: unknown[] }).items
+        : [];
+
+    // Older catalogs stored episodes inside series. Flatten them so they remain
+    // available as standalone films after series support was removed.
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const series = (parsed as { series?: unknown[] }).series;
+      if (Array.isArray(series)) {
+        for (const entry of series) {
+          const seasons = (entry as { seasons?: unknown[] } | null)?.seasons;
+          if (!Array.isArray(seasons)) continue;
+          for (const season of seasons) {
+            const episodes = (season as { episodes?: unknown[] } | null)?.episodes;
+            if (Array.isArray(episodes)) rawItems.push(...episodes);
+          }
+        }
+      }
+    }
+
+    const items: CatalogItem[] = [];
+    for (const value of rawItems) {
+      if (!value || typeof value !== 'object') continue;
+      const raw = value as Record<string, unknown>;
+      const id = textOf(raw.id).trim();
+      const name = textOf(raw.name).trim();
+      const category = raw.category === 'audio' ? 'audio' : raw.category === 'video' ? 'video' : null;
+      if (!id || !name || !category) continue;
+
+      const parts = mapParts(raw.parts);
+      const size = typeof raw.size === 'number' && Number.isFinite(raw.size) ? raw.size : 0;
+      items.push({
+        id,
+        name,
+        category,
+        mimeType: textOf(raw.mimeType, category === 'video' ? 'video/mp4' : 'audio/mpeg'),
+        size: size > 0 ? size : parts.reduce((sum, part) => sum + part.size, 0),
+        duration: typeof raw.duration === 'number' && Number.isFinite(raw.duration) ? raw.duration : null,
+        hasThumbnail: raw.hasThumbnail === true || raw.has_thumbnail === true || raw.has_thumbnail === 1,
+        updatedAt: typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt) ? raw.updatedAt : 0,
+        artist: textOf(raw.artist),
+        album: textOf(raw.album),
+        description: textOf(raw.description),
+        format: textOf(raw.format) || extensionOf(name),
+        ...(parts.length > 0 ? { parts } : {}),
+      });
+    }
+    return items;
+  } catch {
+    return [];
+  }
 }
 
 /**
- * Syncs TeleDrive video/audio catalog with the standalone streaming catalog.
- * Follows folder hierarchy:
- *   - Folder named 'stream' (inside 'Videos' or root) contains website media.
- *   - Direct files inside 'stream' = Standalone Movies / Audio.
- *   - Subfolders inside 'stream' = TV Series / Shows.
- *   - Folders inside a series folder = Seasons.
- *   - Files inside a season folder = Episodes.
+ * Refreshes the standalone streaming catalog from the server's TeleDrive
+ * library. Every ready video/audio file becomes a standalone item regardless
+ * of its folder. Series are deliberately not generated; videos belong under
+ * Movies & Films in the web app.
  */
 export function syncTeleDriveToCatalog(db: Db, catalogPath: string): number {
   try {
-    const allFolders = db.prepare(`
-      SELECT id, parent_id, name, updated_at
-      FROM folders
-      WHERE trashed_at IS NULL
-    `).all() as { id: string; parent_id: string | null; name: string; updated_at: number }[];
+    const existingItems = readExistingCatalog(catalogPath);
+    const existingById = new Map(existingItems.map((item) => [item.id, item]));
 
-    // Locate the 'stream' folder
-    const streamFolder = allFolders.find((f) => f.name.toLowerCase() === 'stream');
+    const files = db.prepare(`
+      SELECT *
+      FROM files
+      WHERE category IN ('video', 'audio')
+        AND status = 'ready'
+        AND trashed_at IS NULL
+      ORDER BY updated_at DESC
+    `).all() as FileRow[];
 
-    let existingCatalog: { items?: any[]; series?: SeriesFile[] } = {};
-    if (fs.existsSync(catalogPath)) {
-      try {
-        const raw = fs.readFileSync(catalogPath, 'utf8');
-        existingCatalog = JSON.parse(raw);
-      } catch {}
+    const items: CatalogItem[] = [];
+    const seen = new Set<string>();
+
+    for (const file of files) {
+      if (seen.has(file.id)) continue;
+      seen.add(file.id);
+
+      const existing = existingById.get(file.id);
+      const sourceParts = file.blob_id
+        ? (db.prepare('SELECT * FROM parts WHERE blob_id = ? ORDER BY idx ASC')
+          .all(file.blob_id) as PartRow[]).map((part) => ({
+            partIndex: part.idx,
+            size: part.size,
+            ...(part.tg_file_id ? { telegramFileId: part.tg_file_id } : {}),
+            ...(part.bot_id ? { botId: part.bot_id } : {}),
+          }))
+        : [];
+
+      // Keep a verified cloud edition when desktop uploads used oversized parts.
+      const parts = !hasPlayableParts(sourceParts) && hasPlayableParts(existing?.parts)
+        ? existing!.parts!
+        : sourceParts;
+      const metadata = metadataOf(file.metadata);
+      const category = file.category === 'audio' ? 'audio' : 'video';
+      const partSize = parts.reduce((sum, part) => sum + part.size, 0);
+
+      items.push({
+        id: file.id,
+        name: file.name,
+        category,
+        mimeType: file.mime_type || (category === 'video' ? 'video/mp4' : 'audio/mpeg'),
+        size: partSize > 0 ? partSize : file.size,
+        duration: file.duration && file.duration > 0 ? file.duration : existing?.duration ?? null,
+        hasThumbnail: Boolean(file.has_thumbnail) || existing?.hasThumbnail === true,
+        updatedAt: file.updated_at,
+        artist: textOf(metadata.artist, existing?.artist ?? ''),
+        album: textOf(metadata.album, existing?.album ?? ''),
+        description: file.description || existing?.description || '',
+        format: extensionOf(file.name) ?? existing?.format,
+        ...(parts.length > 0 ? { parts } : {}),
+      });
     }
 
-    const existingItems: any[] = existingCatalog.items ?? [];
-    const existingSeries: SeriesFile[] = existingCatalog.series ?? [];
-
-    const items: any[] = [];
-    const seriesList: SeriesFile[] = [];
-    const seenFiles = new Set<string>();
-
-    const getPartsForBlob = (blobId: string) => {
-      const parts = db.prepare('SELECT * FROM parts WHERE blob_id = ? ORDER BY idx ASC').all(blobId) as import('../types.js').PartRow[];
-      return parts.map((p) => ({
-        partIndex: p.idx,
-        size: p.size,
-        telegramFileId: p.tg_file_id ?? undefined,
-        botId: p.bot_id ?? undefined,
-      }));
-    };
-
-    if (streamFolder) {
-      // 1. Direct files inside 'stream' are Movies / Standalone
-      const streamFiles = db.prepare(`
-        SELECT f.*
-        FROM files f
-        WHERE f.folder_id = ? AND f.category IN ('video', 'audio')
-          AND f.status = 'ready' AND f.trashed_at IS NULL
-        ORDER BY f.created_at DESC
-      `).all(streamFolder.id) as import('../types.js').FileRow[];
-
-      for (const f of streamFiles) {
-        seenFiles.add(f.id);
-        const existing = existingItems.find((it) => it.id === f.id);
-        let mappedParts = existing?.parts;
-        if (!mappedParts || mappedParts.length === 0) mappedParts = getPartsForBlob(f.blob_id!);
-
-        items.push({
-          id: f.id,
-          name: f.name,
-          category: f.category,
-          mimeType: f.mime_type || (f.category === 'video' ? 'video/mp4' : 'audio/mpeg'),
-          size: f.size,
-          duration: f.duration || (f.name.toLowerCase().includes('inception') ? 8884 : 15),
-          hasThumbnail: Boolean(f.has_thumbnail),
-          updatedAt: f.updated_at,
-          artist: '',
-          album: '',
-          description: f.description || 'Movie / Standalone Media',
-          parts: mappedParts.length > 0 ? mappedParts : undefined,
-        });
-      }
-
-      // 2. Subfolders inside 'stream' are TV Series
-      const seriesFolders = allFolders.filter((f) => f.parent_id === streamFolder.id);
-
-      for (const sFolder of seriesFolders) {
-        const seasonFolders = allFolders.filter((f) => f.parent_id === sFolder.id);
-        const seasons: SeasonFile[] = [];
-        let totalEpisodes = 0;
-
-        if (seasonFolders.length > 0) {
-          // Has Season folders
-          for (const seFolder of seasonFolders) {
-            const seMatch = /(?:season\s*|s)(\d+)/i.exec(seFolder.name);
-            const seNum = seMatch ? parseInt(seMatch[1]!, 10) : seasons.length + 1;
-
-            const epFiles = db.prepare(`
-              SELECT f.*
-              FROM files f
-              WHERE f.folder_id = ? AND f.category = 'video'
-                AND f.status = 'ready' AND f.trashed_at IS NULL
-              ORDER BY f.name ASC
-            `).all(seFolder.id) as import('../types.js').FileRow[];
-
-            const episodes: EpisodeFile[] = epFiles.map((f, epIdx) => {
-              seenFiles.add(f.id);
-              const info = parseEp(f.name, seNum, epIdx + 1);
-              return {
-                id: f.id,
-                episodeNumber: info.episode,
-                seasonNumber: seNum,
-                seriesId: sFolder.id,
-                seriesName: sFolder.name,
-                episodeTitle: info.title,
-                name: f.name,
-                duration: f.duration || null,
-                size: f.size,
-                mimeType: f.mime_type || 'video/mp4',
-                hasThumbnail: Boolean(f.has_thumbnail),
-                parts: getPartsForBlob(f.blob_id!),
-              };
-            });
-
-            // Sort episodes naturally by episode number
-            episodes.sort((a, b) => a.episodeNumber - b.episodeNumber);
-            totalEpisodes += episodes.length;
-
-            seasons.push({
-              seasonNumber: seNum,
-              name: seFolder.name,
-              episodes,
-            });
-          }
-          seasons.sort((a, b) => a.seasonNumber - b.seasonNumber);
-        } else {
-          // Direct files inside series folder = Season 1
-          const epFiles = db.prepare(`
-            SELECT f.*
-            FROM files f
-            WHERE f.folder_id = ? AND f.category = 'video'
-              AND f.status = 'ready' AND f.trashed_at IS NULL
-            ORDER BY f.name ASC
-          `).all(sFolder.id) as import('../types.js').FileRow[];
-
-          if (epFiles.length > 0) {
-            const episodes: EpisodeFile[] = epFiles.map((f, epIdx) => {
-              seenFiles.add(f.id);
-              const info = parseEp(f.name, 1, epIdx + 1);
-              return {
-                id: f.id,
-                episodeNumber: info.episode,
-                seasonNumber: 1,
-                seriesId: sFolder.id,
-                seriesName: sFolder.name,
-                episodeTitle: info.title,
-                name: f.name,
-                duration: f.duration || null,
-                size: f.size,
-                mimeType: f.mime_type || 'video/mp4',
-                hasThumbnail: Boolean(f.has_thumbnail),
-                parts: getPartsForBlob(f.blob_id!),
-              };
-            });
-
-            episodes.sort((a, b) => a.episodeNumber - b.episodeNumber);
-            totalEpisodes += episodes.length;
-
-            seasons.push({
-              seasonNumber: 1,
-              name: 'Season 1',
-              episodes,
-            });
-          }
-        }
-
-        seriesList.push({
-          id: sFolder.id,
-          name: sFolder.name,
-          folderName: sFolder.name,
-          description: `TV Series · ${seasons.length} Season${seasons.length > 1 ? 's' : ''} · ${totalEpisodes} Episode${totalEpisodes > 1 ? 's' : ''}`,
-          seasonsCount: seasons.length,
-          episodesCount: totalEpisodes,
-          seasons,
-          updatedAt: sFolder.updated_at,
-          hasThumbnail: seasons[0]?.episodes[0]?.hasThumbnail ?? false,
-        });
-      }
+    // Desktop uploads are not written to this server's SQLite database. Keep
+    // real entries that already have uploaded parts so a server-side sync does
+    // not erase the desktop library from the hosted catalog.
+    for (const existing of existingItems) {
+      if (seen.has(existing.id)) continue;
+      seen.add(existing.id);
+      if (existing.parts && existing.parts.length > 0) items.push(existing);
     }
 
-    // Preserve existing standalone items (e.g. Inception 143 parts, ambient audio)
-    for (const ex of existingItems) {
-      if (ex && ex.id && !seenFiles.has(ex.id)) {
-        seenFiles.add(ex.id);
-        items.push(ex);
-      }
-    }
-
-    // Preserve any existing series not in DB
-    for (const exS of existingSeries) {
-      if (exS && exS.id && !seriesList.some((s) => s.id === exS.id)) {
-        seriesList.push(exS);
-      }
-    }
-
-    // Exclude any file that belongs to a TV series from standalone items
-    const seriesEpisodeIds = new Set<string>();
-    for (const s of seriesList) {
-      for (const se of s.seasons) {
-        for (const ep of se.episodes) {
-          seriesEpisodeIds.add(ep.id);
-        }
-      }
-    }
-    const finalItems = items.filter((it) => !seriesEpisodeIds.has(it.id));
+    items.sort((a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name));
 
     fs.mkdirSync(path.dirname(catalogPath), { recursive: true });
-    fs.writeFileSync(catalogPath, JSON.stringify({ items: finalItems, series: seriesList }, null, 2));
-    return finalItems.length + seriesList.length;
+    fs.writeFileSync(catalogPath, `${JSON.stringify({ items, series: [] }, null, 2)}\n`);
+    return items.length;
   } catch (err) {
     console.warn('[syncTeleDriveToCatalog error]', (err as Error).message);
     return 0;

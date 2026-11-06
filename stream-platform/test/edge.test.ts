@@ -206,6 +206,38 @@ test('standalone direct Telegram mode streams media Range without origin or tunn
   assert.equal(await mediaRes.text(), 'chunk-data');
 });
 
+test('an empty environment catalog falls back to the deployed catalog', async () => {
+  const standaloneEnv: EdgeEnv = {
+    TELEGRAM_BOT_TOKEN: 'test-token',
+    TELEDRIVE_CATALOG: JSON.stringify({ items: [] }),
+    ALLOW_PUBLIC: 'true',
+  };
+  const staticCatalog = (async (input: RequestInfo | URL) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname === '/catalog.json') {
+      return Response.json({
+        items: [{
+          id,
+          name: 'The Quiet Signal.2024.1080p.mp4',
+          category: 'video',
+          mimeType: 'video/mp4',
+          size: 5000000,
+          duration: 7200,
+          hasThumbnail: false,
+          updatedAt: 12345,
+          parts: [],
+        }],
+      });
+    }
+    return new Response(null, { status: 404 });
+  }) as typeof fetch;
+
+  const response = await handleApi(new Request('https://stream.example/api/catalog'), standaloneEnv, staticCatalog);
+  assert.equal(response.status, 200);
+  const body = await response.json() as { items: { name: string }[] };
+  assert.deepEqual(body.items.map((item) => item.name), ['The Quiet Signal.2024.1080p.mp4']);
+});
+
 test('artwork endpoint generates an SVG cover when a thumbnail is missing', async () => {
   const artEnv: EdgeEnv = {
     TELEGRAM_BOT_TOKEN: 'test-token',

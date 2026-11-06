@@ -99,7 +99,6 @@ export function VideoTheatre({
     ? (activeEpisode.episodeTitle || titleOf(activeEpisode))
     : titleOf(video);
   const anyMenuOpen = showAudioMenu || showSubtitleMenu || showMoreMenu;
-  const isInception = /inception/i.test(video.name);
 
   const capturedPoster = useCapturedFrame(video, !video.hasThumbnail);
   const generatedPoster = useMemo(() => posterDataUrl({
@@ -868,14 +867,6 @@ export function VideoTheatre({
               }}
               onError={handleVideoError}
             >
-              {isInception ? (
-                <track
-                  kind="subtitles"
-                  src="/subtitles/inception.vtt"
-                  srcLang="en"
-                  label="English"
-                />
-              ) : null}
               {customSubtitleUrl ? (
                 <track kind="subtitles" src={customSubtitleUrl} label="Custom subtitles" default />
               ) : null}

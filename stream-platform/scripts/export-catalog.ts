@@ -1,15 +1,28 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const rootDir = path.resolve(__dirname, '../..');
-const outPath = path.resolve(__dirname, '../public/catalog.json');
+const streamRoot = path.resolve(__dirname, '..');
+const repoRoot = path.resolve(streamRoot, '..');
+const outPath = path.resolve(streamRoot, 'public/catalog.json');
+const editionsDir = path.resolve(streamRoot, 'data/stream-editions');
 
-const p1 = '/mnt/c/Users/Kailasnath T/AppData/Roaming/TeleDrive/data/teledrive.json';
-const p2 = '/mnt/c/Users/Kailasnath T/AppData/Roaming/TeleDrive/data/teledrive-db.json';
-const sqliteDbPath = path.resolve(rootDir, 'data/teledrive.db');
+/**
+ * The public Bot API only allows downloads of files up to 20 MB. Parts larger
+ * than this can still be listed, but the hosted player cannot fetch them.
+ */
+const PUBLIC_DOWNLOAD_LIMIT = 20 * 1024 * 1024;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MEDIA_EXTENSIONS = [
+  'mp4', 'm4v', 'mkv', 'webm', 'mov', 'avi', 'ts', 'm2ts', 'mts', 'flv', 'wmv', '3gp', 'ogv',
+  'mp3', 'm4a', 'aac', 'wav', 'flac', 'ogg', 'opus', 'weba', 'wma',
+];
+
+type Category = 'video' | 'audio';
 
 interface CatalogPart {
   partIndex: number;
@@ -21,7 +34,7 @@ interface CatalogPart {
 interface CatalogItem {
   id: string;
   name: string;
-  category: 'video' | 'audio';
+  category: Category;
   mimeType: string;
   size: number;
   duration: number | null;
@@ -30,401 +43,539 @@ interface CatalogItem {
   artist: string;
   album: string;
   description: string;
+  format?: string;
   parts?: CatalogPart[];
 }
 
-interface EpisodeItem extends CatalogItem {
-  episodeNumber: number;
-  seasonNumber: number;
-  seriesId: string;
-  seriesName: string;
-  episodeTitle: string;
+interface EditionManifest {
+  fileId: string;
+  name?: string;
+  mimeType?: string;
+  size?: number;
+  duration?: number | null;
+  source?: string;
+  uploadedAt?: number;
+  parts: CatalogPart[];
 }
 
-interface SeasonItem {
-  seasonNumber: number;
-  name: string;
-  episodes: EpisodeItem[];
+const durationCache = new Map<string, number | null>();
+
+function warn(message: string): void {
+  console.warn(`[catalog] ${message}`);
 }
 
-interface SeriesItem {
-  id: string;
-  name: string;
-  folderName: string;
-  description: string;
-  seasonsCount: number;
-  episodesCount: number;
-  seasons: SeasonItem[];
-  genres?: string[];
-  year?: number | string;
-  updatedAt: number;
-  hasThumbnail?: boolean;
+function readJson<T>(filePath: string): T | null {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T;
+  } catch (error) {
+    warn(`Could not read ${filePath}: ${(error as Error).message}`);
+    return null;
+  }
 }
 
-const items: CatalogItem[] = [];
-let series: SeriesItem[] = [];
-const seen = new Set<string>();
+function asString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
 
-function parseEp(filename: string, defaultSeason = 1, defaultEp = 1): {
-  season: number;
-  episode: number;
-  title: string;
-} {
-  const clean = filename.replace(/\.[^.]+$/, '');
-  const sMatch = /(?:s|season\s*)(\d+)/i.exec(clean);
-  const eMatch = /(?:e|ep|episode\s*|\bx\s*)(\d+)/i.exec(clean);
+function asNumber(value: unknown): number | null {
+  const number = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && value.trim() !== ''
+      ? Number(value)
+      : Number.NaN;
+  return Number.isFinite(number) ? number : null;
+}
 
-  const season = sMatch ? parseInt(sMatch[1]!, 10) : defaultSeason;
-  const episode = eMatch ? parseInt(eMatch[1]!, 10) : defaultEp;
+function extensionOf(name: string): string {
+  const extension = name.split('.').pop() ?? '';
+  return extension && extension !== name ? extension.toUpperCase() : '';
+}
 
-  let title = clean
-    .replace(/(?:s\d+\s*e\d+|season\s*\d+\s*episode\s*\d+|\b\d+x\d+\b)/gi, '')
-    .replace(/\b(1080p|720p|2160p|4k|uhd|web-dl|webrip|bluray|x264|h264|h\.264|ddp5\.1|ddp|eac3|aac|atmos)\b/gi, '')
-    .replace(/[-_.]+/g, ' ')
-    .trim();
+function detectMimeType(name: string, category: Category): string {
+  const extension = (name.split('.').pop() ?? '').toLowerCase();
+  const types: Record<string, string> = {
+    mp4: 'video/mp4',
+    m4v: 'video/mp4',
+    mkv: 'video/x-matroska',
+    webm: 'video/webm',
+    mov: 'video/quicktime',
+    qt: 'video/quicktime',
+    avi: 'video/x-msvideo',
+    wmv: 'video/x-ms-wmv',
+    ts: 'video/mp2t',
+    m2ts: 'video/mp2t',
+    mts: 'video/mp2t',
+    flv: 'video/x-flv',
+    '3gp': 'video/3gpp',
+    ogv: 'video/ogg',
+    mp3: 'audio/mpeg',
+    m4a: 'audio/mp4',
+    aac: 'audio/aac',
+    wav: 'audio/wav',
+    flac: 'audio/flac',
+    ogg: 'audio/ogg',
+    opus: 'audio/opus',
+    weba: 'audio/webm',
+    wma: 'audio/x-ms-wma',
+  };
+  return types[extension] ?? (category === 'video' ? 'video/mp4' : 'audio/mpeg');
+}
 
-  if (!title || title.length < 2) {
-    title = `Episode ${episode}`;
+function metadataOf(value: unknown): Record<string, unknown> {
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
+    } catch {
+      return {};
+    }
+  }
+  return value && typeof value === 'object' ? value as Record<string, unknown> : {};
+}
+
+function normalizePart(value: unknown): CatalogPart | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+  const partIndex = asNumber(raw.partIndex ?? raw.part_index ?? raw.idx ?? raw.index);
+  const size = asNumber(raw.size);
+  if (partIndex === null || partIndex < 0 || !Number.isInteger(partIndex) || size === null || size <= 0) return null;
+
+  const telegramFileId = asString(raw.telegramFileId ?? raw.telegram_file_id ?? raw.tg_file_id).trim();
+  const botId = asString(raw.botId ?? raw.bot_id).trim();
+  return {
+    partIndex,
+    size,
+    ...(telegramFileId ? { telegramFileId } : {}),
+    ...(botId ? { botId } : {}),
+  };
+}
+
+function normalizeParts(value: unknown): CatalogPart[] {
+  if (!Array.isArray(value)) return [];
+  const byIndex = new Map<number, CatalogPart>();
+  for (const entry of value) {
+    const part = normalizePart(entry);
+    if (part) byIndex.set(part.partIndex, part);
+  }
+  return [...byIndex.values()].sort((a, b) => a.partIndex - b.partIndex);
+}
+
+function totalSize(parts: CatalogPart[]): number {
+  return parts.reduce((sum, part) => sum + part.size, 0);
+}
+
+function hasPlayableParts(parts: CatalogPart[]): boolean {
+  if (parts.length === 0) return false;
+  const indices = new Set(parts.map((part) => part.partIndex));
+  if (indices.size !== parts.length) return false;
+  for (let index = 0; index < parts.length; index += 1) {
+    if (!indices.has(index)) return false;
+  }
+  return parts.every((part) =>
+    Boolean(part.telegramFileId)
+    && part.size > 0
+    && part.size <= PUBLIC_DOWNLOAD_LIMIT,
+  );
+}
+
+function normalizeCatalogItem(value: unknown): CatalogItem | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+  const id = asString(raw.id).trim();
+  const name = asString(raw.name).trim();
+  const category = raw.category === 'audio' ? 'audio' : raw.category === 'video' ? 'video' : null;
+  if (!UUID.test(id) || !name || !category) return null;
+
+  const parts = normalizeParts(raw.parts);
+  const size = asNumber(raw.size) ?? totalSize(parts);
+  return {
+    id,
+    name,
+    category,
+    mimeType: asString(raw.mimeType, detectMimeType(name, category)) || detectMimeType(name, category),
+    size: size > 0 ? size : totalSize(parts),
+    duration: asNumber(raw.duration),
+    hasThumbnail: raw.hasThumbnail === true || raw.has_thumbnail === true || raw.has_thumbnail === 1,
+    updatedAt: asNumber(raw.updatedAt ?? raw.updated_at) ?? 0,
+    artist: asString(raw.artist),
+    album: asString(raw.album),
+    description: asString(raw.description),
+    format: asString(raw.format) || extensionOf(name) || undefined,
+    ...(parts.length > 0 ? { parts } : {}),
+  };
+}
+
+function itemFromSourceRecord(record: Record<string, unknown>, rawParts: unknown): CatalogItem | null {
+  if (record.trashed_at) return null;
+  if (record.status !== undefined && record.status !== 'ready') return null;
+
+  const id = asString(record.id).trim();
+  const name = asString(record.name).trim();
+  const category = record.category === 'audio' ? 'audio' : record.category === 'video' ? 'video' : null;
+  if (!UUID.test(id) || !name || !category) return null;
+
+  const parts = normalizeParts(rawParts);
+  if (parts.length === 0) {
+    warn(`Skipped "${name}" (${id}) because no uploaded parts were found.`);
+    return null;
   }
 
-  return { season, episode, title };
+  const metadata = metadataOf(record.metadata);
+  const size = asNumber(record.size) ?? totalSize(parts);
+  return {
+    id,
+    name,
+    category,
+    mimeType: asString(record.mime_type ?? record.mimeType, detectMimeType(name, category))
+      || detectMimeType(name, category),
+    size: size > 0 ? size : totalSize(parts),
+    duration: asNumber(record.duration),
+    hasThumbnail: record.has_thumbnail === true || record.has_thumbnail === 1
+      || record.hasThumbnail === true,
+    updatedAt: asNumber(record.updated_at ?? record.updatedAt) ?? 0,
+    artist: asString(metadata.artist),
+    album: asString(metadata.album),
+    description: asString(record.description),
+    format: asString(metadata.format) || extensionOf(name) || undefined,
+    parts,
+  };
 }
 
-// Read teledrive.db if available locally
-if (fs.existsSync(sqliteDbPath)) {
+function existingDirectory(candidate: string): string | null {
   try {
-    const { createRequire } = await import('node:module');
+    return fs.statSync(candidate).isDirectory() ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
+function discoverDataDir(): string | null {
+  const configured = process.env.TELEDRIVE_DATA_DIR?.trim();
+  if (configured) {
+    const directory = existingDirectory(configured);
+    if (directory) return directory;
+    warn(`TELEDRIVE_DATA_DIR does not exist: ${configured}`);
+  }
+
+  const appData = process.env.APPDATA?.trim();
+  if (appData) {
+    const directory = existingDirectory(path.join(appData, 'TeleDrive', 'data'));
+    if (directory) return directory;
+  }
+
+  const usersDirectory = '/mnt/c/Users';
+  if (fs.existsSync(usersDirectory)) {
+    try {
+      for (const user of fs.readdirSync(usersDirectory)) {
+        const directory = existingDirectory(
+          path.join(usersDirectory, user, 'AppData', 'Roaming', 'TeleDrive', 'data'),
+        );
+        if (directory) return directory;
+      }
+    } catch {
+      // WSL is optional; fall through to the no-source path.
+    }
+  }
+
+  return null;
+}
+
+function loadJsonSource(filePath: string): CatalogItem[] {
+  if (!fs.existsSync(filePath)) return [];
+  const data = readJson<{ files?: unknown[]; parts?: unknown[] }>(filePath);
+  if (!data) return [];
+
+  const partsByBlob = new Map<string, unknown[]>();
+  for (const value of Array.isArray(data.parts) ? data.parts : []) {
+    if (!value || typeof value !== 'object') continue;
+    const part = value as Record<string, unknown>;
+    const blobId = asString(part.blob_id ?? part.blobId).trim();
+    if (!blobId) continue;
+    const list = partsByBlob.get(blobId);
+    if (list) list.push(part);
+    else partsByBlob.set(blobId, [part]);
+  }
+
+  const items: CatalogItem[] = [];
+  for (const value of Array.isArray(data.files) ? data.files : []) {
+    if (!value || typeof value !== 'object') continue;
+    const record = value as Record<string, unknown>;
+    const blobId = asString(record.blob_id ?? record.blobId).trim();
+    const item = itemFromSourceRecord(record, partsByBlob.get(blobId) ?? []);
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+function loadSqliteSource(filePath: string): CatalogItem[] {
+  if (!fs.existsSync(filePath)) return [];
+  try {
     const require = createRequire(import.meta.url);
-    const Database = require(path.resolve(rootDir, 'server/node_modules/better-sqlite3'));
-    const db = new Database(sqliteDbPath, { readonly: true });
-
-    const allFolders = db.prepare('SELECT id, parent_id, name, updated_at FROM folders WHERE trashed_at IS NULL').all();
-    const streamFolder = allFolders.find((f: any) => f.name.toLowerCase() === 'stream');
-
-    const getPartsForBlob = (blobId: string) => {
-      const parts = db.prepare('SELECT * FROM parts WHERE blob_id = ? ORDER BY idx ASC').all(blobId);
-      return parts.map((p: any) => ({
-        partIndex: p.idx,
-        size: p.size,
-        telegramFileId: p.tg_file_id,
-        botId: p.bot_id,
-      }));
+    const Database = require(path.join(repoRoot, 'server/node_modules/better-sqlite3')) as new (
+      filename: string,
+      options?: { readonly?: boolean },
+    ) => {
+      prepare: (sql: string) => { all: (...params: unknown[]) => unknown[] };
+      close: () => void;
     };
 
-    if (streamFolder) {
-      // 1. Files directly in stream folder = Standalone Movies / Audio
-      const streamFiles = db.prepare("SELECT * FROM files WHERE folder_id = ? AND category IN ('video', 'audio') AND trashed_at IS NULL AND status = 'ready'").all(streamFolder.id);
-      for (const f of streamFiles) {
-        seen.add(f.id);
-        const existingIdx = items.findIndex((it) => it.id === f.id);
-        const mappedParts = getPartsForBlob(f.blob_id);
-        const entry: CatalogItem = {
-          id: f.id,
-          name: f.name,
-          category: f.category,
-          mimeType: f.mime_type || (f.category === 'video' ? 'video/mp4' : 'audio/mpeg'),
-          size: f.size,
-          duration: f.duration || (f.name.toLowerCase().includes('inception') ? 8884 : 15),
-          hasThumbnail: Boolean(f.has_thumbnail),
-          updatedAt: f.updated_at,
-          artist: '',
-          album: '',
-          description: f.description || 'Movie / Standalone Media',
-          parts: mappedParts.length > 0 ? mappedParts : undefined,
-        };
-        if (existingIdx >= 0) items[existingIdx] = entry;
-        else items.push(entry);
+    const database = new Database(filePath, { readonly: true });
+    try {
+      const rows = database.prepare(`
+        SELECT *
+        FROM files
+        WHERE category IN ('video', 'audio')
+          AND status = 'ready'
+          AND trashed_at IS NULL
+      `).all();
+
+      const items: CatalogItem[] = [];
+      for (const value of rows) {
+        const record = value as Record<string, unknown>;
+        const blobId = asString(record.blob_id).trim();
+        const parts = blobId
+          ? database.prepare('SELECT * FROM parts WHERE blob_id = ? ORDER BY idx ASC').all(blobId)
+          : [];
+        const item = itemFromSourceRecord(record, parts);
+        if (item) items.push(item);
       }
-
-      // 2. Subfolders inside stream folder = TV Series
-      const seriesFolders = allFolders.filter((f: any) => f.parent_id === streamFolder.id);
-      for (const sFolder of seriesFolders) {
-        const seasonFolders = allFolders.filter((f: any) => f.parent_id === sFolder.id);
-        const seasons: SeasonItem[] = [];
-        let totalEpisodes = 0;
-
-        if (seasonFolders.length > 0) {
-          for (const seFolder of seasonFolders) {
-            const seMatch = /(?:season\s*|s)(\d+)/i.exec(seFolder.name);
-            const seNum = seMatch ? parseInt(seMatch[1]!, 10) : seasons.length + 1;
-            const epFiles = db.prepare("SELECT * FROM files WHERE folder_id = ? AND category = 'video' AND trashed_at IS NULL AND status = 'ready' ORDER BY name ASC").all(seFolder.id);
-            const episodes: EpisodeItem[] = epFiles.map((f: any, epIdx: number) => {
-              seen.add(f.id);
-              const info = parseEp(f.name, seNum, epIdx + 1);
-              return {
-                id: f.id,
-                episodeNumber: info.episode,
-                seasonNumber: seNum,
-                seriesId: sFolder.id,
-                seriesName: sFolder.name,
-                episodeTitle: info.title,
-                name: f.name,
-                category: 'video',
-                mimeType: f.mime_type || 'video/mp4',
-                size: f.size,
-                duration: f.duration || null,
-                hasThumbnail: Boolean(f.has_thumbnail),
-                updatedAt: f.updated_at,
-                artist: '',
-                album: '',
-                description: f.description || '',
-                parts: getPartsForBlob(f.blob_id),
-              };
-            });
-            episodes.sort((a, b) => a.episodeNumber - b.episodeNumber);
-            totalEpisodes += episodes.length;
-            seasons.push({ seasonNumber: seNum, name: seFolder.name, episodes });
-          }
-          seasons.sort((a, b) => a.seasonNumber - b.seasonNumber);
-        } else {
-          const epFiles = db.prepare("SELECT * FROM files WHERE folder_id = ? AND category = 'video' AND trashed_at IS NULL AND status = 'ready' ORDER BY name ASC").all(sFolder.id);
-          if (epFiles.length > 0) {
-            const episodes: EpisodeItem[] = epFiles.map((f: any, epIdx: number) => {
-              seen.add(f.id);
-              const info = parseEp(f.name, 1, epIdx + 1);
-              return {
-                id: f.id,
-                episodeNumber: info.episode,
-                seasonNumber: 1,
-                seriesId: sFolder.id,
-                seriesName: sFolder.name,
-                episodeTitle: info.title,
-                name: f.name,
-                category: 'video',
-                mimeType: f.mime_type || 'video/mp4',
-                size: f.size,
-                duration: f.duration || null,
-                hasThumbnail: Boolean(f.has_thumbnail),
-                updatedAt: f.updated_at,
-                artist: '',
-                album: '',
-                description: f.description || '',
-                parts: getPartsForBlob(f.blob_id),
-              };
-            });
-            episodes.sort((a, b) => a.episodeNumber - b.episodeNumber);
-            totalEpisodes += episodes.length;
-            seasons.push({ seasonNumber: 1, name: 'Season 1', episodes });
-          }
-        }
-
-        const seriesIdx = series.findIndex((s) => s.id === sFolder.id);
-        const sEntry: SeriesItem = {
-          id: sFolder.id,
-          name: sFolder.name,
-          folderName: sFolder.name,
-          description: `TV Series · ${seasons.length} Season${seasons.length > 1 ? 's' : ''} · ${totalEpisodes} Episode${totalEpisodes > 1 ? 's' : ''}`,
-          seasonsCount: seasons.length,
-          episodesCount: totalEpisodes,
-          seasons,
-          updatedAt: sFolder.updated_at,
-          hasThumbnail: seasons[0]?.episodes[0]?.hasThumbnail ?? false,
-        };
-        if (seriesIdx >= 0) series[seriesIdx] = sEntry;
-        else series.push(sEntry);
-      }
+      return items;
+    } finally {
+      database.close();
     }
-
-    // Also support root/general files if no stream folder or for standalone movies
-    const rows = db.prepare("SELECT * FROM files WHERE category IN ('video', 'audio')").all();
-    for (const f of rows) {
-      if (seen.has(f.id)) continue;
-      const parts = db.prepare('SELECT * FROM parts WHERE blob_id = ? ORDER BY idx ASC').all(f.blob_id);
-      let meta: Record<string, unknown> = {};
-      try { meta = JSON.parse(f.metadata || '{}'); } catch {}
-      const mappedParts = parts.map((p: any) => ({
-        partIndex: p.idx,
-        size: p.size,
-        telegramFileId: p.tg_file_id,
-        botId: p.bot_id,
-      }));
-
-      const existingIdx = items.findIndex((it) => it.id === f.id);
-      const entry: CatalogItem = {
-        id: f.id,
-        name: f.name,
-        category: f.category,
-        mimeType: f.mime_type || (f.category === 'video' ? 'video/mp4' : 'audio/mpeg'),
-        size: f.size,
-        duration: f.duration || (f.name.toLowerCase().includes('inception') ? 8884 : 15),
-        hasThumbnail: Boolean(f.has_thumbnail),
-        updatedAt: f.updated_at,
-        artist: typeof meta.artist === 'string' ? meta.artist : '',
-        album: typeof meta.album === 'string' ? meta.album : '',
-        description: f.description || 'Direct Telegram Cloud Stream',
-        parts: mappedParts.length > 0 ? mappedParts : undefined,
-      };
-
-      if (existingIdx >= 0) {
-        // Do not overwrite Inception if it already has more than 51 parts (19.5MB cloud parts)
-        const isInc = f.name.toLowerCase().includes('inception');
-        const prevParts = items[existingIdx]?.parts?.length ?? 0;
-        if (isInc && prevParts > 51) {
-          // Keep existing 19.5MB parts
-        } else {
-          items[existingIdx] = { ...items[existingIdx], ...entry };
-        }
-      } else {
-        seen.add(f.id);
-        items.push(entry);
-      }
-    }
-  } catch (e) {
-    console.warn('SQLite export bypassed:', (e as Error).message);
+  } catch (error) {
+    warn(`SQLite source unavailable (${filePath}): ${(error as Error).message}`);
+    return [];
   }
 }
 
-// Read JSON databases (Windows AppData teledrive.json)
-const jsonSources = [p1, p2];
-for (const p of jsonSources) {
-  if (!fs.existsSync(p)) continue;
-  try {
-    const raw = fs.readFileSync(p, 'utf8');
-    const db = JSON.parse(raw);
-    const jFolders: any[] = db.folders || [];
-    const jFiles: any[] = db.files || [];
-    const jParts: any[] = db.parts || [];
+function loadEditions(): Map<string, EditionManifest> {
+  const editions = new Map<string, EditionManifest>();
+  if (!fs.existsSync(editionsDir)) return editions;
 
-    // Identify series folders inside Videos or stream
-    const videosFolder = jFolders.find((f: any) => f.name === 'Videos' && !f.parent_id && !f.trashed_at);
-    const vId = videosFolder ? videosFolder.id : null;
+  for (const entry of fs.readdirSync(editionsDir).sort()) {
+    if (!entry.endsWith('.json')) continue;
+    const filePath = path.join(editionsDir, entry);
+    const data = readJson<Record<string, unknown>>(filePath);
+    if (!data) continue;
 
-    // Series folders are folders whose parent is Videos or stream (or contains 'Season' subfolders)
-    const streamFolders = jFolders.filter((f: any) => f.name === 'stream' && !f.trashed_at);
-    const streamIds = new Set(streamFolders.map((sf: any) => sf.id));
+    const fileId = asString(data.fileId ?? data.id).trim();
+    const parts = normalizeParts(data.parts);
+    if (!UUID.test(fileId) || parts.length === 0) {
+      warn(`Skipped edition ${entry}: missing a valid fileId or parts.`);
+      continue;
+    }
 
-    const potentialSeriesFolders = jFolders.filter((f: any) => {
-      if (f.trashed_at) return false;
-      if (f.name === 'stream' || f.name === 'Videos') return false;
-      if (streamIds.has(f.parent_id)) return true;
-      if (vId && f.parent_id === vId) return true;
-      return false;
+    const name = asString(data.name).trim();
+    const mimeType = asString(data.mimeType).trim();
+    editions.set(fileId, {
+      fileId,
+      ...(name ? { name } : {}),
+      ...(mimeType ? { mimeType } : {}),
+      size: asNumber(data.size) ?? totalSize(parts),
+      duration: asNumber(data.duration),
+      source: asString(data.source).trim() || undefined,
+      uploadedAt: asNumber(data.uploadedAt) ?? 0,
+      parts,
     });
-
-    for (const sFolder of potentialSeriesFolders) {
-      const seasonFolders = jFolders.filter((f: any) => f.parent_id === sFolder.id && !f.trashed_at);
-      const seasons: SeasonItem[] = [];
-      let totalEpisodes = 0;
-
-      if (seasonFolders.length > 0) {
-        for (const seFolder of seasonFolders) {
-          const seMatch = /(?:season\s*|s)(\d+)/i.exec(seFolder.name);
-          const seNum = seMatch ? parseInt(seMatch[1]!, 10) : seasons.length + 1;
-          const epFiles = jFiles.filter((f: any) => f.folder_id === seFolder.id && f.category === 'video' && !f.trashed_at);
-          const episodes: EpisodeItem[] = epFiles.map((f: any, epIdx: number) => {
-            seen.add(f.id);
-            const info = parseEp(f.name, seNum, epIdx + 1);
-            const fParts = jParts.filter((pt: any) => pt.blob_id === f.blob_id);
-            return {
-              id: f.id,
-              episodeNumber: info.episode,
-              seasonNumber: seNum,
-              seriesId: sFolder.id,
-              seriesName: sFolder.name,
-              episodeTitle: info.title,
-              name: f.name,
-              category: 'video',
-              mimeType: f.mime_type || 'video/mp4',
-              size: f.size,
-              duration: f.duration || 2400,
-              hasThumbnail: Boolean(f.has_thumbnail),
-              updatedAt: f.updated_at || Date.now(),
-              artist: '',
-              album: '',
-              description: f.description || '',
-              parts: fParts.map((pt: any) => ({
-                partIndex: pt.part_index ?? pt.idx ?? 0,
-                size: pt.size,
-                telegramFileId: pt.telegram_file_id,
-                botId: pt.bot_id,
-              })),
-            };
-          });
-          episodes.sort((a, b) => a.episodeNumber - b.episodeNumber);
-          totalEpisodes += episodes.length;
-          seasons.push({ seasonNumber: seNum, name: seFolder.name, episodes });
-        }
-        seasons.sort((a, b) => a.seasonNumber - b.seasonNumber);
-      }
-
-      if (seasons.length > 0) {
-        const seriesIdx = series.findIndex((s) => s.id === sFolder.id || s.name.toLowerCase() === sFolder.name.toLowerCase());
-        const sEntry: SeriesItem = {
-          id: sFolder.id,
-          name: sFolder.name,
-          folderName: sFolder.name,
-          description: `TV Series · ${seasons.length} Season${seasons.length > 1 ? 's' : ''} · ${totalEpisodes} Episode${totalEpisodes > 1 ? 's' : ''}`,
-          seasonsCount: seasons.length,
-          episodesCount: totalEpisodes,
-          seasons,
-          updatedAt: sFolder.updated_at || Date.now(),
-          hasThumbnail: seasons[0]?.episodes[0]?.hasThumbnail ?? false,
-        };
-        if (seriesIdx >= 0) series[seriesIdx] = sEntry;
-        else series.push(sEntry);
-      }
-    }
-
-    // Process standalone files
-    for (const f of jFiles) {
-      if (!['video', 'audio'].includes(f.category) || seen.has(f.id)) continue;
-      seen.add(f.id);
-      const fParts = jParts.filter((pt: any) => pt.blob_id === f.blob_id);
-      items.push({
-        id: f.id,
-        name: f.name,
-        category: f.category,
-        mimeType: f.mime_type || (f.category === 'video' ? 'video/mp4' : 'audio/mpeg'),
-        size: f.size,
-        duration: f.duration || (f.name.toLowerCase().includes('inception') ? 8884 : null),
-        hasThumbnail: Boolean(f.has_thumbnail),
-        updatedAt: f.updated_at || Date.now(),
-        artist: '',
-        album: '',
-        description: f.description || '',
-        parts: fParts.map((pt: any) => ({
-          partIndex: pt.part_index ?? pt.idx ?? 0,
-          size: pt.size,
-          telegramFileId: pt.telegram_file_id,
-          botId: pt.bot_id,
-        })),
-      });
-    }
-  } catch {}
+  }
+  return editions;
 }
 
-
-// Check for completed 19.5MB cloud parts for Inception
-const progressPath = path.resolve(__dirname, '../data/inception-upload-progress.json');
-if (fs.existsSync(progressPath)) {
+function isFile(candidate: string): boolean {
   try {
-    const pData = JSON.parse(fs.readFileSync(progressPath, 'utf8'));
-    if (Array.isArray(pData) && pData.length > 51) {
-      const incItem = items.find((it) => it.name.toLowerCase().includes('inception'));
-      if (incItem) {
-        incItem.name = 'Inception.2010.1080p.NF.WEB-DL.English.H.264.mp4';
-        incItem.mimeType = 'video/mp4';
-        incItem.size = 2914735596;
-        incItem.duration = 8884;
-        incItem.description = 'Dom Cobb is a skilled thief who steals valuable secrets from deep within the subconscious during the dream state. Full-length feature film (2h 28m).';
-        incItem.parts = pData.sort((a: any, b: any) => a.partIndex - b.partIndex);
-      }
-    }
-  } catch {}
-}
-
-fs.mkdirSync(path.dirname(outPath), { recursive: true });
-
-// Ensure episodes belonging to TV series do not duplicate into standalone items
-const seriesEpisodeIds = new Set<string>();
-for (const s of series) {
-  for (const se of s.seasons) {
-    for (const ep of se.episodes) {
-      seriesEpisodeIds.add(ep.id);
-    }
+    return fs.statSync(candidate).isFile();
+  } catch {
+    return false;
   }
 }
-const finalItems = items.filter((it) => !seriesEpisodeIds.has(it.id));
 
-fs.writeFileSync(outPath, JSON.stringify({ items: finalItems, series }, null, 2));
-console.log(`Exported ${finalItems.length} media items and ${series.length} series to ${outPath}`);
+function mediaSearchDirs(dataDir: string | null): string[] {
+  const directories = new Set<string>();
+  const configured = process.env.STREAM_MEDIA_DIRS;
+  if (configured) {
+    for (const entry of configured.split(path.delimiter)) {
+      const trimmed = entry.trim();
+      if (trimmed) directories.add(trimmed);
+    }
+  }
+
+  if (dataDir) {
+    const userRoot = path.resolve(dataDir, '../../../..');
+    for (const folder of ['Videos', 'Videos/extracted_videos', 'Screen Recordings', 'Downloads', 'Desktop']) {
+      directories.add(path.join(userRoot, folder));
+    }
+  }
+  return [...directories];
+}
+
+function findLocalMedia(name: string, directories: string[], hint?: string): string | null {
+  if (hint && isFile(hint)) return hint;
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+
+  const candidates = new Set<string>([trimmed]);
+  const stem = trimmed.replace(/\.[^.]+$/, '');
+  for (const extension of MEDIA_EXTENSIONS) candidates.add(`${stem}.${extension}`);
+
+  for (const directory of directories) {
+    if (!existingDirectory(directory)) continue;
+    let entries: string[] | null = null;
+    for (const candidate of candidates) {
+      const direct = path.join(directory, candidate);
+      if (isFile(direct)) return direct;
+      if (!entries) {
+        try {
+          entries = fs.readdirSync(directory);
+        } catch {
+          entries = [];
+        }
+      }
+      const match = entries.find((entry) => entry.toLowerCase() === candidate.toLowerCase());
+      if (match) return path.join(directory, match);
+    }
+  }
+  return null;
+}
+
+function probeDuration(filePath: string): number | null {
+  if (durationCache.has(filePath)) return durationCache.get(filePath) ?? null;
+  const result = spawnSync(
+    'ffprobe',
+    ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', filePath],
+    { encoding: 'utf8', timeout: 20_000 },
+  );
+  const seconds = result.status === 0 ? Number.parseFloat(result.stdout.trim()) : Number.NaN;
+  const value = Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds) : null;
+  durationCache.set(filePath, value);
+  return value;
+}
+
+function readExistingCatalog(): CatalogItem[] {
+  if (!fs.existsSync(outPath)) return [];
+  const data = readJson<unknown>(outPath);
+  if (!data) return [];
+  const list = Array.isArray(data)
+    ? data
+    : data && typeof data === 'object' && Array.isArray((data as { items?: unknown[] }).items)
+      ? (data as { items: unknown[] }).items
+      : [];
+  return list
+    .map(normalizeCatalogItem)
+    .filter((item): item is CatalogItem => item !== null);
+}
+
+function main(): void {
+  const dataDir = discoverDataDir();
+  const jsonPaths: string[] = [];
+  const explicitJson = process.env.TELEDRIVE_JSON?.trim();
+  if (explicitJson) {
+    jsonPaths.push(...explicitJson.split(path.delimiter).map((entry) => entry.trim()).filter(Boolean));
+  } else if (dataDir) {
+    jsonPaths.push(path.join(dataDir, 'teledrive.json'));
+  }
+
+  const sqlitePath = process.env.TELEDRIVE_SQLITE?.trim()
+    || path.join(repoRoot, 'data/teledrive.db');
+
+  const availableSources = [
+    ...jsonPaths.filter((filePath) => fs.existsSync(filePath)),
+    ...(fs.existsSync(sqlitePath) ? [sqlitePath] : []),
+  ];
+
+  if (availableSources.length === 0) {
+    warn('No TeleDrive data source found; keeping the existing catalog unchanged.');
+    return;
+  }
+
+  const sourceItems = new Map<string, CatalogItem>();
+  const addItems = (items: CatalogItem[]) => {
+    for (const item of items) {
+      const existing = sourceItems.get(item.id);
+      if (!existing || item.updatedAt >= existing.updatedAt) sourceItems.set(item.id, item);
+    }
+  };
+
+  for (const filePath of jsonPaths) addItems(loadJsonSource(filePath));
+  addItems(loadSqliteSource(sqlitePath));
+
+  if (sourceItems.size === 0 && !process.argv.includes('--allow-empty')) {
+    warn('The configured TeleDrive sources contain no playable video or audio; keeping the existing catalog unchanged.');
+    return;
+  }
+
+  const existingItems = readExistingCatalog();
+  const existingById = new Map(existingItems.map((item) => [item.id, item]));
+  const editions = loadEditions();
+  const searchDirs = mediaSearchDirs(dataDir);
+  const merged: CatalogItem[] = [];
+
+  for (const source of sourceItems.values()) {
+    const existing = existingById.get(source.id);
+    const edition = editions.get(source.id);
+    const sourceParts = source.parts ?? [];
+    const existingParts = existing?.parts ?? [];
+
+    let parts: CatalogPart[] = [];
+    let partsOrigin: 'edition' | 'source' | 'existing' = 'source';
+    if (edition) {
+      parts = edition.parts;
+      partsOrigin = 'edition';
+    } else if (hasPlayableParts(sourceParts)) {
+      parts = sourceParts;
+    } else if (hasPlayableParts(existingParts)) {
+      parts = existingParts;
+      partsOrigin = 'existing';
+    } else if (sourceParts.length > 0) {
+      parts = sourceParts;
+    } else {
+      parts = existingParts;
+      partsOrigin = 'existing';
+    }
+
+    const name = edition?.name
+      || (partsOrigin === 'existing' ? existing?.name : undefined)
+      || source.name;
+    const mimeType = edition?.mimeType
+      || (partsOrigin === 'existing' ? existing?.mimeType : undefined)
+      || source.mimeType
+      || detectMimeType(name, source.category);
+    const size = parts.length > 0 ? totalSize(parts) : source.size || existing?.size || 0;
+    const localMedia = findLocalMedia(name, searchDirs, edition?.source)
+      ?? findLocalMedia(source.name, searchDirs);
+    const duration = (localMedia ? probeDuration(localMedia) : null)
+      ?? edition?.duration
+      ?? source.duration
+      ?? existing?.duration
+      ?? null;
+
+    if (!hasPlayableParts(parts)) {
+      warn(`"${name}" uses parts larger than 20 MB or missing Telegram file IDs; hosted playback may need a cloud edition.`);
+    }
+
+    merged.push({
+      id: source.id,
+      name,
+      category: source.category,
+      mimeType,
+      size,
+      duration,
+      hasThumbnail: source.hasThumbnail || existing?.hasThumbnail === true,
+      updatedAt: Math.max(source.updatedAt, existing?.updatedAt ?? 0, edition?.uploadedAt ?? 0),
+      artist: source.artist || existing?.artist || '',
+      album: source.album || existing?.album || '',
+      description: source.description || '',
+      format: extensionOf(name) || source.format || existing?.format || undefined,
+      ...(parts.length > 0 ? { parts } : {}),
+    });
+  }
+
+  merged.sort((a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name));
+
+  const document = { items: merged, series: [] as unknown[] };
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  fs.writeFileSync(outPath, `${JSON.stringify(document, null, 2)}\n`);
+  console.log(`[catalog] Exported ${merged.length} media item(s) from ${sourceItems.size} source record(s) to ${outPath}`);
+}
+
+main();

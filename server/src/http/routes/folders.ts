@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../../context.js';
+import { REPO_ROOT } from '../../config.js';
 import {
   breadcrumbs,
   childFolderNames,
@@ -48,7 +49,7 @@ export function registerFolderRoutes(app: FastifyInstance, ctx: AppContext): voi
     const result = generateTemplateFolders(db);
     ctx.bus.emit('storage.changed', {});
     try {
-      const catPath = path.resolve(process.cwd(), 'stream-platform/public/catalog.json');
+      const catPath = path.resolve(REPO_ROOT, 'stream-platform/public/catalog.json');
       syncTeleDriveToCatalog(db, catPath);
     } catch {}
     return { ok: true, ...result };

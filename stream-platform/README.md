@@ -36,7 +36,9 @@ A cinema streaming room and lossless audio player powered by Telegram and TeleDr
    - **Build command**: `npm run build`
    - **Build output directory**: `dist`
 4. In **Environment Variables** (Production):
-   - `TELEGRAM_BOT_TOKEN`: `<your-telegram-bot-token>`
+   - `BOT_TOKENS`: comma-separated bot tokens used by the uploaded media parts
+     *(use every bot that owns parts in the catalog; a single-bot library can
+     use `TELEGRAM_BOT_TOKEN` instead)*
    - `ALLOW_PUBLIC`: `true`
      *(Optional: if using Cloudflare Access instead of public access, add `ACCESS_TEAM` and `ACCESS_AUD`)*
 5. Click **Save and Deploy**. Your streaming platform will be live at `https://<your-project>.pages.dev`!
@@ -51,7 +53,8 @@ npm run build
 npx wrangler pages deploy dist --project-name folio-stream
 ```
 Then set the secret in Cloudflare Pages dashboard:
-- `TELEGRAM_BOT_TOKEN`: `<your-telegram-bot-token>`
+- `BOT_TOKENS`: comma-separated bot tokens for the bots that own the media parts
+  *(or `TELEGRAM_BOT_TOKEN` for a single-bot library)*
 - `ALLOW_PUBLIC`: `true`
 
 ---
@@ -64,10 +67,24 @@ npm run dev --prefix stream-platform
 ```
 Open [http://localhost:5174](http://localhost:5174).
 
-To re-export the catalog snapshot:
+The committed `public/catalog.json` is the real library snapshot. `npm run build`
+never regenerates it, so a deploy from a machine without the local TeleDrive
+database cannot replace it with an empty catalog.
+
+To refresh the snapshot from the real TeleDrive library:
 ```bash
 npm run export-catalog --prefix stream-platform
 ```
+
+The exporter discovers ready video/audio files from the TeleDrive data
+directory (or `TELEDRIVE_DATA_DIR` / `TELEDRIVE_JSON` / `TELEDRIVE_SQLITE`),
+probes real durations, preserves verified cloud editions, and prunes stale
+entries. Commit the updated snapshot to publish it.
+
+Hosted playback uses the public Telegram Bot API, which only serves documents
+up to 20 MiB. Media uploaded with larger parts stays visible in the catalog but
+needs a cloud edition with 20 MiB parts (see `data/stream-editions/`) before it
+can stream from Cloudflare Pages.
 
 To run test suite:
 ```bash

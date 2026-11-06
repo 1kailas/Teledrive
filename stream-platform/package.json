@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsx scripts/export-catalog.ts && tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build",
     "export-catalog": "tsx scripts/export-catalog.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts"

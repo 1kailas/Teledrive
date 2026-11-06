@@ -1,4 +1,3 @@
-import { INCEPTION_PARTS } from './inceptionData';
 import { posterSvg } from './poster';
 import { cleanTitle } from './title';
 
@@ -404,45 +403,18 @@ async function fetchTelegramChunk(
   return null;
 }
 
-function normalizeCatalogFile(item: CatalogFile): CatalogFile {
-  if (item.id === '9bd298eb-844b-4062-b216-590c78969698' && (!item.parts || item.parts.length === 0)) {
-    return {
-      ...item,
-      id: '9bd298eb-844b-4062-b216-590c78969698',
-      name: item.name || 'Inception.2010.1080p.NF.WEB-DL.English.H.264.mp4',
-      mimeType: item.mimeType || 'video/mp4',
-      format: item.format || 'MP4',
-      category: 'video',
-      size: item.size || 2914735596,
-      duration: item.duration || 8884,
-      description: item.description || 'Dom Cobb is a skilled thief who steals valuable secrets from deep within the subconscious during the dream state. Full-length feature film (2h 28m).',
-      partsCount: INCEPTION_PARTS.length,
-      parts: INCEPTION_PARTS as unknown as CatalogPart[],
-    };
-  }
-  return item;
-}
-
 function parseCatalogPayload(payload: unknown): StandaloneCatalog {
   if (!payload || typeof payload !== 'object') return { items: [] };
-  let items: CatalogFile[] = [];
-  let series: SeriesFile[] = [];
 
   if (Array.isArray(payload)) {
-    items = payload.map(normalizeCatalogFile);
-  } else {
-    const obj = payload as { items?: CatalogFile[]; series?: SeriesFile[] };
-    items = (Array.isArray(obj.items) ? obj.items : []).map(normalizeCatalogFile);
-    series = Array.isArray(obj.series) ? obj.series.map((s) => ({
-      ...s,
-      seasons: s.seasons.map((se) => ({
-        ...se,
-        episodes: se.episodes.map(normalizeCatalogFile),
-      })),
-    })) : [];
+    return { items: payload as CatalogFile[] };
   }
 
-  return { items, series };
+  const obj = payload as { items?: CatalogFile[]; series?: SeriesFile[] };
+  return {
+    items: Array.isArray(obj.items) ? obj.items : [],
+    series: Array.isArray(obj.series) ? obj.series : [],
+  };
 }
 
 function findMediaInCatalog(catalog: StandaloneCatalog, id: string): CatalogFile | null {
@@ -462,22 +434,22 @@ function findMediaInCatalog(catalog: StandaloneCatalog, id: string): CatalogFile
 async function loadStandaloneCatalog(request: Request, env: EdgeEnv, fetcher: Fetcher): Promise<StandaloneCatalog> {
   if (env.TELEDRIVE_CATALOG) {
     try {
-      const parsed = JSON.parse(env.TELEDRIVE_CATALOG);
-      return parseCatalogPayload(parsed);
+      const parsed = parseCatalogPayload(JSON.parse(env.TELEDRIVE_CATALOG));
+      if (parsed.items.length > 0 || (parsed.series && parsed.series.length > 0)) return parsed;
     } catch {}
   }
   if (env.CATALOG_JSON) {
     try {
-      const parsed = JSON.parse(env.CATALOG_JSON);
-      return parseCatalogPayload(parsed);
+      const parsed = parseCatalogPayload(JSON.parse(env.CATALOG_JSON));
+      if (parsed.items.length > 0 || (parsed.series && parsed.series.length > 0)) return parsed;
     } catch {}
   }
   if (env.TELEDRIVE_KV) {
     try {
       const raw = await env.TELEDRIVE_KV.get('catalog');
       if (raw) {
-        const parsed = JSON.parse(raw);
-        return parseCatalogPayload(parsed);
+        const parsed = parseCatalogPayload(JSON.parse(raw));
+        if (parsed.items.length > 0 || (parsed.series && parsed.series.length > 0)) return parsed;
       }
     } catch {}
   }

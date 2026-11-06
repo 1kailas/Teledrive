@@ -63,6 +63,8 @@ coverage/
 
 # Local data (db, tmp uploads, thumbnails, mock bot-api)
 data/
+!stream-platform/data/
+!stream-platform/data/stream-editions/
 
 # Old env backup (contains legacy secrets)
 .env.old

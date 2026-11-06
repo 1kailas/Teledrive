@@ -25,14 +25,10 @@ for (const item of result.created) {
 
 console.log('Syncing streaming catalog...');
 const count = syncTeleDriveToCatalog(db, catalogPath);
-console.log(`Synced ${count} items/series to ${catalogPath}`);
+console.log(`Synced ${count} media item(s) to ${catalogPath}`);
 
-console.log('\nAll template folders are ready in TeleDrive:');
-console.log('  Videos/stream/                        (Direct movies)');
-console.log('  Videos/stream/Cosmos: Possible Worlds/Season 1');
-console.log('  Videos/stream/Cosmos: Possible Worlds/Season 2');
-console.log('  Videos/stream/Example TV Series/Season 1');
-console.log('  Videos/stream/Example TV Series/Season 2');
+console.log('\nTemplate folders are ready in TeleDrive:');
+console.log('  Videos');
 console.log('  Photos/Wallpapers');
 console.log('  Audio/Soundtracks');
 console.log('  Audio/Podcasts');

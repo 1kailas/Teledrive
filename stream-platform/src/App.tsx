@@ -136,6 +136,7 @@ export default function App() {
   const queueRef = useRef<MediaItem[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
   const toastTimer = useRef<number | null>(null);
+  const playLinkHandled = useRef(false);
 
   useBodyLock(Boolean(video));
 
@@ -170,6 +171,21 @@ export default function App() {
       .then((data) => {
         const list: MediaItem[] = Array.isArray(data.items) ? [...data.items] : [];
         setItems(list);
+
+        if (!playLinkHandled.current) {
+          playLinkHandled.current = true;
+          const playId = new URLSearchParams(window.location.search).get('play');
+          if (playId) {
+            const target = list.find((item) => item.id === playId);
+            if (target) {
+              if (target.category === 'video') setVideo(target);
+              else setTrack(target);
+            }
+            const url = new URL(window.location.href);
+            url.searchParams.delete('play');
+            window.history.replaceState({}, '', url);
+          }
+        }
       })
       .catch((reason: unknown) => {
         if (controller.signal.aborted) return;

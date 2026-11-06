@@ -142,34 +142,15 @@ export function ensureFolder(db: Db, parentId: string | null, name: string, colo
   return existing;
 }
 
-/** Generates standard TeleDrive template folders including the Videos/stream TV series hierarchy. */
+/** Generates the standard TeleDrive template folders. */
 export function generateTemplateFolders(db: Db): {
   created: { id: string; name: string; path: string }[];
 } {
   const created: { id: string; name: string; path: string }[] = [];
 
-  // 1. Videos & Streaming Hierarchy (Videos/stream/<Series>/<Season>)
+  // 1. Videos
   const videos = ensureFolder(db, null, 'Videos', '#ef4444');
   created.push({ id: videos.id, name: 'Videos', path: '/Videos' });
-
-  const stream = ensureFolder(db, videos.id, 'stream', '#10b981');
-  created.push({ id: stream.id, name: 'stream', path: '/Videos/stream' });
-
-  // Cosmos Series
-  const cosmos = ensureFolder(db, stream.id, 'Cosmos: Possible Worlds', '#3b82f6');
-  created.push({ id: cosmos.id, name: 'Cosmos: Possible Worlds', path: '/Videos/stream/Cosmos: Possible Worlds' });
-  const cosmosS1 = ensureFolder(db, cosmos.id, 'Season 1');
-  created.push({ id: cosmosS1.id, name: 'Season 1', path: '/Videos/stream/Cosmos: Possible Worlds/Season 1' });
-  const cosmosS2 = ensureFolder(db, cosmos.id, 'Season 2');
-  created.push({ id: cosmosS2.id, name: 'Season 2', path: '/Videos/stream/Cosmos: Possible Worlds/Season 2' });
-
-  // Example TV Series Template
-  const exampleSeries = ensureFolder(db, stream.id, 'Example TV Series', '#8b5cf6');
-  created.push({ id: exampleSeries.id, name: 'Example TV Series', path: '/Videos/stream/Example TV Series' });
-  const exampleS1 = ensureFolder(db, exampleSeries.id, 'Season 1');
-  created.push({ id: exampleS1.id, name: 'Season 1', path: '/Videos/stream/Example TV Series/Season 1' });
-  const exampleS2 = ensureFolder(db, exampleSeries.id, 'Season 2');
-  created.push({ id: exampleS2.id, name: 'Season 2', path: '/Videos/stream/Example TV Series/Season 2' });
 
   // 2. Photos & Media Templates
   const photos = ensureFolder(db, null, 'Photos', '#f59e0b');
