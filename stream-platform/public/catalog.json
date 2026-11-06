@@ -1,48 +1,6 @@
 {
   "items": [
     {
-      "id": "84246311-6e11-4b50-8887-6726dfc8a21f",
-      "name": "tone.wav",
-      "category": "audio",
-      "mimeType": "audio/wav",
-      "size": 32044,
-      "duration": 2,
-      "hasThumbnail": false,
-      "updatedAt": 1793957858476,
-      "artist": "",
-      "album": "",
-      "description": "Uploaded via TeleDrive Engine",
-      "parts": [
-        {
-          "partIndex": 0,
-          "size": 32044,
-          "telegramFileId": "f2222222_0e6cfef5d46305c054d5127f",
-          "botId": "2222222"
-        }
-      ]
-    },
-    {
-      "id": "14e571e0-dec1-4f35-8ceb-097918a9587f",
-      "name": "tone.wav",
-      "category": "audio",
-      "mimeType": "audio/wav",
-      "size": 32044,
-      "duration": 2,
-      "hasThumbnail": false,
-      "updatedAt": 1793957804850,
-      "artist": "",
-      "album": "",
-      "description": "Uploaded via TeleDrive Engine",
-      "parts": [
-        {
-          "partIndex": 0,
-          "size": 32044,
-          "telegramFileId": "f2222222_9d973d5420641505d8d1e080",
-          "botId": "2222222"
-        }
-      ]
-    },
-    {
       "id": "9bd298eb-844b-4062-b216-590c78969698",
       "name": "Inception.2010.1080p.NF.WEB-DL.English.H.264.mp4",
       "category": "video",
@@ -50,7 +8,7 @@
       "size": 2914735596,
       "duration": 8884,
       "hasThumbnail": false,
-      "updatedAt": 1793948444425,
+      "updatedAt": 1793962208471,
       "artist": "",
       "album": "",
       "description": "Dom Cobb is a skilled thief who steals valuable secrets from deep within the subconscious during the dream state. Full-length feature film (2h 28m).",
@@ -916,382 +874,45 @@
       ]
     },
     {
-      "id": "a1111111-1111-4111-a111-111111111111",
-      "name": "Ambient Dreamscape.wav",
-      "category": "audio",
-      "mimeType": "audio/wav",
-      "size": 5292044,
-      "duration": 30,
-      "hasThumbnail": false,
-      "updatedAt": 1793950025361,
-      "artist": "TeleDrive Soundscapes",
-      "album": "Folio Studio Sessions",
-      "description": "Multi-harmonic ambient progression streamed directly in high fidelity."
+      "id": "7eba0a5a-5d50-4d44-923f-8002a1fdae05",
+      "name": "2_5208749642950417935.MP4",
+      "category": "video",
+      "mimeType": "video/mp4",
+      "size": 1734087,
+      "duration": null,
+      "hasThumbnail": true,
+      "updatedAt": 1793514739775,
+      "artist": "",
+      "album": "",
+      "description": "",
+      "parts": [
+        {
+          "partIndex": 0,
+          "size": 1734087,
+          "botId": "9289345215"
+        }
+      ]
     },
     {
-      "id": "b2222222-2222-4222-b222-222222222222",
-      "name": "Midnight Lo-Fi.wav",
-      "category": "audio",
-      "mimeType": "audio/wav",
-      "size": 4233644,
-      "duration": 24,
-      "hasThumbnail": false,
-      "updatedAt": 1793950025361,
-      "artist": "Aurora Node",
-      "album": "TeleDrive Cloud",
-      "description": "Warm nocturnal chords with subtle stereo panning and gentle acoustic decay."
+      "id": "c3115da4-a189-479b-95f5-1b8dc28ce21f",
+      "name": "2_5211015491602092914.mp4",
+      "category": "video",
+      "mimeType": "video/mp4",
+      "size": 287069,
+      "duration": null,
+      "hasThumbnail": true,
+      "updatedAt": 1793514740399,
+      "artist": "",
+      "album": "",
+      "description": "",
+      "parts": [
+        {
+          "partIndex": 0,
+          "size": 287069,
+          "botId": "9067026204"
+        }
+      ]
     }
   ],
-  "series": [
-    {
-      "id": "3f79ef2f-c680-4146-bf30-54ea29042efd",
-      "name": "Cosmos: Possible Worlds",
-      "folderName": "Cosmos: Possible Worlds",
-      "description": "TV Series · 2 Seasons · 3 Episodes",
-      "seasonsCount": 2,
-      "episodesCount": 3,
-      "seasons": [
-        {
-          "seasonNumber": 1,
-          "name": "Season 1",
-          "episodes": [
-            {
-              "id": "39e7985e-5701-4f3d-8a6d-0806675f46ed",
-              "episodeNumber": 1,
-              "seasonNumber": 1,
-              "seriesId": "3f79ef2f-c680-4146-bf30-54ea29042efd",
-              "seriesName": "Cosmos: Possible Worlds",
-              "episodeTitle": "Cosmos Ladder to the Stars",
-              "name": "Cosmos.S01E01.Ladder.to.the.Stars.mp4",
-              "category": "video",
-              "mimeType": "video/mp4",
-              "size": 512000000,
-              "duration": 2700,
-              "hasThumbnail": false,
-              "updatedAt": 1793978553442,
-              "artist": "",
-              "album": "",
-              "description": "Episode streamed directly from TeleDrive storage.",
-              "parts": [
-                {
-                  "partIndex": 0,
-                  "size": 512000000,
-                  "telegramFileId": "f2222222_39e7985e57014f3d8a6d0806",
-                  "botId": "2222222"
-                }
-              ]
-            },
-            {
-              "id": "d20bf75d-749b-4179-8c5e-2f1ad43b52a4",
-              "episodeNumber": 2,
-              "seasonNumber": 1,
-              "seriesId": "3f79ef2f-c680-4146-bf30-54ea29042efd",
-              "seriesName": "Cosmos: Possible Worlds",
-              "episodeTitle": "Cosmos Shadows of Forgotten Ancestors",
-              "name": "Cosmos.S01E02.Shadows.of.Forgotten.Ancestors.mp4",
-              "category": "video",
-              "mimeType": "video/mp4",
-              "size": 498000000,
-              "duration": 2650,
-              "hasThumbnail": false,
-              "updatedAt": 1793978553443,
-              "artist": "",
-              "album": "",
-              "description": "Episode streamed directly from TeleDrive storage.",
-              "parts": [
-                {
-                  "partIndex": 0,
-                  "size": 498000000,
-                  "telegramFileId": "f2222222_d20bf75d749b41798c5e2f1a",
-                  "botId": "2222222"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "seasonNumber": 2,
-          "name": "Season 2",
-          "episodes": [
-            {
-              "id": "c710b23c-2de1-4939-be14-c168d4752145",
-              "episodeNumber": 1,
-              "seasonNumber": 2,
-              "seriesId": "3f79ef2f-c680-4146-bf30-54ea29042efd",
-              "seriesName": "Cosmos: Possible Worlds",
-              "episodeTitle": "Cosmos Vast Universal Cosmos",
-              "name": "Cosmos.S02E01.Vast.Universal.Cosmos.mp4",
-              "category": "video",
-              "mimeType": "video/mp4",
-              "size": 530000000,
-              "duration": 2800,
-              "hasThumbnail": false,
-              "updatedAt": 1793978553443,
-              "artist": "",
-              "album": "",
-              "description": "Episode streamed directly from TeleDrive storage.",
-              "parts": [
-                {
-                  "partIndex": 0,
-                  "size": 530000000,
-                  "telegramFileId": "f2222222_c710b23c2de14939be14c168",
-                  "botId": "2222222"
-                }
-              ]
-            }
-          ]
-        }
-      ],
-      "updatedAt": 1793978553442,
-      "hasThumbnail": false
-    },
-    {
-      "id": "be4d34bf-44ed-4276-a2b8-cac48255376f",
-      "name": "Example TV Series",
-      "folderName": "Example TV Series",
-      "description": "TV Series · 2 Seasons · 1 Episode",
-      "seasonsCount": 2,
-      "episodesCount": 1,
-      "seasons": [
-        {
-          "seasonNumber": 1,
-          "name": "Season 1",
-          "episodes": [
-            {
-              "id": "0280222a-1faf-468c-973b-7ff0d1c625a0",
-              "episodeNumber": 1,
-              "seasonNumber": 1,
-              "seriesId": "be4d34bf-44ed-4276-a2b8-cac48255376f",
-              "seriesName": "Example TV Series",
-              "episodeTitle": "Example Series Pilot",
-              "name": "Example.Series.S01E01.Pilot.mp4",
-              "category": "video",
-              "mimeType": "video/mp4",
-              "size": 450000000,
-              "duration": 2400,
-              "hasThumbnail": false,
-              "updatedAt": 1793978553443,
-              "artist": "",
-              "album": "",
-              "description": "Episode streamed directly from TeleDrive storage.",
-              "parts": [
-                {
-                  "partIndex": 0,
-                  "size": 450000000,
-                  "telegramFileId": "f2222222_0280222a1faf468c973b7ff0",
-                  "botId": "2222222"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "seasonNumber": 2,
-          "name": "Season 2",
-          "episodes": []
-        }
-      ],
-      "updatedAt": 1793978553443,
-      "hasThumbnail": false
-    },
-    {
-      "id": "5e2e443b-5c8f-4bb0-a17f-e667941de9d8",
-      "name": "Lost",
-      "folderName": "Lost",
-      "description": "TV Series · 2 Seasons · 3 Episodes",
-      "seasonsCount": 2,
-      "episodesCount": 3,
-      "seasons": [
-        {
-          "seasonNumber": 1,
-          "name": "Season 1",
-          "episodes": [
-            {
-              "id": "6a95dfe6-aab1-41c5-bcb0-b1366100c6a7",
-              "episodeNumber": 1,
-              "seasonNumber": 1,
-              "seriesId": "5e2e443b-5c8f-4bb0-a17f-e667941de9d8",
-              "seriesName": "Lost",
-              "episodeTitle": "Lost Pilot Part 1",
-              "name": "Lost.S01E01.Pilot.Part.1.mp4",
-              "category": "video",
-              "mimeType": "video/mp4",
-              "size": 485120400,
-              "duration": 2540,
-              "hasThumbnail": false,
-              "updatedAt": 1793978553441,
-              "artist": "",
-              "album": "",
-              "description": "Episode streamed directly from TeleDrive storage.",
-              "parts": [
-                {
-                  "partIndex": 0,
-                  "size": 485120400,
-                  "telegramFileId": "f2222222_6a95dfe6aab141c5bcb0b136",
-                  "botId": "2222222"
-                }
-              ]
-            },
-            {
-              "id": "0e1dfb58-1b85-4677-82db-410418ad2651",
-              "episodeNumber": 2,
-              "seasonNumber": 1,
-              "seriesId": "5e2e443b-5c8f-4bb0-a17f-e667941de9d8",
-              "seriesName": "Lost",
-              "episodeTitle": "Lost Pilot Part 2",
-              "name": "Lost.S01E02.Pilot.Part.2.mp4",
-              "category": "video",
-              "mimeType": "video/mp4",
-              "size": 462100800,
-              "duration": 2420,
-              "hasThumbnail": false,
-              "updatedAt": 1793978553441,
-              "artist": "",
-              "album": "",
-              "description": "Episode streamed directly from TeleDrive storage.",
-              "parts": [
-                {
-                  "partIndex": 0,
-                  "size": 462100800,
-                  "telegramFileId": "f2222222_0e1dfb581b85467782db4104",
-                  "botId": "2222222"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "seasonNumber": 2,
-          "name": "Season 2",
-          "episodes": [
-            {
-              "id": "0eb12ff6-1987-4b1c-a0b0-b9aaf4ba6121",
-              "episodeNumber": 1,
-              "seasonNumber": 2,
-              "seriesId": "5e2e443b-5c8f-4bb0-a17f-e667941de9d8",
-              "seriesName": "Lost",
-              "episodeTitle": "Lost Man of Science Man of Faith",
-              "name": "Lost.S02E01.Man.of.Science.Man.of.Faith.mp4",
-              "category": "video",
-              "mimeType": "video/mp4",
-              "size": 501230000,
-              "duration": 2600,
-              "hasThumbnail": false,
-              "updatedAt": 1793978553442,
-              "artist": "",
-              "album": "",
-              "description": "Episode streamed directly from TeleDrive storage.",
-              "parts": [
-                {
-                  "partIndex": 0,
-                  "size": 501230000,
-                  "telegramFileId": "f2222222_0eb12ff619874b1ca0b0b9aa",
-                  "botId": "2222222"
-                }
-              ]
-            }
-          ]
-        }
-      ],
-      "updatedAt": 1793976929661,
-      "hasThumbnail": false
-    },
-    {
-      "id": "4edc5b97-781a-4b17-921a-c7097f6d1a7d",
-      "name": "Cosmos: Possible Worlds",
-      "folderName": "Cosmos: Possible Worlds",
-      "description": "TV Series · 2 Seasons · 2 Episodes",
-      "seasonsCount": 2,
-      "episodesCount": 2,
-      "seasons": [
-        {
-          "seasonNumber": 1,
-          "name": "Season 1",
-          "episodes": [
-            {
-              "id": "7eba0a5a-5d50-4d44-923f-8002a1fdae05",
-              "episodeNumber": 1,
-              "seasonNumber": 1,
-              "seriesId": "4edc5b97-781a-4b17-921a-c7097f6d1a7d",
-              "seriesName": "Cosmos: Possible Worlds",
-              "episodeTitle": "Cosmos Ladder to the Stars",
-              "name": "Cosmos.S01E01.Ladder.to.the.Stars.mp4",
-              "category": "video",
-              "mimeType": "video/mp4",
-              "size": 1734087,
-              "duration": null,
-              "hasThumbnail": true,
-              "updatedAt": 1793514739775,
-              "artist": "",
-              "album": "",
-              "description": "",
-              "parts": [
-                {
-                  "partIndex": 0,
-                  "size": 1734087,
-                  "telegramFileId": "BQACAgUAAyEGAAMBBg0SngADB2rm3PIC7ud3qf9TJI2zHDSyCsxxAAKoLgACBjU4V6DVaggkOsFYNgQ",
-                  "botId": "9289345215"
-                }
-              ]
-            },
-            {
-              "id": "c3115da4-a189-479b-95f5-1b8dc28ce21f",
-              "episodeNumber": 2,
-              "seasonNumber": 1,
-              "seriesId": "4edc5b97-781a-4b17-921a-c7097f6d1a7d",
-              "seriesName": "Cosmos: Possible Worlds",
-              "episodeTitle": "Cosmos Shadows of Forgotten Ancestors",
-              "name": "Cosmos.S01E02.Shadows.of.Forgotten.Ancestors.mp4",
-              "category": "video",
-              "mimeType": "video/mp4",
-              "size": 287069,
-              "duration": null,
-              "hasThumbnail": true,
-              "updatedAt": 1793514740399,
-              "artist": "",
-              "album": "",
-              "description": "",
-              "parts": [
-                {
-                  "partIndex": 0,
-                  "size": 287069,
-                  "telegramFileId": "BQACAgUAAyEGAAMBBg0SngADBmrm3PIBd1JY9FlpVsaVHl3xRorKAAKnLgACBjU4V5eY81az0MZpNgQ",
-                  "botId": "9067026204"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "seasonNumber": 2,
-          "name": "Season 2",
-          "episodes": []
-        }
-      ],
-      "updatedAt": 1793962484390,
-      "hasThumbnail": true
-    },
-    {
-      "id": "e03bfca5-6b9d-4c99-a421-9aa00030271f",
-      "name": "Example TV Series",
-      "folderName": "Example TV Series",
-      "description": "TV Series · 2 Seasons · 0 Episode",
-      "seasonsCount": 2,
-      "episodesCount": 0,
-      "seasons": [
-        {
-          "seasonNumber": 1,
-          "name": "Season 1",
-          "episodes": []
-        },
-        {
-          "seasonNumber": 2,
-          "name": "Season 2",
-          "episodes": []
-        }
-      ],
-      "updatedAt": 1793962326729,
-      "hasThumbnail": false
-    }
-  ]
+  "series": []
 }

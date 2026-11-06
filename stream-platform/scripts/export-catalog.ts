@@ -65,28 +65,6 @@ const items: CatalogItem[] = [];
 let series: SeriesItem[] = [];
 const seen = new Set<string>();
 
-// Pre-load existing committed catalog items & series
-if (fs.existsSync(outPath)) {
-  try {
-    const raw = fs.readFileSync(outPath, 'utf8');
-    const existing = JSON.parse(raw) as { items?: CatalogItem[]; series?: SeriesItem[] } | CatalogItem[];
-    const list = Array.isArray(existing) ? existing : (existing.items ?? []);
-    if (!Array.isArray(existing) && Array.isArray(existing.series)) {
-      series = existing.series;
-    }
-    for (const item of list) {
-      if (item && item.id && !seen.has(item.id)) {
-        if (item.name.toLowerCase().includes('inception')) {
-          item.duration = 8884;
-          item.description = "Dom Cobb is a skilled thief who steals valuable secrets from deep within the subconscious during the dream state. Feature film (2h 28m).";
-        }
-        seen.add(item.id);
-        items.push(item);
-      }
-    }
-  } catch {}
-}
-
 function parseEp(filename: string, defaultSeason = 1, defaultEp = 1): {
   season: number;
   episode: number;
@@ -415,38 +393,6 @@ for (const p of jsonSources) {
   } catch {}
 }
 
-// Ensure audio tracks are present
-if (!seen.has('a1111111-1111-4111-a111-111111111111')) {
-  items.push({
-    id: 'a1111111-1111-4111-a111-111111111111',
-    name: 'Ambient Dreamscape.wav',
-    category: 'audio',
-    mimeType: 'audio/wav',
-    size: 5292044,
-    duration: 30,
-    hasThumbnail: false,
-    updatedAt: Date.now(),
-    artist: 'TeleDrive Soundscapes',
-    album: 'Folio Studio Sessions',
-    description: 'Multi-harmonic ambient progression streamed directly in high fidelity.',
-  });
-}
-
-if (!seen.has('b2222222-2222-4222-b222-222222222222')) {
-  items.push({
-    id: 'b2222222-2222-4222-b222-222222222222',
-    name: 'Midnight Lo-Fi.wav',
-    category: 'audio',
-    mimeType: 'audio/wav',
-    size: 4233644,
-    duration: 24,
-    hasThumbnail: false,
-    updatedAt: Date.now(),
-    artist: 'Aurora Node',
-    album: 'TeleDrive Cloud',
-    description: 'Warm nocturnal chords with subtle stereo panning and gentle acoustic decay.',
-  });
-}
 
 // Check for completed 19.5MB cloud parts for Inception
 const progressPath = path.resolve(__dirname, '../data/inception-upload-progress.json');

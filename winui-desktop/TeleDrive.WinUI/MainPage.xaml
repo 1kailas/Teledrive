@@ -468,13 +468,18 @@
                                                                     BorderBrush="#4338CA"
                                                                     BorderThickness="1"
                                                                     CornerRadius="4"
-                                                                    Padding="4,0.5"
+                                                                    Height="16"
+                                                                    Padding="6,0"
                                                                     VerticalAlignment="Center">
                                                                     <TextBlock
-                                                                        FontSize="9"
+                                                                        FontSize="8.5"
                                                                         FontWeight="Bold"
                                                                         Foreground="#818CF8"
-                                                                        Text="{x:Bind SeriesBadgeText, Mode=OneWay}" />
+                                                                        Text="{x:Bind SeriesBadgeText, Mode=OneWay}"
+                                                                        VerticalAlignment="Center"
+                                                                        HorizontalAlignment="Center"
+                                                                        TextAlignment="Center"
+                                                                        Margin="0,-2,0,0" />
                                                                 </Border>
                                                             </StackPanel>
                                                             <TextBlock
@@ -484,50 +489,43 @@
                                                                 VerticalAlignment="Center" />
                                                         </StackPanel>
 
-                                                        <!-- Column 2: Selection Badge (Top) + Star Button (Bottom) -->
-                                                        <Grid Grid.Column="2" VerticalAlignment="Stretch" Width="22">
-                                                            <Grid.RowDefinitions>
-                                                                <RowDefinition Height="Auto" />
-                                                                <RowDefinition Height="*" />
-                                                            </Grid.RowDefinitions>
+                                                        <!-- Column 2: Star Button (Vertically Centered & Symmetrical) -->
+                                                        <Button
+                                                            Grid.Column="2"
+                                                            Width="24"
+                                                            Height="24"
+                                                            Background="Transparent"
+                                                            BorderThickness="0"
+                                                            Padding="0"
+                                                            CornerRadius="4"
+                                                            HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center"
+                                                            Click="FolderStarBtn_Click"
+                                                            ToolTipService.ToolTip="Star">
+                                                            <FontIcon
+                                                                FontSize="11"
+                                                                Foreground="#F59E0B"
+                                                                Glyph="{x:Bind StarGlyph, Mode=OneWay}" />
+                                                        </Button>
 
-                                                            <!-- Selection indicator checkmark badge (Top-Right) -->
-                                                            <Border
-                                                                Grid.Row="0"
-                                                                Width="16"
-                                                                Height="16"
-                                                                CornerRadius="8"
-                                                                Background="#38BDF8"
-                                                                HorizontalAlignment="Right"
-                                                                VerticalAlignment="Top"
-                                                                Visibility="{x:Bind SelectionCheckmarkVisibility, Mode=OneWay}">
-                                                                <FontIcon
-                                                                    Glyph="&#xE73E;"
-                                                                    FontSize="9"
-                                                                    Foreground="Black"
-                                                                    HorizontalAlignment="Center"
-                                                                    VerticalAlignment="Center" />
-                                                            </Border>
-
-                                                            <!-- Star Button (Bottom-Right) -->
-                                                            <Button
-                                                                Grid.Row="1"
-                                                                Width="22"
-                                                                Height="22"
-                                                                Background="Transparent"
-                                                                BorderThickness="0"
-                                                                Padding="0"
-                                                                CornerRadius="4"
-                                                                HorizontalAlignment="Right"
-                                                                VerticalAlignment="Bottom"
-                                                                Click="FolderStarBtn_Click"
-                                                                ToolTipService.ToolTip="Star">
-                                                                <FontIcon
-                                                                    FontSize="11"
-                                                                    Foreground="#F59E0B"
-                                                                    Glyph="{x:Bind StarGlyph, Mode=OneWay}" />
-                                                            </Button>
-                                                        </Grid>
+                                                        <!-- Selection indicator checkmark badge (Top-Left corner overlay, standard Windows 11 Fluent) -->
+                                                        <Border
+                                                            Grid.ColumnSpan="3"
+                                                            Width="16"
+                                                            Height="16"
+                                                            CornerRadius="8"
+                                                            Background="#38BDF8"
+                                                            HorizontalAlignment="Left"
+                                                            VerticalAlignment="Top"
+                                                            Margin="-4,-4,0,0"
+                                                            Visibility="{x:Bind SelectionCheckmarkVisibility, Mode=OneWay}">
+                                                            <FontIcon
+                                                                Glyph="&#xE73E;"
+                                                                FontSize="9"
+                                                                Foreground="Black"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center" />
+                                                        </Border>
                                                     </Grid>
                                                 </Border>
                                             </DataTemplate>
@@ -657,41 +655,26 @@
                                                                 <Button
                                                                     HorizontalAlignment="Center"
                                                                     VerticalAlignment="Center"
-                                                                    Width="38"
-                                                                    Height="38"
+                                                                    Width="34"
+                                                                    Height="34"
                                                                     Padding="0"
-                                                                    CornerRadius="19"
-                                                                    Background="#B309090B"
-                                                                    BorderBrush="#6638BDF8"
+                                                                    CornerRadius="17"
+                                                                    Background="#CC0B0F17"
+                                                                    BorderBrush="#8038BDF8"
                                                                     BorderThickness="1.5"
                                                                     Click="FilePlayBtn_Click"
                                                                     Visibility="{x:Bind VideoBadgeVisibility, Mode=OneWay}"
                                                                     ToolTipService.ToolTip="Play / Stream in Browser">
-                                                                    <FontIcon FontSize="15" Foreground="#F8FAFC" Glyph="&#xE768;" Margin="2,0,0,0" />
+                                                                    <FontIcon FontSize="13" Foreground="#F8FAFC" Glyph="&#xE768;" Margin="1.5,0,0,0" />
                                                                 </Button>
 
-                                                                <!-- Video Duration Badge (Bottom-Left) -->
-                                                                <Border
-                                                                    HorizontalAlignment="Left"
-                                                                    VerticalAlignment="Bottom"
-                                                                    Margin="5"
-                                                                    Padding="5,1.5"
-                                                                    CornerRadius="3"
-                                                                    Background="#D9000000"
-                                                                    Visibility="{x:Bind DurationVisibility, Mode=OneWay}">
-                                                                    <TextBlock
-                                                                        FontSize="9"
-                                                                        FontWeight="SemiBold"
-                                                                        Foreground="#F8FAFC"
-                                                                        Text="{x:Bind FormattedDuration, Mode=OneWay}" />
-                                                                </Border>
-
-                                                                <!-- Video Format Badge (Bottom-Right) -->
+                                                                <!-- Video Format Badge (Top-Right) -->
                                                                 <Border
                                                                     HorizontalAlignment="Right"
-                                                                    VerticalAlignment="Bottom"
+                                                                    VerticalAlignment="Top"
                                                                     Margin="5"
-                                                                    Padding="5,1.5"
+                                                                    Height="16"
+                                                                    Padding="5,0"
                                                                     CornerRadius="3"
                                                                     Background="#E61E1B4B"
                                                                     BorderBrush="#6366F1"
@@ -701,12 +684,37 @@
                                                                         FontSize="8.5"
                                                                         FontWeight="Bold"
                                                                         Foreground="#A5B4FC"
-                                                                        Text="{x:Bind VideoFormatBadge, Mode=OneWay}" />
+                                                                        Text="{x:Bind VideoFormatBadge, Mode=OneWay}"
+                                                                        VerticalAlignment="Center"
+                                                                        HorizontalAlignment="Center"
+                                                                        TextAlignment="Center"
+                                                                        Margin="0,-1.5,0,0" />
                                                                 </Border>
 
-                                                                <!-- Selection Checkmark Badge (Top-Right overlay) -->
+                                                                <!-- Video Duration Badge (Bottom-Right) -->
                                                                 <Border
                                                                     HorizontalAlignment="Right"
+                                                                    VerticalAlignment="Bottom"
+                                                                    Margin="5"
+                                                                    Height="16"
+                                                                    Padding="5,0"
+                                                                    CornerRadius="3"
+                                                                    Background="#D9000000"
+                                                                    Visibility="{x:Bind DurationVisibility, Mode=OneWay}">
+                                                                    <TextBlock
+                                                                        FontSize="8.5"
+                                                                        FontWeight="SemiBold"
+                                                                        Foreground="#F8FAFC"
+                                                                        Text="{x:Bind FormattedDuration, Mode=OneWay}"
+                                                                        VerticalAlignment="Center"
+                                                                        HorizontalAlignment="Center"
+                                                                        TextAlignment="Center"
+                                                                        Margin="0,-1.5,0,0" />
+                                                                </Border>
+
+                                                                <!-- Selection Checkmark Badge (Top-Left overlay, standard Windows 11 Fluent) -->
+                                                                <Border
+                                                                    HorizontalAlignment="Left"
                                                                     VerticalAlignment="Top"
                                                                     Margin="5"
                                                                     Width="18"
@@ -1127,15 +1135,20 @@
                                                                     TextTrimming="CharacterEllipsis"
                                                                     MaxLines="1" />
                                                                 <Border
-                                                                    Padding="6,1.5"
+                                                                    Height="16"
+                                                                    Padding="6,0"
                                                                     CornerRadius="4"
                                                                     Background="{ThemeResource LayerFillColorDefaultBrush}"
                                                                     VerticalAlignment="Center">
                                                                     <TextBlock
-                                                                        FontSize="10"
+                                                                        FontSize="9.5"
                                                                         FontWeight="Bold"
                                                                         Foreground="{x:Bind TypeBadgeBrush, Mode=OneWay}"
-                                                                        Text="{x:Bind TypeBadge, Mode=OneWay}" />
+                                                                        Text="{x:Bind TypeBadge, Mode=OneWay}"
+                                                                        VerticalAlignment="Center"
+                                                                        HorizontalAlignment="Center"
+                                                                        TextAlignment="Center"
+                                                                        Margin="0,-1.5,0,0" />
                                                                 </Border>
                                                                 <TextBlock
                                                                     FontSize="11"
@@ -1359,15 +1372,20 @@
                                                                     TextTrimming="CharacterEllipsis"
                                                                     MaxLines="1" />
                                                                 <Border
-                                                                    Padding="6,1.5"
+                                                                    Height="16"
+                                                                    Padding="6,0"
                                                                     CornerRadius="4"
                                                                     Background="{ThemeResource LayerFillColorDefaultBrush}"
                                                                     VerticalAlignment="Center">
                                                                     <TextBlock
-                                                                        FontSize="10"
+                                                                        FontSize="9.5"
                                                                         FontWeight="Bold"
                                                                         Foreground="{x:Bind TypeBadgeBrush, Mode=OneWay}"
-                                                                        Text="{x:Bind TypeBadge, Mode=OneWay}" />
+                                                                        Text="{x:Bind TypeBadge, Mode=OneWay}"
+                                                                        VerticalAlignment="Center"
+                                                                        HorizontalAlignment="Center"
+                                                                        TextAlignment="Center"
+                                                                        Margin="0,-1.5,0,0" />
                                                                 </Border>
                                                                 <TextBlock
                                                                     FontSize="11"

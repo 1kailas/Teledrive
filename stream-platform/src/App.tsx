@@ -169,17 +169,6 @@ export default function App() {
       })
       .then((data) => {
         const list: MediaItem[] = Array.isArray(data.items) ? [...data.items] : [];
-        if (Array.isArray(data.series)) {
-          for (const s of data.series) {
-            for (const se of (s.seasons || [])) {
-              for (const ep of (se.episodes || [])) {
-                if (!list.some((it) => it.id === ep.id)) {
-                  list.push(ep);
-                }
-              }
-            }
-          }
-        }
         setItems(list);
       })
       .catch((reason: unknown) => {

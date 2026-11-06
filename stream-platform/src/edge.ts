@@ -442,23 +442,6 @@ function parseCatalogPayload(payload: unknown): StandaloneCatalog {
     })) : [];
   }
 
-  // Provide demo Inception item only if catalog is completely empty
-  if (items.length === 0) {
-    items.push(normalizeCatalogFile({
-      id: '9bd298eb-844b-4062-b216-590c78969698',
-      name: 'Inception.2010.1080p.NF.WEB-DL.English.H.264.mp4',
-      mimeType: 'video/mp4',
-      size: 2914735596,
-      duration: 8884,
-      hasThumbnail: false,
-      updatedAt: 1793948444425,
-      artist: '',
-      album: '',
-      description: 'Dom Cobb is a skilled thief who steals valuable secrets from deep within the subconscious during the dream state. Full-length feature film (2h 28m).',
-      category: 'video',
-    }));
-  }
-
   return { items, series };
 }
 

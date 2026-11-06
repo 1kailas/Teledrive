@@ -44,17 +44,19 @@ public partial class FolderModel : ObservableObject
     [ObservableProperty]
     private int _itemCount;
 
+    [ObservableProperty]
+    private bool _isSeries;
+
     public bool IsSeasonFolder =>
         !string.IsNullOrEmpty(Name) &&
-        Name.Contains("Season", StringComparison.OrdinalIgnoreCase);
+        System.Text.RegularExpressions.Regex.IsMatch(Name, @"^(?:season\s*\d+|s\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    public bool IsStreamFolder =>
+        !string.IsNullOrEmpty(Name) &&
+        Name.Equals("stream", StringComparison.OrdinalIgnoreCase);
 
     public bool IsSeriesFolder =>
-        !string.IsNullOrEmpty(Name) &&
-        (IsSeasonFolder ||
-         Name.Equals("Lost", StringComparison.OrdinalIgnoreCase) ||
-         Name.Contains("Cosmos", StringComparison.OrdinalIgnoreCase) ||
-         Name.Contains("Series", StringComparison.OrdinalIgnoreCase) ||
-         Name.Equals("stream", StringComparison.OrdinalIgnoreCase));
+        IsSeasonFolder || IsStreamFolder || IsSeries;
 
     public string FolderGlyph =>
         IsSeasonFolder ? "\uE8B9" :
@@ -66,7 +68,7 @@ public partial class FolderModel : ObservableObject
             : new SolidColorBrush(Windows.UI.Color.FromArgb(255, 245, 158, 11));
 
     public Visibility SeriesBadgeVisibility => IsSeriesFolder ? Visibility.Visible : Visibility.Collapsed;
-    public string SeriesBadgeText => IsSeasonFolder ? "SEASON" : (Name.Equals("stream", StringComparison.OrdinalIgnoreCase) ? "STREAM" : "SERIES");
+    public string SeriesBadgeText => IsSeasonFolder ? "SEASON" : (IsStreamFolder ? "STREAM" : "SERIES");
 
     public string FormattedItemCount
     {

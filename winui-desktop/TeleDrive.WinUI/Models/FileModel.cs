@@ -106,10 +106,6 @@ public partial class FileModel : ObservableObject
                 if (ts.TotalHours >= 1) return $"{(int)ts.TotalHours}h {ts.Minutes}m";
                 return $"{ts.Minutes}m {ts.Seconds}s";
             }
-            if (!string.IsNullOrEmpty(Name) && Name.Contains("Inception", StringComparison.OrdinalIgnoreCase))
-            {
-                return "2h 28m";
-            }
             return "";
         }
     }

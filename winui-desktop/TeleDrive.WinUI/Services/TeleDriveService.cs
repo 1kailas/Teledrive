@@ -141,6 +141,15 @@ public class TeleDriveService
             var root = doc.RootElement;
 
             var folders = new List<FolderModel>();
+            bool isInsideStream = false;
+            if (root.TryGetProperty("folder", out var curFolder) && curFolder.ValueKind != JsonValueKind.Null)
+            {
+                if (curFolder.TryGetProperty("name", out var cfName) && cfName.GetString()?.Equals("stream", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    isInsideStream = true;
+                }
+            }
+
             if (root.TryGetProperty("folders", out var foldersArr))
             {
                 foreach (var f in foldersArr.EnumerateArray())
@@ -156,6 +165,7 @@ public class TeleDriveService
                         ItemCount = f.TryGetProperty("itemCount", out var ic) ? ic.GetInt32()
                             : (f.TryGetProperty("childCount", out var cc) ? cc.GetInt32()
                             : (f.TryGetProperty("count", out var cnt) ? cnt.GetInt32() : 0)),
+                        IsSeries = isInsideStream,
                     });
                 }
             }
@@ -896,6 +906,15 @@ public class TeleDriveService
             var root = doc.RootElement;
 
             var folders = new List<FolderModel>();
+            bool isInsideStream = false;
+            if (root.TryGetProperty("folder", out var curFolder) && curFolder.ValueKind != JsonValueKind.Null)
+            {
+                if (curFolder.TryGetProperty("name", out var cfName) && cfName.GetString()?.Equals("stream", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    isInsideStream = true;
+                }
+            }
+
             if (root.TryGetProperty("folders", out var foldersArr))
             {
                 foreach (var f in foldersArr.EnumerateArray())
@@ -911,6 +930,7 @@ public class TeleDriveService
                         ItemCount = f.TryGetProperty("itemCount", out var ic) ? ic.GetInt32()
                             : (f.TryGetProperty("childCount", out var cc) ? cc.GetInt32()
                             : (f.TryGetProperty("count", out var cnt) ? cnt.GetInt32() : 0)),
+                        IsSeries = isInsideStream,
                     });
                 }
             }
