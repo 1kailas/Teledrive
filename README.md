@@ -2,11 +2,10 @@
 ### A self-contained desktop drive — your private Telegram channel is the storage engine
 
 [![WinUI 3 Desktop](https://img.shields.io/badge/TeleDrive%20WinUI-Windows%20App%20SDK%20%2B%20.NET%208-blue.svg)](winui-desktop/)
-[![Rust Desktop](https://img.shields.io/badge/TeleDriveR-Native%20Rust%20%2B%20Win32-orange.svg)](rust-desktop/)
 [![Fastify Server](https://img.shields.io/badge/Fastify-5.x%20ESM-22c55e.svg)](server/)
 [![React Web](https://img.shields.io/badge/React%2019-Vite%208%20%2B%20Tailwind%20v4-38bdf8.svg)](web/)
-[![Zero Flashbang](https://img.shields.io/badge/Win32-Zero--Flash%20Lifecycle-emerald.svg)](rust-desktop/src/main.rs)
-[![Search Engine](https://img.shields.io/badge/Indexing-Ranked%20Multi--Token%20Search-purple.svg)](rust-desktop/src/db.rs)
+[![Fluent Design](https://img.shields.io/badge/Windows%2011-Fluent%20Mica-blue.svg)](winui-desktop/)
+[![Search Engine](https://img.shields.io/badge/Indexing-Ranked%20Multi--Token%20Search-purple.svg)](server/src/db.ts)
 
 **TeleDrive** is an unlimited-capacity cloud & desktop drive backed by a private Telegram channel. Document bytes live in Telegram; the PC keeps only the metadata index, thumbnails, and short-lived upload staging files.
 
@@ -14,15 +13,14 @@ Files of arbitrary size are cryptographically verified, split into parts, and st
 
 TeleDrive is delivered across high-performance form factors:
 1. **`TeleDrive WinUI` (Native Windows 11 App)**: Built with WinUI 3, Windows App SDK, and .NET 8. Features Windows 11 Fluent Design with real Mica backdrop, custom borderless titlebar, multi-tier card sizing, persistent `%LOCALAPPDATA%` layout configuration, native taskbar progress (`ITaskbarList3`), right-click shell context menus, and instant cloud chunk streaming.
-2. **`TeleDriveR` (Native Rust Core Engine & Desktop Daemon)**: Ultra-lightweight native Rust binary with Tokio async chunking, local Telegram Bot API process management, multi-bot pooling, and direct-to-disk streaming.
-3. **`TeleDrive Server` & Web SPA**: Production Node 22 LTS / Fastify 5 + SQLite FTS5 backend paired with a React 19 / Tailwind v4 Google-Drive-class web application.
+2. **`TeleDrive Server` & Web SPA**: Production Node 22 LTS / Fastify 5 + SQLite FTS5 backend paired with a React 19 / Tailwind v4 Google-Drive-class web application.
 
 ---
 
 ## Table of Contents
 1. [System Architecture](#1-system-architecture)
 2. [Telegram Storage & Chunking Protocol](#2-telegram-storage--chunking-protocol)
-3. [Native Rust Desktop Engine (`TeleDriveR`)](#3-native-rust-desktop-engine-teledriver)
+3. [Native WinUI 3 Desktop Application](#3-native-winui-3-desktop-application)
 4. [Search Indexing & Autocomplete Engine](#4-search-indexing--autocomplete-engine)
 5. [Explorer & File Manager Capabilities](#5-explorer--file-manager-capabilities)
 6. [Database Schema & ERD](#6-database-schema--erd)
@@ -41,11 +39,11 @@ TeleDrive is built with a decoupled storage abstraction where files, metadata, a
 flowchart TD
     subgraph ClientLayer["Client Layer"]
         A["React 19 Web App<br/>(Tailwind v4 / TanStack Query)"]
-        B["TeleDriveR Desktop<br/>(Rust + Win32 + WebView2)"]
+        B["TeleDrive WinUI 3 App<br/>(Windows App SDK / Mica / .NET 8)"]
     end
 
     subgraph CoreEngine["Local Storage & Micro-Engine"]
-        C["Local HTTP & IPC Daemon<br/>(tiny_http / Fastify 5)"]
+        C["Fastify 5 Server<br/>(REST API + Streaming Range Service)"]
         D["SQLite Metadata & FTS5 Index<br/>(files, folders, blobs, parts)"]
         E["Local Disk Cache & Staging<br/>(thumbnails, upload slices)"]
     end
@@ -132,40 +130,37 @@ sequenceDiagram
 
 ---
 
-## 3. Native Rust Desktop Engine (`TeleDriveR`)
+## 3. Native WinUI 3 Desktop Application
 
-`TeleDriveR` is a ground-up native desktop implementation in Rust designed as an ultra-efficient alternative to bloated Electron wrappers.
+The native desktop experience for TeleDrive is implemented in **WinUI 3** and **Windows App SDK 1.6 / .NET 8**, adhering to Windows 11 Fluent Design principles.
 
 ```mermaid
 graph LR
-    subgraph Win32_Host["Native Windows Host Process (TeleDriveR.exe)"]
-        W1["Win32 Window (CreateWindowExW)"]
-        W2["Zero-Flash Style Flags<br/>(WS_EX_NOREDIRECTIONBITMAP, Dark Brush)"]
-        W3["Embedded tiny_http Daemon<br/>(Thread Pool on Port 8080)"]
-        W4["In-Memory Database & Persistence Engine"]
+    subgraph WinUI3_App["Native Windows Host Process (TeleDrive.WinUI.exe)"]
+        W1["WinUI 3 AppWindow & TitleBar"]
+        W2["SystemBackdrop (Real Mica Alt Backdrop)"]
+        W3["CommunityToolkit.Mvvm ViewModels"]
+        W4["Local Engine Connector (REST + Range Streaming)"]
+        W5["ITaskbarList3 Native Taskbar Integration"]
     end
 
-    subgraph WebView2_Control["Microsoft WebView2 Runtime"]
-        WV1["Edge Chromium Sandboxed Core"]
-        WV2["React 19 SPA (Dark Theme Pre-Render)"]
-        WV3["Chrome IPC Bridge (window.chrome.webview)"]
+    subgraph DesktopServices["Shell & System Integration"]
+        S1["Windows Shell File Context Menus"]
+        S2["Desktop Notification Center"]
+        S3["Local SQLite Cache in %LOCALAPPDATA%"]
     end
 
-    W1 --- W2
-    W1 -->|Host Child| WV1
-    WV2 -->|DOMContentLoaded: 'app-ready'| WV3
-    WV3 -->|IPC Event| W1
-    W1 -->|SetWindowPos: SWP_SHOWWINDOW| W1
-    WV2 -->|API Requests| W3
-    W3 --> W4
+    W1 --> W2
+    WinUI3_App --> S1
+    WinUI3_App --> S2
+    WinUI3_App --> S3
 ```
 
-### Win32 Zero-White-Flash Lifecycle
-Standard WebViews suffer from an unsightly white flash during window creation while the browser renderer initializes. `TeleDriveR` completely eliminates this using a four-stage boot handshake:
-1. **Window Hidden on Boot**: `WindowBuilder::new().with_visible(false)` creates the native Win32 window invisible to the compositor.
-2. **Dark Background Brush Registration**: The window class is registered with a pitch-black background brush (`#0d0f12`), preventing default GDI white redraws.
-3. **Frontend DOM Signal Handshake**: The React application renders `<html style="background-color: #0d0f12">` and dispatches `window.chrome.webview.postMessage('app-ready')` as soon as the DOM tree mounts.
-4. **Seamless Window Reveal**: The Rust event loop intercepts `app-ready` and invokes Win32 `ShowWindow(SW_SHOW)` with zero flicker. On window close, `window.set_visible(false)` is invoked synchronously *before* WebView2 teardown.
+### Key WinUI 3 Features
+1. **Windows 11 Fluent Design**: Mica Alt dynamic material backdrop that blends into the desktop wallpaper and system theme.
+2. **Integrated Window Drag & Controls**: Borderless custom title bar with native Windows 11 snap layouts support.
+3. **Taskbar State & Transfer Progress**: Uses `ITaskbarList3` COM interop to display accurate green/yellow/red transfer progress indicators on the Windows taskbar icon.
+4. **Instant Cloud Streaming**: Directly streams large files with range-based chunking from the Telegram storage engine.
 
 ---
 
@@ -364,10 +359,7 @@ erDiagram
 
 ### Prerequisites
 - Node.js ≥20.19 (Node 22 LTS recommended)
-- Rust toolchain (1.85+ / 1.99+) with `x86_64-pc-windows-gnu` target:
-  ```bash
-  rustup target add x86_64-pc-windows-gnu
-  ```
+- .NET 8 SDK (with Windows App SDK)
 - WiX Toolset v3 / v4 (for MSI installer generation)
 
 ### 1. Development Mode (Mock Bot API)
@@ -386,15 +378,16 @@ npm run build
 ```
 Compiles web assets into `web/dist` and TypeScript server into `server/dist`.
 
-### 3. Build & Package Native Windows MSI (`TeleDriveR-Setup.msi`)
+### 3. Build & Package Native Windows MSI (`TeleDrive-Setup.msi`)
 ```bash
-npm run rust:msi
+npm run build:winui
+node scripts/build-winui-msi.js
 ```
 This automated pipeline:
-1. Builds the production web frontend (`web/dist`).
-2. Compiles `TeleDriveR.exe` with optimizations (`--release --target x86_64-pc-windows-gnu`).
-3. Executes WiX `candle` and `light` to produce `TeleDriveR-Setup.msi`.
-4. Copies the output installer to your Desktop, Downloads, and repo root.
+1. Builds the production WinUI 3 desktop application (`TeleDrive.WinUI.exe`).
+2. Stages the release payload and assets.
+3. Executes WiX `candle` and `light` to produce `TeleDrive-Setup.msi`.
+4. Copies the output installer to your Desktop (`C:\Users\Kailasnath T\Desktop\TeleDrive-Setup.msi`), Downloads, and repo root.
 
 ---
 

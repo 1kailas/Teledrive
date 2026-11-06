@@ -16,8 +16,6 @@
     "mock:telegram": "env MOCK_DIR=./data/mock-bot-api npm run mock:telegram -w server",
     "build": "npm run build -w web && npm run build -w server",
     "build:winui": "powershell.exe -NoProfile -Command \"Set-Location 'winui-desktop/TeleDrive.WinUI'; & 'C:\\Program Files\\dotnet\\dotnet.exe' publish -c Release -p:Platform=x64 --self-contained true -o publish\"",
-    "rust:build": "cd rust-desktop && env PATH=\"$HOME/.cargo/bin:$PATH\" cargo build --release --target x86_64-pc-windows-gnu",
-    "rust:msi": "node rust-desktop/scripts/build-msi.js",
     "start": "node server/dist/index.js",
     "test": "npm test -w server && npm test -w web",
     "test:desktop": "powershell.exe -NoProfile -Command \"& 'C:\\Program Files\\dotnet\\dotnet.exe' test 'winui-desktop\\TeleDrive.Tests\\TeleDrive.Tests.csproj'\" < /dev/null",

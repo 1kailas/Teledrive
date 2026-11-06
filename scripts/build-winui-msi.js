@@ -55,7 +55,10 @@ function findWixDir() {
 const wixBinWinPath = findWixDir();
 
 // Locate application source (prefer self-contained publish output)
-let appSrcWsl = path.resolve(__dirname, '../winui-desktop/publish');
+let appSrcWsl = path.resolve(__dirname, '../winui-desktop/TeleDrive.WinUI/publish');
+if (!fs.existsSync(path.join(appSrcWsl, 'TeleDrive.WinUI.exe'))) {
+  appSrcWsl = path.resolve(__dirname, '../winui-desktop/publish');
+}
 if (!fs.existsSync(path.join(appSrcWsl, 'TeleDrive.WinUI.exe'))) {
   appSrcWsl = path.resolve(__dirname, '../winui-desktop/TeleDrive.WinUI/bin/x64/Release/net8.0-windows10.0.26100.0/win-x64');
 }
@@ -335,7 +338,6 @@ echo   SUCCESS! TeleDrive-Setup.msi created on Desktop!
 echo   Location: ${desktopPathWin}\\TeleDrive-Setup.msi
 echo ========================================================
 echo.
-pause
 `;
 
 const batchFileWsl = path.join(winTempWsl, 'build-msi.cmd');

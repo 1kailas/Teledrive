@@ -1,8 +1,0 @@
-[target.x86_64-pc-windows-gnu]
-linker = "rust-lld"
-rustflags = [
-    "-L", "/home/Kailasnath/.local/lib/mingw64",
-    "-C", "link-arg=/home/Kailasnath/.local/lib/mingw64/crt2.o",
-    "-C", "link-arg=/home/Kailasnath/.local/lib/mingw64/crtbegin.o",
-    "-C", "link-arg=/home/Kailasnath/.local/lib/mingw64/crtend.o",
-]
