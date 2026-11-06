@@ -491,7 +491,7 @@ public class TeleDriveService
                             }
                             else if (snapshot.WaitingForBot)
                             {
-                                status = "pending";
+                                status = "queued";
                                 phase = "waiting-bot";
                             }
                         }
@@ -502,7 +502,7 @@ public class TeleDriveService
                         ulong bytesStored = 0;
                         if (u.TryGetProperty("bytesStored", out var bs)) bytesStored = bs.GetUInt64();
                         transferred = bytesStored;
-                        status = "pending";
+                        status = "queued";
                         phase = "waiting-bot";
                     }
 

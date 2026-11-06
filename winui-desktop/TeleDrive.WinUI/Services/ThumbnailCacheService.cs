@@ -48,32 +48,6 @@ public class ThumbnailCacheService
 
         // Pre-warm common Windows Shell icons in background
         _ = Task.Run(PrewarmShellIconsAsync);
-
-        // Clean up any stale 409,750-byte placeholder BMPs
-        _ = Task.Run(() =>
-        {
-            try
-            {
-                if (Directory.Exists(_localCacheThumbsDir))
-                {
-                    foreach (var file in Directory.GetFiles(_localCacheThumbsDir, "*.jpg"))
-                    {
-                        if (new FileInfo(file).Length == 409750)
-                        {
-                            try { File.Delete(file); } catch { }
-                        }
-                    }
-                    foreach (var file in Directory.GetFiles(_localCacheThumbsDir, "*.png"))
-                    {
-                        if (new FileInfo(file).Length == 409750)
-                        {
-                            try { File.Delete(file); } catch { }
-                        }
-                    }
-                }
-            }
-            catch { }
-        });
     }
 
     /// <summary>
@@ -109,13 +83,13 @@ public class ThumbnailCacheService
                 if (File.Exists(cand))
                 {
                     var len = new FileInfo(cand).Length;
-                    if (len > 500 && len != 409750)
+                    if (len > 500)
                     {
                         // Ensure it's also mapped to fileId if fileId is provided
                         if (!string.IsNullOrEmpty(fileId))
                         {
                             var targetPng = Path.Combine(_localCacheThumbsDir, $"{fileId}.png");
-                            if (!File.Exists(targetPng) || new FileInfo(targetPng).Length == 409750)
+                            if (!File.Exists(targetPng))
                             {
                                 try { File.Copy(cand, targetPng, true); } catch { }
                             }
@@ -137,12 +111,6 @@ public class ThumbnailCacheService
             if (File.Exists(path))
             {
                 var len = new FileInfo(path).Length;
-                if (len == 409750)
-                {
-                    // Generic dummy BMP placeholder — delete it so authentic icons can shine
-                    try { File.Delete(path); } catch { }
-                    continue;
-                }
                 if (len > 500)
                 {
                     return path;
@@ -157,7 +125,7 @@ public class ThumbnailCacheService
             if (File.Exists(path))
             {
                 var len = new FileInfo(path).Length;
-                if (len > 500 && len != 409750)
+                if (len > 500)
                 {
                     return path;
                 }
@@ -285,6 +253,7 @@ public class ThumbnailCacheService
     /// <summary>
     /// Checks known upload paths, user's Downloads and Desktop folders for a matching file name, and extracts
     /// the authentic Windows Shell thumbnail / embedded icon directly.
+    /// Handles name variations including (1), (2), etc.
     /// </summary>
     private async Task TryExtractFromLocalFileAsync(string fileId, string fileName)
     {
@@ -292,48 +261,50 @@ public class ThumbnailCacheService
 
         try
         {
+            var normName = System.Text.RegularExpressions.Regex.Replace(fileName, @"\s*\(\d+\)(?=\.[^.]+$)", "");
+            var nameVariations = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { fileName };
+            if (!string.Equals(normName, fileName, StringComparison.OrdinalIgnoreCase))
+            {
+                nameVariations.Add(normName);
+            }
+            var stem = Path.GetFileNameWithoutExtension(fileName);
+            var ext = Path.GetExtension(fileName);
+            nameVariations.Add($"{stem} (1){ext}");
+
             // 0. Check known upload paths from current session
-            if (_knownLocalFiles.TryGetValue(fileName, out var knownPath) && File.Exists(knownPath))
+            foreach (var name in nameVariations)
             {
-                var extracted = await GenerateAndUploadNativeThumbnailAsync(fileId, knownPath);
-                if (!string.IsNullOrEmpty(extracted))
+                if (_knownLocalFiles.TryGetValue(name, out var knownPath) && File.Exists(knownPath))
                 {
-                    _memoryCache[fileId] = extracted;
-                    _memoryCacheByFileName[fileName] = extracted;
-                    OnThumbnailResolved?.Invoke(fileId, extracted);
-                    OnThumbnailResolved?.Invoke(fileName, extracted);
-                    return;
+                    var extracted = await GenerateAndUploadNativeThumbnailAsync(fileId, knownPath);
+                    if (!string.IsNullOrEmpty(extracted)) return;
                 }
             }
 
-            // 1. Check Downloads
-            var dlPath = Path.Combine(_downloadsDir, fileName);
-            if (File.Exists(dlPath))
+            // Look in Downloads and Desktop for any matching file
+            var searchDirs = new List<string> { _downloadsDir, Environment.GetFolderPath(Environment.SpecialFolder.Desktop) };
+            try
             {
-                var extracted = await GenerateAndUploadNativeThumbnailAsync(fileId, dlPath);
-                if (!string.IsNullOrEmpty(extracted))
+                var customDir = await TeleDriveService.Instance.GetDownloadDirectoryAsync();
+                if (!string.IsNullOrEmpty(customDir) && Directory.Exists(customDir))
                 {
-                    _memoryCache[fileId] = extracted;
-                    _memoryCacheByFileName[fileName] = extracted;
-                    OnThumbnailResolved?.Invoke(fileId, extracted);
-                    OnThumbnailResolved?.Invoke(fileName, extracted);
-                    return;
+                    searchDirs.Add(customDir);
                 }
             }
+            catch { }
 
-            // 2. Check Desktop
-            var desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-            var dtPath = Path.Combine(desktop, fileName);
-            if (File.Exists(dtPath))
+            foreach (var dir in searchDirs)
             {
-                var extracted = await GenerateAndUploadNativeThumbnailAsync(fileId, dtPath);
-                if (!string.IsNullOrEmpty(extracted))
+                if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
+
+                foreach (var name in nameVariations)
                 {
-                    _memoryCache[fileId] = extracted;
-                    _memoryCacheByFileName[fileName] = extracted;
-                    OnThumbnailResolved?.Invoke(fileId, extracted);
-                    OnThumbnailResolved?.Invoke(fileName, extracted);
-                    return;
+                    var candPath = Path.Combine(dir, name);
+                    if (File.Exists(candPath))
+                    {
+                        var extracted = await GenerateAndUploadNativeThumbnailAsync(fileId, candPath);
+                        if (!string.IsNullOrEmpty(extracted)) return;
+                    }
                 }
             }
         }
@@ -356,13 +327,23 @@ public class ThumbnailCacheService
 
         try
         {
-            var dummyPath = Path.Combine(_dummyTempDir, $"placeholder.{ext}");
-            if (!File.Exists(dummyPath))
+            string sourcePath;
+            if (ext == "exe")
             {
-                await File.WriteAllBytesAsync(dummyPath, Array.Empty<byte>());
+                var systemExe = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
+                sourcePath = File.Exists(systemExe) ? systemExe : Path.Combine(_dummyTempDir, $"placeholder.{ext}");
+            }
+            else
+            {
+                sourcePath = Path.Combine(_dummyTempDir, $"placeholder.{ext}");
             }
 
-            var storageFile = await StorageFile.GetFileFromPathAsync(dummyPath);
+            if (!File.Exists(sourcePath))
+            {
+                await File.WriteAllBytesAsync(sourcePath, Array.Empty<byte>());
+            }
+
+            var storageFile = await StorageFile.GetFileFromPathAsync(sourcePath);
             using var thumb = await storageFile.GetThumbnailAsync(ThumbnailMode.SingleItem, 256, ThumbnailOptions.ResizeThumbnail);
             if (thumb != null && thumb.Size > 0)
             {
@@ -455,21 +436,26 @@ public class ThumbnailCacheService
                     outStream.Flush();
                 }
 
-                if (new FileInfo(targetFile).Length == 409750)
-                {
-                    // Generic dummy BMP — delete it so it never overrides authentic icons
-                    try { File.Delete(targetFile); } catch { }
-                    return null;
-                }
-
                 // Also persist to local_{hashKey}.png
                 try { File.Copy(targetFile, localPng, true); } catch { }
+
+                var normName = System.Text.RegularExpressions.Regex.Replace(fileName, @"\s*\(\d+\)(?=\.[^.]+$)", "");
+                if (!string.Equals(normName, fileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    var normHash = GetSafeCacheKey(normName);
+                    try { File.Copy(targetFile, Path.Combine(_localCacheThumbsDir, $"local_{normHash}.png"), true); } catch { }
+                    _memoryCacheByFileName[normName] = targetFile;
+                }
 
                 _memoryCache[fileId] = targetFile;
                 _memoryCacheByFileName[fileName] = targetFile;
 
                 OnThumbnailResolved?.Invoke(fileId, targetFile);
                 OnThumbnailResolved?.Invoke(fileName, targetFile);
+                if (!string.Equals(normName, fileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    OnThumbnailResolved?.Invoke(normName, targetFile);
+                }
 
                 // Sync to daemon in background
                 _ = SyncThumbnailToServerAsync(fileId, targetFile);

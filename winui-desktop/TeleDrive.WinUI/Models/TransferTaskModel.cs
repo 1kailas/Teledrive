@@ -109,7 +109,7 @@ public partial class TransferTaskModel : ObservableObject
     public bool IsPaused => Status == "paused";
     public bool IsFailed => Status == "failed" || Status == "error";
     public bool IsProgressIndeterminate => IsUpload && IsActive && !IsDone
-        && Status != "queued" && Status != "finalizing";
+        && Status != "queued" && Phase != "waiting-bot" && Status != "finalizing" && Phase != "finalizing";
 
     public double ProgressRatio
     {
@@ -135,7 +135,7 @@ public partial class TransferTaskModel : ObservableObject
                     : $"{FileModel.FormatBytes(Size)} (Saved to disk)";
             }
 
-            if (Status == "queued")
+            if (Status == "queued" || (IsUpload && Phase == "waiting-bot"))
                 return $"{FileModel.FormatBytes(Transferred)} of {FileModel.FormatBytes(Size)} (Waiting in queue)";
 
             if (Status == "connecting" || Phase == "connecting")
@@ -171,10 +171,8 @@ public partial class TransferTaskModel : ObservableObject
             if (IsFailed)
                 return $"⚠ {Error ?? "Transfer failed"}";
 
-            if (Status == "queued")
+            if (Status == "queued" || (IsUpload && Phase == "waiting-bot"))
                 return "⏳ Waiting in queue...";
-            if (IsUpload && Phase == "waiting-bot")
-                return "Waiting for an available bot...";
             if (IsUpload && Status == "preparing")
                 return "Preparing file for Telegram...";
             if (IsUpload && Phase == "sending")

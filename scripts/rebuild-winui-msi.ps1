@@ -2,7 +2,7 @@
 $ErrorActionPreference = "Stop"
 
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "  TeleDrive v3.0.0 — Native WinUI & MSI Rebuild" -ForegroundColor Cyan
+Write-Host "  TeleDrive v3.0.0 - Native WinUI and MSI Rebuild" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 $RepoRoot = (Get-Item "$PSScriptRoot\..").FullName
@@ -24,10 +24,9 @@ if (-not (Test-Path $dotnet)) { $dotnet = "dotnet" }
 & $dotnet publish "$ProjectFile" -c Release -p:Platform=x64 --self-contained true -o "$PublishDir"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "`n[ERROR] dotnet publish failed with exit code $LASTEXITCODE" -ForegroundColor Red
-    Read-Host "Press Enter to exit"
     exit $LASTEXITCODE
 }
-Write-Host "✓ WinUI 3 build succeeded." -ForegroundColor Green
+Write-Host "[OK] WinUI 3 build succeeded." -ForegroundColor Green
 
 # 3. WiX MSI Packaging
 Write-Host "`n[3/4] Packaging WiX MSI installer..." -ForegroundColor Yellow
@@ -198,24 +197,26 @@ if (-not (Test-Path $sourceMsi)) {
 if (Test-Path $sourceMsi) {
     Copy-Item -Path $sourceMsi -Destination "$Desktop\TeleDrive-Setup.msi" -Force
     Copy-Item -Path $sourceMsi -Destination "$Downloads\TeleDrive-Setup.msi" -Force
-    Write-Host "✓ Desktop installer updated: $Desktop\TeleDrive-Setup.msi" -ForegroundColor Green
+    Write-Host "[OK] Desktop installer updated: $Desktop\TeleDrive-Setup.msi" -ForegroundColor Green
 }
 
 # Sync Desktop portable folder
 $desktopApp = Join-Path $Desktop "TeleDrive-WinUI"
 if (Test-Path $desktopApp) {
     Copy-Item -Path "$PublishDir\*" -Destination $desktopApp -Recurse -Force
-    Write-Host "✓ Desktop portable updated: $desktopApp" -ForegroundColor Green
+    Write-Host "[OK] Desktop portable updated: $desktopApp" -ForegroundColor Green
 }
 
 # Sync AppData installed folder
 $appDataDir = "$env:LOCALAPPDATA\Programs\TeleDrive"
 if (Test-Path $appDataDir) {
     Copy-Item -Path "$PublishDir\*" -Destination $appDataDir -Recurse -Force
-    Write-Host "✓ Installed AppData folder updated: $appDataDir" -ForegroundColor Green
+    Write-Host "[OK] Installed AppData folder updated: $appDataDir" -ForegroundColor Green
 }
 
 Write-Host "`n==========================================================" -ForegroundColor Green
 Write-Host "  REBUILD COMPLETE! Ready to test on Desktop:" -ForegroundColor Green
 Write-Host "  MSI: $Desktop\TeleDrive-Setup.msi" -ForegroundColor Green
-Write-Host "==========================================================`n" -ForegroundColor Green
+Write-Host "==========================================================" -ForegroundColor Green
+Write-Host ""
+

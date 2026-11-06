@@ -1,0 +1,393 @@
+{
+  "items": [
+    {
+      "id": "7eba0a5a-5d50-4d44-923f-8002a1fdae05",
+      "name": "2_5208749642950417935.MP4",
+      "category": "video",
+      "mimeType": "video/mp4",
+      "size": 1734087,
+      "duration": 15,
+      "hasThumbnail": true,
+      "updatedAt": 1793514739775,
+      "artist": "",
+      "album": "",
+      "description": "Direct Telegram Cloud Stream",
+      "parts": [
+        {
+          "partIndex": 0,
+          "size": 1734087,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngADB2rm3PIC7ud3qf9TJI2zHDSyCsxxAAKoLgACBjU4V6DVaggkOsFYNgQ",
+          "botId": "9289345215"
+        }
+      ]
+    },
+    {
+      "id": "c3115da4-a189-479b-95f5-1b8dc28ce21f",
+      "name": "2_5211015491602092914.mp4",
+      "category": "video",
+      "mimeType": "video/mp4",
+      "size": 287069,
+      "duration": 15,
+      "hasThumbnail": true,
+      "updatedAt": 1793514740399,
+      "artist": "",
+      "album": "",
+      "description": "Direct Telegram Cloud Stream",
+      "parts": [
+        {
+          "partIndex": 0,
+          "size": 287069,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngADBmrm3PIBd1JY9FlpVsaVHl3xRorKAAKnLgACBjU4V5eY81az0MZpNgQ",
+          "botId": "9067026204"
+        }
+      ]
+    },
+    {
+      "id": "9bd298eb-844b-4062-b216-590c78969698",
+      "name": "Inception.2010.1080p.NF.WEB-DL.English.DDP5.1.H.264-ADDYRIPS.mkv",
+      "category": "video",
+      "mimeType": "video/x-matroska",
+      "size": 3406731910,
+      "duration": null,
+      "hasThumbnail": false,
+      "updatedAt": 1793948444425,
+      "artist": "",
+      "album": "",
+      "description": "",
+      "parts": [
+        {
+          "partIndex": 0,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAQpq7Xjod-fOYnsG2jTeOBtHe5O9QQACSR8AAhifaFc4KfubFujXZDoE",
+          "botId": "9067026204"
+        },
+        {
+          "partIndex": 1,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAQtq7XjrtdrxOtso4JZqxfAO9oPcEwACSh8AAhifaFeG-EXLYaSKlToE",
+          "botId": "9289345215"
+        },
+        {
+          "partIndex": 2,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAQ1q7XjunIXXPtw4GPJBEuuMulzfNgACTB8AAhifaFdm9NeLqOvhnjoE",
+          "botId": "9081838703"
+        },
+        {
+          "partIndex": 3,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAQxq7XjtdsrUu4EqZAvyHtnVZbOxWgACSx8AAhifaFeQq1LDXzTTQjoE",
+          "botId": "9082065892"
+        },
+        {
+          "partIndex": 4,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAQ5q7Xj0TK7CsfR1Ker3h7wyfy2SPQACTR8AAhifaFfxxn6iB6wshzoE",
+          "botId": "9121773786"
+        },
+        {
+          "partIndex": 5,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAQ9q7Xj9Fz13aNis67NwiiOqZmFPAgACTh8AAhifaFcEgmxiRSSm-joE",
+          "botId": "9207866906"
+        },
+        {
+          "partIndex": 6,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACARBq7XkwpW2XvQUIbTJmc1Kq_RwqAQACUR8AAhifaFdHs36ZSclNlDoE",
+          "botId": "9067026204"
+        },
+        {
+          "partIndex": 7,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACARFq7Xk0-mrQa4jx04Mw9JN4MNw-owACUh8AAhifaFf1Fg0OgBKQ7joE",
+          "botId": "9289345215"
+        },
+        {
+          "partIndex": 8,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACARJq7Xk2TRp3H06MW86j6ntiBT6PJQACUx8AAhifaFeuHofKAAF0R886BA",
+          "botId": "9081838703"
+        },
+        {
+          "partIndex": 9,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACARNq7Xk42-g52FZc0xjDkJBdOTZBtwACVB8AAhifaFd5DSt7vutkCzoE",
+          "botId": "9082065892"
+        },
+        {
+          "partIndex": 10,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACARRq7Xk-8KI-q_jCe44e1YYcgxglzAACVR8AAhifaFdzNi1o_vMEpToE",
+          "botId": "9121773786"
+        },
+        {
+          "partIndex": 11,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACARVq7XlQGS5N1SDI1aOze9glt7YCcAACVh8AAhifaFfMcCnS4IjTQToE",
+          "botId": "9207866906"
+        },
+        {
+          "partIndex": 12,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACARZq7Xl6wKjitf4C9NajbnaVZnYmXAACWh8AAhifaFcp3EriOoMcvDoE",
+          "botId": "9067026204"
+        },
+        {
+          "partIndex": 13,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACARlq7XmAJZ-wkPNqKOmN8HvwvGTTpQACXR8AAhifaFdentmy-7HekDoE",
+          "botId": "9289345215"
+        },
+        {
+          "partIndex": 14,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACARdq7Xl9sdXTNoIYFFO-GshPO1RPxgACWx8AAhifaFcusfVEu590bzoE",
+          "botId": "9082065892"
+        },
+        {
+          "partIndex": 15,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACARhq7Xl_ulPWaqvog3Viu0dQNrPIuQACXB8AAhifaFeBpbVTa3_kTjoE",
+          "botId": "9081838703"
+        },
+        {
+          "partIndex": 16,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACARpq7XmJ112jx90E1Ip6ooxMine-YQACXh8AAhifaFerd1lnaBx-fzoE",
+          "botId": "9121773786"
+        },
+        {
+          "partIndex": 17,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACARtq7XmctM69PzTdF8s9_x6lawSAjQACYB8AAhifaFcnQrM8l-OIVzoE",
+          "botId": "9207866906"
+        },
+        {
+          "partIndex": 18,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAR1q7XnF_DDAmMTZ_wJn5ELQ-QJxFgACYx8AAhifaFeori8BAz1WbDoE",
+          "botId": "9067026204"
+        },
+        {
+          "partIndex": 19,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACARxq7XnEfxaN2w06Mt_i42ysL0xLaAACYh8AAhifaFfJnIxi_iydGToE",
+          "botId": "9289345215"
+        },
+        {
+          "partIndex": 20,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAR9q7XnISH3JtIow9BNxVHOLzNR-0QACZR8AAhifaFcbm-tAl1-UNjoE",
+          "botId": "9081838703"
+        },
+        {
+          "partIndex": 21,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAR5q7XnG-LxW_N5RpyUmnF0csMbN4AACZB8AAhifaFcxG0rd1oxmaToE",
+          "botId": "9082065892"
+        },
+        {
+          "partIndex": 22,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACASBq7XnUu_iaYpPPRY0CXl4wGHnVPwACZx8AAhifaFfx6qG1Jo-3jDoE",
+          "botId": "9121773786"
+        },
+        {
+          "partIndex": 23,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACASFq7Xnrj0Ntp-7CJ0zV4kiVO46SBgACaB8AAhifaFe8bk3YmzBPqjoE",
+          "botId": "9207866906"
+        },
+        {
+          "partIndex": 24,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACASJq7XoLjJQcD3T7RKx7R7rZmEUk7wACah8AAhifaFczlc6bp6F5wDoE",
+          "botId": "9067026204"
+        },
+        {
+          "partIndex": 25,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACASVq7XoVoGhl_o04do8ybxyR094jPAACbR8AAhifaFc2eK3VZdtsrToE",
+          "botId": "9082065892"
+        },
+        {
+          "partIndex": 26,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACASRq7XoR4RW2dNpgmvLIyRI-k-UP1QACbB8AAhifaFc0bY5hdfHmrDoE",
+          "botId": "9081838703"
+        },
+        {
+          "partIndex": 27,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACASNq7XoN8ZFcUF2_HT6adm0yEawKHQACax8AAhifaFd6QnVyfgg-czoE",
+          "botId": "9289345215"
+        },
+        {
+          "partIndex": 28,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACASZq7XohcgFqGlvZ9a13H12ZBc4CkgACbh8AAhifaFe-0XF0rVFqhjoE",
+          "botId": "9121773786"
+        },
+        {
+          "partIndex": 29,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACASdq7Xo0DNfZZzgJeOB5aZSpePH7vAACbx8AAhifaFdGZ1A0fCCTezoE",
+          "botId": "9207866906"
+        },
+        {
+          "partIndex": 30,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACASlq7XpY_Q0EQJ56yiW2OJFIFyE9JAACcR8AAhifaFfzaygj061LYToE",
+          "botId": "9289345215"
+        },
+        {
+          "partIndex": 31,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAShq7XpUtw32jvLa6_Wdt9w6hCwYPAACcB8AAhifaFeab1cVpVfPrDoE",
+          "botId": "9067026204"
+        },
+        {
+          "partIndex": 32,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAStq7XpgQ5QoJsVRU1ELeSFIUHXCcAACcx8AAhifaFd5GPQTaS1d8ToE",
+          "botId": "9082065892"
+        },
+        {
+          "partIndex": 33,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACASpq7XpgAYa9oaDw7rzrsOQQP5QG9wACch8AAhifaFfyuk2X6P0TQjoE",
+          "botId": "9081838703"
+        },
+        {
+          "partIndex": 34,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACASxq7Xp0-kJJeq5iRe_sNQJmzHcKmQACdR8AAhifaFd-dcRXe-U2VzoE",
+          "botId": "9121773786"
+        },
+        {
+          "partIndex": 35,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAS1q7XqIsy0SOUrYp52yoEneRxS5jQACdh8AAhifaFd2hM3KSDM9bToE",
+          "botId": "9207866906"
+        },
+        {
+          "partIndex": 36,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAS5q7XqbpRqR8ad5OQPEs1HZPlahUQACdx8AAhifaFcdPSEsqGaMLToE",
+          "botId": "9067026204"
+        },
+        {
+          "partIndex": 37,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAS9q7XqkvMyMqfhl58ODizjgbSQFTAACeB8AAhifaFdPm-kyXnb8cjoE",
+          "botId": "9289345215"
+        },
+        {
+          "partIndex": 38,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACATBq7Xqqwl_-5rIR9mfxWUWyR02vrwACeR8AAhifaFcBEybJN9b-AAE6BA",
+          "botId": "9081838703"
+        },
+        {
+          "partIndex": 39,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACATFq7XquA6z0TIEqVMnbcm-O9ZaqsQACeh8AAhifaFeLjtcjNJ0fMjoE",
+          "botId": "9082065892"
+        },
+        {
+          "partIndex": 40,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACATJq7XrBYGvBZ4OGCvUrRpFTiM7IuAACex8AAhifaFdzWgABTYGxOS86BA",
+          "botId": "9121773786"
+        },
+        {
+          "partIndex": 41,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACATNq7XrQ03KRtOh_mr2_Id967OyGCgACfB8AAhifaFdIN4BtHDCBiToE",
+          "botId": "9207866906"
+        },
+        {
+          "partIndex": 42,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACATRq7Xrjvn-X-J84_tjESqLkQeqXxAACfR8AAhifaFeyOe17YpcOqDoE",
+          "botId": "9067026204"
+        },
+        {
+          "partIndex": 43,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACATZq7Xr4hLtY4t4_awSwSp7xsNcHdwACfx8AAhifaFcYpBEl4xZ_fzoE",
+          "botId": "9289345215"
+        },
+        {
+          "partIndex": 44,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACATtq7XscWvb_EkYzD_pON7iXcgftSgAChB8AAhifaFeteCunYFB9DDoE",
+          "botId": "9081838703"
+        },
+        {
+          "partIndex": 45,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACATdq7Xr5V4Rc0XyWmy_7VB9w9XcGIAACgB8AAhifaFe4Zdt2RSw-fDoE",
+          "botId": "9082065892"
+        },
+        {
+          "partIndex": 46,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACAThq7XsLJKWgyvNxXGHBiVkWNZ3J0AACgR8AAhifaFdYIjxr-nz3bToE",
+          "botId": "9121773786"
+        },
+        {
+          "partIndex": 47,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACATlq7XsQ0-NlNcAOAilAuJxDqAyEGwACgh8AAhifaFdb5SxicDen5DoE",
+          "botId": "9207866906"
+        },
+        {
+          "partIndex": 48,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACATpq7XsbslWSQHEQIKWvVZrLIYyZKgACgx8AAhifaFcJpWynIbxbQToE",
+          "botId": "9067026204"
+        },
+        {
+          "partIndex": 49,
+          "size": 67108864,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACATxq7Xsg2s6TZBANOdHDFaxPTcY5oAAChR8AAhifaFcE_Y4MPOeNUjoE",
+          "botId": "9289345215"
+        },
+        {
+          "partIndex": 50,
+          "size": 51288710,
+          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngACATVq7Xrr-EjY-RfAiR9fi2yqpa6CMQACfh8AAhifaFeiN1zayK-TMToE",
+          "botId": "9081838703"
+        }
+      ]
+    },
+    {
+      "id": "a1111111-1111-4111-a111-111111111111",
+      "name": "Ambient Dreamscape.wav",
+      "category": "audio",
+      "mimeType": "audio/wav",
+      "size": 5292044,
+      "duration": 30,
+      "hasThumbnail": false,
+      "updatedAt": 1793949338820,
+      "artist": "TeleDrive Soundscapes",
+      "album": "Folio Studio Sessions",
+      "description": "Multi-harmonic ambient progression streamed directly in high fidelity."
+    },
+    {
+      "id": "b2222222-2222-4222-b222-222222222222",
+      "name": "Midnight Lo-Fi.wav",
+      "category": "audio",
+      "mimeType": "audio/wav",
+      "size": 4233644,
+      "duration": 24,
+      "hasThumbnail": false,
+      "updatedAt": 1793949338820,
+      "artist": "Aurora Node",
+      "album": "TeleDrive Cloud",
+      "description": "Warm nocturnal chords with subtle stereo panning and gentle acoustic decay."
+    }
+  ]
+}

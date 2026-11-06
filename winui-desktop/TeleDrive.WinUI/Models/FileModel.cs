@@ -21,7 +21,21 @@ public partial class FileModel : ObservableObject
     public string? FolderId { get; set; }
     public string? BlobId { get; set; }
     public string Name { get; set; } = string.Empty;
-    public string Extension { get; set; } = string.Empty;
+    private string _extension = string.Empty;
+    public string Extension
+    {
+        get
+        {
+            if (!string.IsNullOrEmpty(_extension)) return _extension;
+            if (!string.IsNullOrEmpty(Name))
+            {
+                var ext = System.IO.Path.GetExtension(Name).TrimStart('.');
+                if (!string.IsNullOrEmpty(ext)) return ext;
+            }
+            return "";
+        }
+        set => _extension = value;
+    }
     public string MimeType { get; set; } = "application/octet-stream";
     public string Category { get; set; } = "document";
     public ulong Size { get; set; }

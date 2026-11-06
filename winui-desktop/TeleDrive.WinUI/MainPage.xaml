@@ -910,6 +910,7 @@
                             x:Name="RecentView"
                             HorizontalScrollBarVisibility="Disabled"
                             VerticalScrollBarVisibility="Auto"
+                            Padding="0,0,12,0"
                             Visibility="Collapsed">
                             <StackPanel Spacing="16">
                                 <!-- Header & Switcher -->
@@ -952,9 +953,9 @@
                                         </Border>
                                     </StackPanel>
 
-                                    <StackPanel Grid.Row="1" HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8" Margin="0,0,32,0">
+                                    <StackPanel Grid.Row="1" HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8" Margin="0,0,16,0">
                                         <Button Content="Clear Finished" Click="ClearFinishedDownloads_Click" />
-                                        <Button Click="OpenDownloadsFolder_Click" AutomationProperties.Name="Open downloads folder">
+                                        <Button Click="OpenDownloadsFolder_Click" AutomationProperties.Name="Open downloads folder" ToolTipService.ToolTip="Open downloads folder" ToolTipService.Placement="Bottom">
                                             <StackPanel Orientation="Horizontal" Spacing="6">
                                                 <FontIcon Glyph="&#xE8B7;" FontSize="14" Foreground="#F59E0B" />
                                                 <TextBlock Text="Downloads Folder" />
@@ -1115,6 +1116,7 @@
                             x:Name="TransfersView"
                             HorizontalScrollBarVisibility="Disabled"
                             VerticalScrollBarVisibility="Auto"
+                            Padding="0,0,12,0"
                             Visibility="Collapsed">
                             <StackPanel Spacing="16">
                                 <!-- Header & Actions -->
@@ -1130,9 +1132,9 @@
                                             Text="Transfer activity with Telegram storage" />
                                     </StackPanel>
 
-                                    <StackPanel Grid.Row="1" HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8" Margin="0,0,32,0">
+                                    <StackPanel Grid.Row="1" HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8" Margin="0,0,16,0">
                                         <Button Content="Clear Finished" Click="ClearFinishedDownloads_Click" />
-                                        <Button Click="OpenDownloadsFolder_Click" AutomationProperties.Name="Open downloads folder">
+                                        <Button Click="OpenDownloadsFolder_Click" AutomationProperties.Name="Open downloads folder" ToolTipService.ToolTip="Open downloads folder" ToolTipService.Placement="Bottom">
                                             <StackPanel Orientation="Horizontal" Spacing="6">
                                                 <FontIcon Glyph="&#xE8B7;" FontSize="14" Foreground="#F59E0B" />
                                                 <TextBlock Text="Downloads Folder" />
