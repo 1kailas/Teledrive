@@ -1203,6 +1203,10 @@
                                                             Visibility="{x:Bind PausedVisibility, Mode=OneWay}"
                                                             Click="ResumeDownload_Click" />
                                                         <Button
+                                                            Content="Retry"
+                                                            Visibility="{x:Bind CanRetryVisibility, Mode=OneWay}"
+                                                            Click="RetryUpload_Click" />
+                                                        <Button
                                                             Content="Cancel"
                                                             Visibility="{x:Bind NotDoneVisibility, Mode=OneWay}"
                                                             Click="CancelTransfer_Click" />
@@ -1439,6 +1443,10 @@
                                                             Content="Resume"
                                                             Visibility="{x:Bind PausedVisibility, Mode=OneWay}"
                                                             Click="ResumeDownload_Click" />
+                                                        <Button
+                                                            Content="Retry"
+                                                            Visibility="{x:Bind CanRetryVisibility, Mode=OneWay}"
+                                                            Click="RetryUpload_Click" />
                                                         <Button
                                                             Content="Cancel"
                                                             Visibility="{x:Bind NotDoneVisibility, Mode=OneWay}"

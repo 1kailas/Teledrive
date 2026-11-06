@@ -420,6 +420,7 @@ public class TeleDriveService
                     ulong eta = 0;
                     string status = "preparing";
                     string phase = "preparing";
+                    string? error = null;
 
                     try
                     {
@@ -439,6 +440,7 @@ public class TeleDriveService
                             var root = detailDoc.RootElement;
                             var snapshot = UploadProgressSnapshot.Read(root, size);
                             transferred = snapshot.ConfirmedBytes;
+                            error = snapshot.Error;
                             if (snapshot.Failed)
                             {
                                 status = "failed";
@@ -489,6 +491,7 @@ public class TeleDriveService
                         Speed = speed,
                         Eta = eta,
                         Phase = phase,
+                        Error = error,
                         CreatedAt = createdAt
                     };
 
@@ -589,6 +592,19 @@ public class TeleDriveService
         try
         {
             var res = await _http.PostAsJsonAsync($"{BaseUrl}/api/native-downloads/resume", new { taskId });
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> RetryUploadAsync(string uploadId)
+    {
+        try
+        {
+            var res = await _http.PostAsync($"{BaseUrl}/api/uploads/{uploadId}/retry", null);
             return res.IsSuccessStatusCode;
         }
         catch

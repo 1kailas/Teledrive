@@ -2962,6 +2962,15 @@ public sealed partial class MainPage : Page
         }
     }
 
+    private async void RetryUpload_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.DataContext is TransferTaskModel task)
+        {
+            await _service.RetryUploadAsync(task.Id);
+            await RefreshTransfersAsync();
+        }
+    }
+
     private async void CancelTransfer_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button btn && btn.DataContext is TransferTaskModel task)

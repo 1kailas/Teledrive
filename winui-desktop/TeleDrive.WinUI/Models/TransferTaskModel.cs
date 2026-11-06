@@ -48,6 +48,7 @@ public partial class TransferTaskModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(NotDoneVisibility))]
     [NotifyPropertyChangedFor(nameof(CanPauseVisibility))]
     [NotifyPropertyChangedFor(nameof(CanOpenVisibility))]
+    [NotifyPropertyChangedFor(nameof(CanRetryVisibility))]
     [NotifyPropertyChangedFor(nameof(TypeBadge))]
     [NotifyPropertyChangedFor(nameof(TypeBadgeColor))]
     [NotifyPropertyChangedFor(nameof(TypeBadgeBrush))]
@@ -241,4 +242,5 @@ public partial class TransferTaskModel : ObservableObject
     public Visibility NotDoneVisibility => IsDone ? Visibility.Collapsed : Visibility.Visible;
     public Visibility CanPauseVisibility => (IsActive && IsDownload) ? Visibility.Visible : Visibility.Collapsed;
     public Visibility CanOpenVisibility => (IsDone && IsDownload) ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility CanRetryVisibility => (IsFailed && IsUpload) ? Visibility.Visible : Visibility.Collapsed;
 }

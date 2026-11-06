@@ -5,7 +5,7 @@ namespace TeleDrive_WinUI.Services;
 
 // Only Telegram-confirmed parts count toward stored bytes. The local Bot API
 // does not expose how many bytes of a file:// upload it has sent to Telegram.
-public readonly record struct UploadProgressSnapshot(ulong ConfirmedBytes, bool Sending, bool WaitingForBot, bool AllStored, bool Failed)
+public readonly record struct UploadProgressSnapshot(ulong ConfirmedBytes, bool Sending, bool WaitingForBot, bool AllStored, bool Failed, string? Error)
 {
     public static UploadProgressSnapshot Read(JsonElement root, ulong fileSize)
     {
@@ -15,6 +15,7 @@ public readonly record struct UploadProgressSnapshot(ulong ConfirmedBytes, bool 
         bool allStored = true;
         bool failed = root.TryGetProperty("status", out var uploadStatus)
             && uploadStatus.GetString() == "failed";
+        string? error = null;
         int count = 0;
 
         if (root.TryGetProperty("parts", out var parts) && parts.ValueKind == JsonValueKind.Array)
@@ -33,11 +34,18 @@ public readonly record struct UploadProgressSnapshot(ulong ConfirmedBytes, bool 
                     allStored = false;
                     sending |= status == "uploading";
                     failed |= status == "failed";
+                    if (status == "failed"
+                        && error is null
+                        && part.TryGetProperty("lastError", out var lastError)
+                        && lastError.ValueKind == JsonValueKind.String)
+                    {
+                        error = lastError.GetString();
+                    }
                     waiting |= part.TryGetProperty("phase", out var phase) && phase.GetString() == "waiting-bot";
                 }
             }
         }
 
-        return new UploadProgressSnapshot(confirmed, sending, waiting, count > 0 && allStored, failed);
+        return new UploadProgressSnapshot(confirmed, sending, waiting, count > 0 && allStored, failed, error);
     }
 }

@@ -161,11 +161,12 @@ public class TransferProgressTests
     public void FailedOrEmptySession_NeverReportedAsFinalizing()
     {
         using var empty = JsonDocument.Parse("""{"status":"active","parts":[]}""");
-        using var failed = JsonDocument.Parse("""{"status":"failed","parts":[{"status":"failed","size":50}]}""");
+        using var failed = JsonDocument.Parse("""{"status":"failed","parts":[{"status":"failed","size":50,"lastError":"Bot API unavailable"}]}""");
         Assert.False(UploadProgressSnapshot.Read(empty.RootElement, 100).AllStored);
         var snapshot = UploadProgressSnapshot.Read(failed.RootElement, 100);
         Assert.True(snapshot.Failed);
         Assert.False(snapshot.AllStored);
+        Assert.Equal("Bot API unavailable", snapshot.Error);
     }
 
     [Fact]
