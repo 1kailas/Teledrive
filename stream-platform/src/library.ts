@@ -23,6 +23,64 @@ export interface MediaItem {
   audioTracks?: { id: string; label: string; language?: string }[];
 }
 
+export interface EpisodeItem extends MediaItem {
+  episodeNumber: number;
+  seasonNumber: number;
+  seriesId: string;
+  seriesName: string;
+  episodeTitle: string;
+}
+
+export interface SeasonItem {
+  seasonNumber: number;
+  name: string;
+  episodes: EpisodeItem[];
+}
+
+export interface SeriesItem {
+  id: string;
+  name: string;
+  folderName: string;
+  description: string;
+  seasonsCount: number;
+  episodesCount: number;
+  seasons: SeasonItem[];
+  genres?: string[];
+  year?: number | string;
+  updatedAt: number;
+  hasThumbnail?: boolean;
+}
+
+export interface CatalogData {
+  items: MediaItem[];
+  series?: SeriesItem[];
+}
+
+export function parseEpisodeInfo(filename: string, defaultSeason = 1, defaultEp = 1): {
+  season: number;
+  episode: number;
+  title: string;
+} {
+  const clean = filename.replace(/\.[^.]+$/, '');
+  const sMatch = /(?:s|season\s*)(\d+)/i.exec(clean);
+  const eMatch = /(?:e|ep|episode\s*|\bx\s*)(\d+)/i.exec(clean);
+
+  const season = sMatch ? parseInt(sMatch[1]!, 10) : defaultSeason;
+  const episode = eMatch ? parseInt(eMatch[1]!, 10) : defaultEp;
+
+  let title = clean
+    .replace(/(?:s\d+\s*e\d+|season\s*\d+\s*episode\s*\d+|\b\d+x\d+\b)/gi, '')
+    .replace(/\b(1080p|720p|2160p|4k|uhd|web-dl|webrip|bluray|x264|h264|h\.264|ddp5\.1|ddp|eac3|aac|atmos)\b/gi, '')
+    .replace(/[-_.]+/g, ' ')
+    .trim();
+
+  if (!title || title.length < 2) {
+    title = `Episode ${episode}`;
+  }
+
+  return { season, episode, title };
+}
+
 export const artwork = (item: MediaItem) => item.hasThumbnail ? `/api/art/${item.id}` : undefined;
 export const titleOf = (item: MediaItem) => item.name.replace(/\.[^.]+$/, '') || item.name;
 export const artistOf = (item: MediaItem) => item.artist || item.album || 'Your music library';

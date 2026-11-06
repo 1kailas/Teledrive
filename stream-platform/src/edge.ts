@@ -43,13 +43,43 @@ export type CatalogFile = {
   partsCount?: number;
   parts?: CatalogPart[];
   thumbnailTelegramFileId?: string;
+  episodeNumber?: number;
+  seasonNumber?: number;
+  seriesId?: string;
+  seriesName?: string;
+  episodeTitle?: string;
+};
+
+export type SeasonFile = {
+  seasonNumber: number;
+  name: string;
+  episodes: CatalogFile[];
+};
+
+export type SeriesFile = {
+  id: string;
+  name: string;
+  folderName: string;
+  description: string;
+  seasonsCount: number;
+  episodesCount: number;
+  seasons: SeasonFile[];
+  genres?: string[];
+  year?: number | string;
+  updatedAt: number;
+  hasThumbnail?: boolean;
+};
+
+export type StandaloneCatalog = {
+  items: CatalogFile[];
+  series?: SeriesFile[];
 };
 
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_CATALOG_BYTES = 4 * 1024 * 1024;
 let cachedKeys: { team: string; keys: AccessJwk[]; until: number } | undefined;
 const filePathCache = new Map<string, { path: string; expires: number }>();
-let cachedStandaloneCatalog: { items: CatalogFile[]; expires: number } | null = null;
+let cachedStandaloneCatalog: { data: StandaloneCatalog; expires: number } | null = null;
 
 function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
   const binary = atob(value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '='));
@@ -238,32 +268,56 @@ async function getTelegramFilePath(fileId: string, botToken: string, fetcher: Fe
   return data.result.file_path;
 }
 
-async function loadStandaloneCatalog(request: Request, env: EdgeEnv, fetcher: Fetcher): Promise<CatalogFile[]> {
+function parseCatalogPayload(payload: unknown): StandaloneCatalog {
+  if (!payload || typeof payload !== 'object') return { items: [] };
+  if (Array.isArray(payload)) return { items: payload as CatalogFile[] };
+  const obj = payload as { items?: CatalogFile[]; series?: SeriesFile[] };
+  return {
+    items: Array.isArray(obj.items) ? obj.items : [],
+    series: Array.isArray(obj.series) ? obj.series : [],
+  };
+}
+
+function findMediaInCatalog(catalog: StandaloneCatalog, id: string): CatalogFile | null {
+  const item = catalog.items.find((x) => x.id === id);
+  if (item) return item;
+  if (catalog.series) {
+    for (const s of catalog.series) {
+      for (const season of s.seasons) {
+        const ep = season.episodes.find((e) => e.id === id);
+        if (ep) return ep;
+      }
+    }
+  }
+  return null;
+}
+
+async function loadStandaloneCatalog(request: Request, env: EdgeEnv, fetcher: Fetcher): Promise<StandaloneCatalog> {
   if (env.TELEDRIVE_CATALOG) {
     try {
-      const parsed = JSON.parse(env.TELEDRIVE_CATALOG) as { items?: CatalogFile[] } | CatalogFile[];
-      return Array.isArray(parsed) ? parsed : (parsed.items ?? []);
+      const parsed = JSON.parse(env.TELEDRIVE_CATALOG);
+      return parseCatalogPayload(parsed);
     } catch {}
   }
   if (env.CATALOG_JSON) {
     try {
-      const parsed = JSON.parse(env.CATALOG_JSON) as { items?: CatalogFile[] } | CatalogFile[];
-      return Array.isArray(parsed) ? parsed : (parsed.items ?? []);
+      const parsed = JSON.parse(env.CATALOG_JSON);
+      return parseCatalogPayload(parsed);
     } catch {}
   }
   if (env.TELEDRIVE_KV) {
     try {
       const raw = await env.TELEDRIVE_KV.get('catalog');
       if (raw) {
-        const parsed = JSON.parse(raw) as { items?: CatalogFile[] } | CatalogFile[];
-        return Array.isArray(parsed) ? parsed : (parsed.items ?? []);
+        const parsed = JSON.parse(raw);
+        return parseCatalogPayload(parsed);
       }
     } catch {}
   }
 
   // In-memory cache for static fetch
   if (cachedStandaloneCatalog && cachedStandaloneCatalog.expires > Date.now()) {
-    return cachedStandaloneCatalog.items;
+    return cachedStandaloneCatalog.data;
   }
 
   // Try Cloudflare Pages ASSETS binding
@@ -272,11 +326,11 @@ async function loadStandaloneCatalog(request: Request, env: EdgeEnv, fetcher: Fe
       const staticUrl = new URL('/catalog.json', request.url);
       const res = await env.ASSETS.fetch(staticUrl);
       if (res.ok) {
-        const parsed = await res.json() as { items?: CatalogFile[] } | CatalogFile[];
-        const items = Array.isArray(parsed) ? parsed : (parsed.items ?? []);
-        if (items.length > 0) {
-          cachedStandaloneCatalog = { items, expires: Date.now() + 60_000 };
-          return items;
+        const parsed = await res.json();
+        const data = parseCatalogPayload(parsed);
+        if (data.items.length > 0 || (data.series && data.series.length > 0)) {
+          cachedStandaloneCatalog = { data, expires: Date.now() + 60_000 };
+          return data;
         }
       }
     } catch {}
@@ -287,16 +341,16 @@ async function loadStandaloneCatalog(request: Request, env: EdgeEnv, fetcher: Fe
     const staticUrl = new URL('/catalog.json', request.url);
     const res = await fetcher(staticUrl);
     if (res.ok) {
-      const parsed = await res.json() as { items?: CatalogFile[] } | CatalogFile[];
-      const items = Array.isArray(parsed) ? parsed : (parsed.items ?? []);
-      if (items.length > 0) {
-        cachedStandaloneCatalog = { items, expires: Date.now() + 60_000 };
-        return items;
+      const parsed = await res.json();
+      const data = parseCatalogPayload(parsed);
+      if (data.items.length > 0 || (data.series && data.series.length > 0)) {
+        cachedStandaloneCatalog = { data, expires: Date.now() + 60_000 };
+        return data;
       }
     }
   } catch {}
 
-  return [];
+  return { items: [] };
 }
 
 export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher = fetch): Promise<Response> {
@@ -380,7 +434,7 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
 
       // Standalone Cloudflare mode
       const standalone = await loadStandaloneCatalog(request, env, fetcher);
-      const filtered = standalone.filter((item) => {
+      const filtered = standalone.items.filter((item) => {
         if (!item || !item.id || !ID.test(item.id)) return false;
         if (type !== 'all' && item.category !== type) return false;
         if (query) {
@@ -389,7 +443,15 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
         }
         return true;
       });
-      return withHead(Response.json({ items: filtered }, {
+      const filteredSeries = (standalone.series ?? []).filter((s) => {
+        if (type === 'audio') return false;
+        if (query) {
+          const text = `${s.name} ${s.description} ${s.genres?.join(' ')}`.toLowerCase();
+          if (!text.includes(query)) return false;
+        }
+        return true;
+      });
+      return withHead(Response.json({ items: filtered, series: filteredSeries }, {
         headers: {
           'Cache-Control': 'private, no-store',
           'Access-Control-Allow-Origin': '*',
@@ -434,7 +496,7 @@ export async function handleApi(request: Request, env: EdgeEnv, fetcher: Fetcher
 
     // Standalone Direct Telegram Mode
     const catalog = await loadStandaloneCatalog(request, env, fetcher);
-    const item = catalog.find((x) => x.id === id);
+    const item = findMediaInCatalog(catalog, id);
     if (!item) return error(404, 'Media not found');
 
     if (kind === 'art') {

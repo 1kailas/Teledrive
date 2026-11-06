@@ -284,3 +284,69 @@ test('standalone mode routes multi-part media across multiple Telegram bots base
   assert.equal(requestedFiles.includes('part-2-file'), true);
   assert.equal(requestedBots.includes('3333:TOKEN3'), true);
 });
+
+test('series and season episodes can be streamed directly by media ID', async () => {
+  const epId = 'e1111111-2222-3333-4444-555555555555';
+  const seriesEnv: EdgeEnv = {
+    TELEGRAM_BOT_TOKEN: '1234:TOKEN',
+    TELEDRIVE_CATALOG: JSON.stringify({
+      items: [],
+      series: [
+        {
+          id: 's1111111-2222-3333-4444-555555555555',
+          name: 'Arcane',
+          folderName: 'Arcane',
+          description: 'Steampunk animation series',
+          seasonsCount: 1,
+          episodesCount: 1,
+          seasons: [
+            {
+              seasonNumber: 1,
+              name: 'Season 1',
+              episodes: [
+                {
+                  id: epId,
+                  episodeNumber: 1,
+                  seasonNumber: 1,
+                  seriesId: 's1111111-2222-3333-4444-555555555555',
+                  seriesName: 'Arcane',
+                  episodeTitle: 'Welcome to the Playground',
+                  name: 'Arcane.S01E01.mp4',
+                  mimeType: 'video/mp4',
+                  size: 5000000,
+                  duration: 2400,
+                  hasThumbnail: false,
+                  parts: [{ partIndex: 0, size: 5000000, telegramFileId: 'arcane-ep1-file', botId: '1234' }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }),
+    ALLOW_PUBLIC: 'true',
+  };
+
+  const mockTgFetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname.includes('/getFile')) {
+      return Response.json({ ok: true, result: { file_path: 'series/ep1.mp4' } });
+    }
+    if (url.pathname.includes('/series/ep1.mp4')) {
+      return new Response('arcane-slice', { status: 206, headers: { 'Content-Length': '12' } });
+    }
+    return new Response(null, { status: 404 });
+  }) as typeof fetch;
+
+  const catalogRes = await handleApi(new Request('https://stream.example/api/catalog'), seriesEnv, mockTgFetch);
+  assert.equal(catalogRes.status, 200);
+  const catData = await catalogRes.json() as { items: unknown[]; series: { name: string }[] };
+  assert.equal(catData.series.length, 1);
+  assert.equal(catData.series[0]!.name, 'Arcane');
+
+  const streamRes = await handleApi(new Request(`https://stream.example/api/media/${epId}`, {
+    headers: { Range: 'bytes=0-11' },
+  }), seriesEnv, mockTgFetch);
+  assert.equal(streamRes.status, 206);
+  assert.equal(await streamRes.text(), 'arcane-slice');
+});

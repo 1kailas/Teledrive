@@ -194,80 +194,284 @@ export async function extractSubtitlesToVtt(
   }
 }
 
+export interface EpisodeFile {
+  id: string;
+  episodeNumber: number;
+  seasonNumber: number;
+  seriesId: string;
+  seriesName: string;
+  episodeTitle: string;
+  name: string;
+  duration: number | null;
+  size: number;
+  mimeType: string;
+  hasThumbnail: boolean;
+  parts?: {
+    partIndex: number;
+    size: number;
+    telegramFileId?: string;
+    botId?: string;
+  }[];
+}
+
+export interface SeasonFile {
+  seasonNumber: number;
+  name: string;
+  episodes: EpisodeFile[];
+}
+
+export interface SeriesFile {
+  id: string;
+  name: string;
+  folderName: string;
+  description: string;
+  seasonsCount: number;
+  episodesCount: number;
+  seasons: SeasonFile[];
+  genres?: string[];
+  year?: number | string;
+  updatedAt: number;
+  hasThumbnail?: boolean;
+}
+
+function parseEp(filename: string, defaultSeason = 1, defaultEp = 1): {
+  season: number;
+  episode: number;
+  title: string;
+} {
+  const clean = filename.replace(/\.[^.]+$/, '');
+  const sMatch = /(?:s|season\s*)(\d+)/i.exec(clean);
+  const eMatch = /(?:e|ep|episode\s*|\bx\s*)(\d+)/i.exec(clean);
+
+  const season = sMatch ? parseInt(sMatch[1]!, 10) : defaultSeason;
+  const episode = eMatch ? parseInt(eMatch[1]!, 10) : defaultEp;
+
+  let title = clean
+    .replace(/(?:s\d+\s*e\d+|season\s*\d+\s*episode\s*\d+|\b\d+x\d+\b)/gi, '')
+    .replace(/\b(1080p|720p|2160p|4k|uhd|web-dl|webrip|bluray|x264|h264|h\.264|ddp5\.1|ddp|eac3|aac|atmos)\b/gi, '')
+    .replace(/[-_.]+/g, ' ')
+    .trim();
+
+  if (!title || title.length < 2) {
+    title = `Episode ${episode}`;
+  }
+
+  return { season, episode, title };
+}
+
 /**
  * Syncs TeleDrive video/audio catalog with the standalone streaming catalog.
- * Ensures any movie uploaded to the Videos section in TeleDrive is immediately
- * available in the streaming platform.
+ * Follows folder hierarchy:
+ *   - Folder named 'stream' (inside 'Videos' or root) contains website media.
+ *   - Direct files inside 'stream' = Standalone Movies / Audio.
+ *   - Subfolders inside 'stream' = TV Series / Shows.
+ *   - Folders inside a series folder = Seasons.
+ *   - Files inside a season folder = Episodes.
  */
 export function syncTeleDriveToCatalog(db: Db, catalogPath: string): number {
   try {
-    const rows = db.prepare(`
-      SELECT f.*, b.part_count
-      FROM files f
-      JOIN blobs b ON f.blob_id = b.id
-      WHERE f.category IN ('video', 'audio')
-        AND f.status = 'ready'
-        AND f.trashed_at IS NULL
-      ORDER BY f.created_at DESC
-    `).all() as (import('../types.js').FileRow & { part_count: number })[];
+    const allFolders = db.prepare(`
+      SELECT id, parent_id, name, updated_at
+      FROM folders
+      WHERE trashed_at IS NULL
+    `).all() as { id: string; parent_id: string | null; name: string; updated_at: number }[];
 
-    let existingItems: any[] = [];
+    // Locate the 'stream' folder
+    const streamFolder = allFolders.find((f) => f.name.toLowerCase() === 'stream');
+
+    let existingCatalog: { items?: any[]; series?: SeriesFile[] } = {};
     if (fs.existsSync(catalogPath)) {
       try {
         const raw = fs.readFileSync(catalogPath, 'utf8');
-        const parsed = JSON.parse(raw);
-        existingItems = Array.isArray(parsed) ? parsed : (parsed.items ?? []);
+        existingCatalog = JSON.parse(raw);
       } catch {}
     }
 
+    const existingItems: any[] = existingCatalog.items ?? [];
+    const existingSeries: SeriesFile[] = existingCatalog.series ?? [];
+
     const items: any[] = [];
-    const seen = new Set<string>();
+    const seriesList: SeriesFile[] = [];
+    const seenFiles = new Set<string>();
 
-    for (const f of rows) {
-      seen.add(f.id);
-      const parts = db.prepare('SELECT * FROM parts WHERE blob_id = ? ORDER BY idx ASC').all(f.blob_id) as import('../types.js').PartRow[];
-      let meta: Record<string, unknown> = {};
-      try { meta = JSON.parse(f.metadata || '{}'); } catch {}
+    const getPartsForBlob = (blobId: string) => {
+      const parts = db.prepare('SELECT * FROM parts WHERE blob_id = ? ORDER BY idx ASC').all(blobId) as import('../types.js').PartRow[];
+      return parts.map((p) => ({
+        partIndex: p.idx,
+        size: p.size,
+        telegramFileId: p.tg_file_id ?? undefined,
+        botId: p.bot_id ?? undefined,
+      }));
+    };
 
-      // Retain existing uploaded cloud parts if present
-      const existing = existingItems.find((it) => it.id === f.id);
-      let mappedParts = existing?.parts;
-      if (!mappedParts || mappedParts.length === 0) {
-        mappedParts = parts.map((p) => ({
-          partIndex: p.idx,
-          size: p.size,
-          telegramFileId: p.tg_file_id ?? undefined,
-          botId: p.bot_id ?? undefined,
-        }));
+    if (streamFolder) {
+      // 1. Direct files inside 'stream' are Movies / Standalone
+      const streamFiles = db.prepare(`
+        SELECT f.*
+        FROM files f
+        WHERE f.folder_id = ? AND f.category IN ('video', 'audio')
+          AND f.status = 'ready' AND f.trashed_at IS NULL
+        ORDER BY f.created_at DESC
+      `).all(streamFolder.id) as import('../types.js').FileRow[];
+
+      for (const f of streamFiles) {
+        seenFiles.add(f.id);
+        const existing = existingItems.find((it) => it.id === f.id);
+        let mappedParts = existing?.parts;
+        if (!mappedParts || mappedParts.length === 0) mappedParts = getPartsForBlob(f.blob_id!);
+
+        items.push({
+          id: f.id,
+          name: f.name,
+          category: f.category,
+          mimeType: f.mime_type || (f.category === 'video' ? 'video/mp4' : 'audio/mpeg'),
+          size: f.size,
+          duration: f.duration || (f.name.toLowerCase().includes('inception') ? 8884 : 15),
+          hasThumbnail: Boolean(f.has_thumbnail),
+          updatedAt: f.updated_at,
+          artist: '',
+          album: '',
+          description: f.description || 'Movie / Standalone Media',
+          parts: mappedParts.length > 0 ? mappedParts : undefined,
+        });
       }
 
-      items.push({
-        id: f.id,
-        name: f.name,
-        category: f.category,
-        mimeType: f.mime_type || (f.category === 'video' ? 'video/mp4' : 'audio/mpeg'),
-        size: f.size,
-        duration: f.duration || (f.name.toLowerCase().includes('inception') ? 8884 : 15),
-        hasThumbnail: Boolean(f.has_thumbnail),
-        updatedAt: f.updated_at,
-        artist: typeof meta.artist === 'string' ? meta.artist : '',
-        album: typeof meta.album === 'string' ? meta.album : '',
-        description: f.description || 'Uploaded via TeleDrive Engine',
-        parts: mappedParts.length > 0 ? mappedParts : undefined,
-      });
+      // 2. Subfolders inside 'stream' are TV Series
+      const seriesFolders = allFolders.filter((f) => f.parent_id === streamFolder.id);
+
+      for (const sFolder of seriesFolders) {
+        const seasonFolders = allFolders.filter((f) => f.parent_id === sFolder.id);
+        const seasons: SeasonFile[] = [];
+        let totalEpisodes = 0;
+
+        if (seasonFolders.length > 0) {
+          // Has Season folders
+          for (const seFolder of seasonFolders) {
+            const seMatch = /(?:season\s*|s)(\d+)/i.exec(seFolder.name);
+            const seNum = seMatch ? parseInt(seMatch[1]!, 10) : seasons.length + 1;
+
+            const epFiles = db.prepare(`
+              SELECT f.*
+              FROM files f
+              WHERE f.folder_id = ? AND f.category = 'video'
+                AND f.status = 'ready' AND f.trashed_at IS NULL
+              ORDER BY f.name ASC
+            `).all(seFolder.id) as import('../types.js').FileRow[];
+
+            const episodes: EpisodeFile[] = epFiles.map((f, epIdx) => {
+              seenFiles.add(f.id);
+              const info = parseEp(f.name, seNum, epIdx + 1);
+              return {
+                id: f.id,
+                episodeNumber: info.episode,
+                seasonNumber: seNum,
+                seriesId: sFolder.id,
+                seriesName: sFolder.name,
+                episodeTitle: info.title,
+                name: f.name,
+                duration: f.duration || null,
+                size: f.size,
+                mimeType: f.mime_type || 'video/mp4',
+                hasThumbnail: Boolean(f.has_thumbnail),
+                parts: getPartsForBlob(f.blob_id!),
+              };
+            });
+
+            // Sort episodes naturally by episode number
+            episodes.sort((a, b) => a.episodeNumber - b.episodeNumber);
+            totalEpisodes += episodes.length;
+
+            seasons.push({
+              seasonNumber: seNum,
+              name: seFolder.name,
+              episodes,
+            });
+          }
+          seasons.sort((a, b) => a.seasonNumber - b.seasonNumber);
+        } else {
+          // Direct files inside series folder = Season 1
+          const epFiles = db.prepare(`
+            SELECT f.*
+            FROM files f
+            WHERE f.folder_id = ? AND f.category = 'video'
+              AND f.status = 'ready' AND f.trashed_at IS NULL
+            ORDER BY f.name ASC
+          `).all(sFolder.id) as import('../types.js').FileRow[];
+
+          if (epFiles.length > 0) {
+            const episodes: EpisodeFile[] = epFiles.map((f, epIdx) => {
+              seenFiles.add(f.id);
+              const info = parseEp(f.name, 1, epIdx + 1);
+              return {
+                id: f.id,
+                episodeNumber: info.episode,
+                seasonNumber: 1,
+                seriesId: sFolder.id,
+                seriesName: sFolder.name,
+                episodeTitle: info.title,
+                name: f.name,
+                duration: f.duration || null,
+                size: f.size,
+                mimeType: f.mime_type || 'video/mp4',
+                hasThumbnail: Boolean(f.has_thumbnail),
+                parts: getPartsForBlob(f.blob_id!),
+              };
+            });
+
+            episodes.sort((a, b) => a.episodeNumber - b.episodeNumber);
+            totalEpisodes += episodes.length;
+
+            seasons.push({
+              seasonNumber: 1,
+              name: 'Season 1',
+              episodes,
+            });
+          }
+        }
+
+        seriesList.push({
+          id: sFolder.id,
+          name: sFolder.name,
+          folderName: sFolder.name,
+          description: `TV Series · ${seasons.length} Season${seasons.length > 1 ? 's' : ''} · ${totalEpisodes} Episode${totalEpisodes > 1 ? 's' : ''}`,
+          seasonsCount: seasons.length,
+          episodesCount: totalEpisodes,
+          seasons,
+          updatedAt: sFolder.updated_at,
+          hasThumbnail: seasons[0]?.episodes[0]?.hasThumbnail ?? false,
+        });
+      }
     }
 
-    // Preserve any standalone items not in DB (e.g. ambient tracks)
+    // Preserve existing standalone items (e.g. Inception 143 parts, ambient audio)
     for (const ex of existingItems) {
-      if (ex.id && !seen.has(ex.id)) {
+      if (ex && ex.id && !seenFiles.has(ex.id)) {
+        seenFiles.add(ex.id);
         items.push(ex);
-        seen.add(ex.id);
       }
     }
+
+    // Preserve any existing series not in DB
+    for (const exS of existingSeries) {
+      if (exS && exS.id && !seriesList.some((s) => s.id === exS.id)) {
+        seriesList.push(exS);
+      }
+    }
+
+    // Exclude any file that belongs to a TV series from standalone items
+    const seriesEpisodeIds = new Set<string>();
+    for (const s of seriesList) {
+      for (const se of s.seasons) {
+        for (const ep of se.episodes) {
+          seriesEpisodeIds.add(ep.id);
+        }
+      }
+    }
+    const finalItems = items.filter((it) => !seriesEpisodeIds.has(it.id));
 
     fs.mkdirSync(path.dirname(catalogPath), { recursive: true });
-    fs.writeFileSync(catalogPath, JSON.stringify({ items }, null, 2));
-    return items.length;
+    fs.writeFileSync(catalogPath, JSON.stringify({ items: finalItems, series: seriesList }, null, 2));
+    return finalItems.length + seriesList.length;
   } catch (err) {
     console.warn('[syncTeleDriveToCatalog error]', (err as Error).message);
     return 0;

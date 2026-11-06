@@ -43,48 +43,6 @@
       ]
     },
     {
-      "id": "7eba0a5a-5d50-4d44-923f-8002a1fdae05",
-      "name": "2_5208749642950417935.MP4",
-      "category": "video",
-      "mimeType": "video/mp4",
-      "size": 1734087,
-      "duration": 15,
-      "hasThumbnail": true,
-      "updatedAt": 1793514739775,
-      "artist": "",
-      "album": "",
-      "description": "Direct Telegram Cloud Stream",
-      "parts": [
-        {
-          "partIndex": 0,
-          "size": 1734087,
-          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngADB2rm3PIC7ud3qf9TJI2zHDSyCsxxAAKoLgACBjU4V6DVaggkOsFYNgQ",
-          "botId": "9289345215"
-        }
-      ]
-    },
-    {
-      "id": "c3115da4-a189-479b-95f5-1b8dc28ce21f",
-      "name": "2_5211015491602092914.mp4",
-      "category": "video",
-      "mimeType": "video/mp4",
-      "size": 287069,
-      "duration": 15,
-      "hasThumbnail": true,
-      "updatedAt": 1793514740399,
-      "artist": "",
-      "album": "",
-      "description": "Direct Telegram Cloud Stream",
-      "parts": [
-        {
-          "partIndex": 0,
-          "size": 287069,
-          "telegramFileId": "BQACAgUAAyEGAAMBBg0SngADBmrm3PIBd1JY9FlpVsaVHl3xRorKAAKnLgACBjU4V5eY81az0MZpNgQ",
-          "botId": "9067026204"
-        }
-      ]
-    },
-    {
       "id": "9bd298eb-844b-4062-b216-590c78969698",
       "name": "Inception.2010.1080p.NF.WEB-DL.English.H.264.mp4",
       "category": "video",
@@ -982,6 +940,78 @@
       "artist": "Aurora Node",
       "album": "TeleDrive Cloud",
       "description": "Warm nocturnal chords with subtle stereo panning and gentle acoustic decay."
+    }
+  ],
+  "series": [
+    {
+      "id": "4edc5b97-781a-4b17-921a-c7097f6d1a7d",
+      "name": "Cosmos: Possible Worlds",
+      "folderName": "Cosmos: Possible Worlds",
+      "description": "TV Series · 1 Season · 2 Episodes",
+      "seasonsCount": 1,
+      "episodesCount": 2,
+      "seasons": [
+        {
+          "seasonNumber": 1,
+          "name": "Season 1",
+          "episodes": [
+            {
+              "id": "7eba0a5a-5d50-4d44-923f-8002a1fdae05",
+              "episodeNumber": 1,
+              "seasonNumber": 1,
+              "seriesId": "4edc5b97-781a-4b17-921a-c7097f6d1a7d",
+              "seriesName": "Cosmos: Possible Worlds",
+              "episodeTitle": "Cosmos Ladder to the Stars",
+              "name": "Cosmos.S01E01.Ladder.to.the.Stars.mp4",
+              "category": "video",
+              "mimeType": "video/mp4",
+              "size": 1734087,
+              "duration": null,
+              "hasThumbnail": true,
+              "updatedAt": 1793514739775,
+              "artist": "",
+              "album": "",
+              "description": "",
+              "parts": [
+                {
+                  "partIndex": 0,
+                  "size": 1734087,
+                  "telegramFileId": "BQACAgUAAyEGAAMBBg0SngADB2rm3PIC7ud3qf9TJI2zHDSyCsxxAAKoLgACBjU4V6DVaggkOsFYNgQ",
+                  "botId": "9289345215"
+                }
+              ]
+            },
+            {
+              "id": "c3115da4-a189-479b-95f5-1b8dc28ce21f",
+              "episodeNumber": 2,
+              "seasonNumber": 1,
+              "seriesId": "4edc5b97-781a-4b17-921a-c7097f6d1a7d",
+              "seriesName": "Cosmos: Possible Worlds",
+              "episodeTitle": "Cosmos Shadows of Forgotten Ancestors",
+              "name": "Cosmos.S01E02.Shadows.of.Forgotten.Ancestors.mp4",
+              "category": "video",
+              "mimeType": "video/mp4",
+              "size": 287069,
+              "duration": null,
+              "hasThumbnail": true,
+              "updatedAt": 1793514740399,
+              "artist": "",
+              "album": "",
+              "description": "",
+              "parts": [
+                {
+                  "partIndex": 0,
+                  "size": 287069,
+                  "telegramFileId": "BQACAgUAAyEGAAMBBg0SngADBmrm3PIBd1JY9FlpVsaVHl3xRorKAAKnLgACBjU4V5eY81az0MZpNgQ",
+                  "botId": "9067026204"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "updatedAt": 1793958581835,
+      "hasThumbnail": true
     }
   ]
 }

@@ -1,18 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, ArrowDownRight, AudioLines, Bookmark, Check, CheckCircle2, ChevronRight,
-  Clapperboard, Copy, Disc3, Download, ExternalLink, Heart, HelpCircle, Home, ListMusic, Maximize, Minimize,
+  Clapperboard, Copy, Disc3, Download, ExternalLink, Film, Heart, HelpCircle, Home,
+  ListMusic, ListOrdered, Maximize, Minimize,
   Music2, Pause, PictureInPicture2, Play, RefreshCw,
   Search, Share2, SkipBack, SkipForward, SlidersHorizontal, Subtitles,
-  Volume2, VolumeX, X,
+  Tv, Volume2, VolumeX, X,
 } from 'lucide-react';
-import type { AudioProfile, MediaItem } from './library';
+import type { AudioProfile, EpisodeItem, MediaItem, SeasonItem, SeriesItem } from './library';
 import {
   artistOf, artwork, formatOf, getAudioPrefs, getPositions,
   getWatchlist, saveAudioPrefs, savePosition, saveWatchlist, sizeOf, timeOf, titleOf,
 } from './library';
 
-type View = 'home' | 'films' | 'music' | 'saved';
+type View = 'home' | 'films' | 'series' | 'music' | 'saved';
 
 function Artwork({ item, className = '' }: { item: MediaItem; className?: string }) {
   const [failed, setFailed] = useState(false);
@@ -53,6 +54,35 @@ function FilmCard({ item, onPlay, saved, onSave, position }: {
           title={saved ? 'Remove from My list' : 'Add to My list'}>
           {saved ? <Check size={17} /> : <Bookmark size={17} />}
         </button>
+      </div>
+    </article>
+  );
+}
+
+function SeriesCard({ series, onSelect }: {
+  series: SeriesItem;
+  onSelect: () => void;
+}) {
+  const thumbEp = series.seasons[0]?.episodes[0];
+  return (
+    <article className="film-card series-card">
+      <button className="poster-button" onClick={onSelect} aria-label={`View series ${series.name}`}>
+        {thumbEp ? <Artwork item={thumbEp} /> : (
+          <div className="artwork"><Tv size={38} strokeWidth={1.2} /></div>
+        )}
+        <span className="poster-play"><Tv size={20} /></span>
+        <span className="format-badge series-badge">SERIES</span>
+        <span className="episodes-badge">{series.seasonsCount} Season{series.seasonsCount > 1 ? 's' : ''} · {series.episodesCount} Ep</span>
+      </button>
+      <div className="film-info">
+        <div className="film-copy">
+          <h3 title={series.name}>{series.name}</h3>
+          <p>
+            {series.seasonsCount} Season{series.seasonsCount > 1 ? 's' : ''}
+            <span className="dot">·</span>
+            {series.episodesCount} Episodes
+          </p>
+        </div>
       </div>
     </article>
   );
@@ -107,6 +137,14 @@ export default function App() {
   const [volume, setVolume] = useState(0.85);
   const [streamMode, setStreamMode] = useState<'direct' | 'compat'>('direct');
 
+  // TV Series & Episode Architecture State
+  const [series, setSeries] = useState<SeriesItem[]>([]);
+  const [selectedSeries, setSelectedSeries] = useState<SeriesItem | null>(null);
+  const [selectedSeason, setSelectedSeason] = useState<number>(1);
+  const [activeEpisode, setActiveEpisode] = useState<EpisodeItem | null>(null);
+  const [showEpisodeDrawer, setShowEpisodeDrawer] = useState<boolean>(false);
+  const [autoplayCountdown, setAutoplayCountdown] = useState<number | null>(null);
+
   // Advanced Audio & Subtitle Features
   const [audioPrefs, setAudioPrefs] = useState(getAudioPrefs);
   const [showAudioMenu, setShowAudioMenu] = useState(false);
@@ -119,6 +157,57 @@ export default function App() {
   const [aspectRatio, setAspectRatio] = useState<'fit' | '16-9' | '21-9' | 'fill'>('fit');
   const [showHelp, setShowHelp] = useState(false);
   const [subOffset, setSubOffset] = useState(0);
+
+  // Episode tracking and sequential navigation
+  const currentSeries = useMemo(() => {
+    if (!activeEpisode) return null;
+    return series.find((s) => s.id === activeEpisode.seriesId) ?? selectedSeries;
+  }, [activeEpisode, series, selectedSeries]);
+
+  const currentSeasonData = useMemo(() => {
+    if (!currentSeries || !activeEpisode) return null;
+    return currentSeries.seasons.find((se) => se.seasonNumber === activeEpisode.seasonNumber) ?? currentSeries.seasons[0] ?? null;
+  }, [currentSeries, activeEpisode]);
+
+  const activeSeasonEpisodes = useMemo(() => currentSeasonData?.episodes ?? [], [currentSeasonData]);
+
+  const currentEpisodeIndex = useMemo(() => {
+    if (!activeEpisode || !activeSeasonEpisodes.length) return -1;
+    return activeSeasonEpisodes.findIndex((e) => e.id === activeEpisode.id);
+  }, [activeEpisode, activeSeasonEpisodes]);
+
+  const hasPreviousEpisode = currentEpisodeIndex > 0;
+  const previousEpisode = hasPreviousEpisode ? activeSeasonEpisodes[currentEpisodeIndex - 1] : null;
+
+  const hasNextEpisode = currentEpisodeIndex >= 0 && currentEpisodeIndex < activeSeasonEpisodes.length - 1;
+  const nextEpisode = hasNextEpisode ? activeSeasonEpisodes[currentEpisodeIndex + 1] : null;
+
+  function playEpisode(ep: EpisodeItem, s: SeriesItem) {
+    audioRef.current?.pause();
+    setPlaying(false);
+    setPlaybackError('');
+    setShowAudioMenu(false);
+    setShowSubtitleMenu(false);
+    setShowEpisodeDrawer(false);
+    setAutoplayCountdown(null);
+    setSelectedSeries(s);
+    setSelectedSeason(ep.seasonNumber || 1);
+    setActiveEpisode(ep);
+    setVideo(ep);
+    lastSavedAt.current = 0;
+  }
+
+  function playNextEpisode() {
+    if (nextEpisode && currentSeries) {
+      playEpisode(nextEpisode, currentSeries);
+    }
+  }
+
+  function playPreviousEpisode() {
+    if (previousEpisode && currentSeries) {
+      playEpisode(previousEpisode, currentSeries);
+    }
+  }
 
   const copyStreamUrl = (id: string) => {
     const fullUrl = `${window.location.origin}/api/media/${id}`;
@@ -237,15 +326,20 @@ export default function App() {
     const controller = new AbortController();
     setLoading(true);
     setError('');
-    const type = view === 'films' ? 'video' : view === 'music' ? 'audio' : 'all';
+    const type = view === 'films' || view === 'series' ? 'video' : view === 'music' ? 'audio' : 'all';
     fetch(`/api/catalog?${new URLSearchParams({ type, q: query })}`, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(response.status === 401
           ? 'Your viewing session expired. Sign in with Cloudflare Access to continue.'
           : 'TeleDrive is unavailable. Check your connection or hosted settings.');
-        return response.json() as Promise<{ items: MediaItem[] }>;
+        return response.json() as Promise<{ items?: MediaItem[]; series?: SeriesItem[] }>;
       })
-      .then((data) => setItems(data.items))
+      .then((data) => {
+        setItems(data.items || []);
+        if (Array.isArray(data.series)) {
+          setSeries(data.series);
+        }
+      })
       .catch((reason: unknown) => {
         if (controller.signal.aborted) return;
         setError(reason instanceof Error ? reason.message : 'Could not load your library.');
@@ -253,6 +347,20 @@ export default function App() {
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [query, view, refresh]);
+
+  // Autoplay countdown timer for sequential series binge watching
+  useEffect(() => {
+    if (autoplayCountdown === null) return;
+    if (autoplayCountdown <= 0) {
+      setAutoplayCountdown(null);
+      playNextEpisode();
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setAutoplayCountdown((prev) => (prev !== null && prev > 0 ? prev - 1 : null));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [autoplayCountdown, nextEpisode, currentSeries]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -528,6 +636,9 @@ export default function App() {
     setPlaybackError('');
     setShowAudioMenu(false);
     setShowSubtitleMenu(false);
+    setShowEpisodeDrawer(false);
+    setActiveEpisode(null);
+    setAutoplayCountdown(null);
     const isMkv = item.name.toLowerCase().endsWith('.mkv');
     setStreamMode(isMkv ? 'compat' : 'direct');
     setVideo(item);
@@ -536,6 +647,9 @@ export default function App() {
 
   function closeVideo() {
     setVideo(null);
+    setActiveEpisode(null);
+    setShowEpisodeDrawer(false);
+    setAutoplayCountdown(null);
     setStreamMode('direct');
     setShowAudioMenu(false);
     setShowSubtitleMenu(false);
@@ -565,7 +679,8 @@ export default function App() {
 
   const nav: { id: View; label: string; icon: typeof Home }[] = [
     { id: 'home', label: 'Discover', icon: Home },
-    { id: 'films', label: 'Films & series', icon: Clapperboard },
+    { id: 'films', label: 'Films', icon: Film },
+    { id: 'series', label: 'TV Series', icon: Tv },
     { id: 'music', label: 'Music', icon: Music2 },
     { id: 'saved', label: 'My list', icon: Bookmark },
   ];
@@ -640,10 +755,10 @@ export default function App() {
           <div className="library-content">
             {view !== 'home' || query ? <div className="page-heading">
               <div><div className="eyebrow"><span /> YOUR PRIVATE COLLECTION</div>
-                <h1>{query ? `Results for “${query}”` : view === 'films' ? 'The screening room' : view === 'music' ? 'The listening room' : 'Your list'}</h1>
-                <p>{view === 'saved' ? 'The ones you want to return to.' : 'Films, series, and lossless audio.'}</p>
+                <h1>{query ? `Results for “${query}”` : view === 'films' ? 'The screening room' : view === 'series' ? 'TV series & shows' : view === 'music' ? 'The listening room' : 'Your list'}</h1>
+                <p>{view === 'saved' ? 'The ones you want to return to.' : view === 'series' ? 'Episodic television and documentary series.' : 'Films, series, and lossless audio.'}</p>
               </div>
-              <span className="results-count">{visibleVideos.length + visibleSongs.length} TITLES</span>
+              <span className="results-count">{visibleVideos.length + visibleSongs.length + series.length} TITLES</span>
             </div> : null}
 
             {loading ? <div className="loading" role="status"><div className="loading-bar" />Gathering your collection...</div> : <>
@@ -655,15 +770,82 @@ export default function App() {
                     onPlay={() => playVideo(item)} saved={saved.includes(item.id)} onSave={() => toggleSaved(item.id)} />)}</div>
               </section>}
 
-              {visibleVideos.length > 0 && <section className="shelf" aria-label="Films">
-                <div className="section-head"><div><span className="section-kicker">01 / CINEMA & SERIES</span>
-                  <h2>{view === 'home' ? 'Made for movie nights' : 'Films & series'}</h2></div>
-                  {view === 'home' && <button className="text-link" onClick={() => setView('films')}>View all <ChevronRight size={16} /></button>}
-                </div>
-                <div className="film-grid">{(view === 'home' ? visibleVideos.slice(0, 8) : visibleVideos).map((item) =>
-                  <FilmCard key={item.id} item={item} position={positions[item.id] ?? 0}
-                    onPlay={() => playVideo(item)} saved={saved.includes(item.id)} onSave={() => toggleSaved(item.id)} />)}</div>
-              </section>}
+              {/* Home View: TV Series shelf */}
+              {view === 'home' && !query && series.length > 0 && (
+                <section className="shelf" aria-label="TV Series">
+                  <div className="section-head">
+                    <div>
+                      <span className="section-kicker">01 / TELEVISION & SERIES</span>
+                      <h2>TV series & shows</h2>
+                    </div>
+                    <button className="text-link" onClick={() => setView('series')}>
+                      View all <ChevronRight size={16} />
+                    </button>
+                  </div>
+                  <div className="film-grid">
+                    {series.slice(0, 6).map((s) => (
+                      <SeriesCard
+                        key={s.id}
+                        series={s}
+                        onSelect={() => {
+                          setSelectedSeries(s);
+                          setSelectedSeason(s.seasons[0]?.seasonNumber || 1);
+                        }}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Dedicated Series View */}
+              {view === 'series' && (
+                <section className="shelf" aria-label="TV Series">
+                  <div className="film-grid">
+                    {series.map((s) => (
+                      <SeriesCard
+                        key={s.id}
+                        series={s}
+                        onSelect={() => {
+                          setSelectedSeries(s);
+                          setSelectedSeason(s.seasons[0]?.seasonNumber || 1);
+                        }}
+                      />
+                    ))}
+                  </div>
+                  {series.length === 0 && (
+                    <div className="empty-state">
+                      <span><Tv size={36} strokeWidth={1.2} /></span>
+                      <h2>No TV series in library yet.</h2>
+                      <p>Folders inside 'stream' in TeleDrive Videos are automatically recognized as series and seasons.</p>
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {/* Films Shelf */}
+              {(view === 'films' || (view === 'home' && visibleVideos.length > 0) || (view === 'saved' && visibleVideos.length > 0)) && (
+                <section className="shelf" aria-label="Films">
+                  <div className="section-head">
+                    <div>
+                      <span className="section-kicker">{view === 'home' && series.length > 0 ? '02 / FEATURE FILMS' : '01 / CINEMA & MOVIES'}</span>
+                      <h2>{view === 'home' ? 'Made for movie nights' : 'Feature films'}</h2>
+                    </div>
+                    {view === 'home' && <button className="text-link" onClick={() => setView('films')}>View all <ChevronRight size={16} /></button>}
+                  </div>
+                  <div className="film-grid">
+                    {(view === 'home' ? visibleVideos.slice(0, 8) : visibleVideos).map((item) => (
+                      <FilmCard
+                        key={item.id}
+                        item={item}
+                        position={positions[item.id] ?? 0}
+                        onPlay={() => playVideo(item)}
+                        saved={saved.includes(item.id)}
+                        onSave={() => toggleSaved(item.id)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
 
               {(visibleSongs.length > 0 || (view === 'music' && songs.length > 0)) && <section className="shelf music-shelf" aria-label="Music">
                 <div className="section-head"><div><span className="section-kicker">02 / ON REPEAT</span>
@@ -728,6 +910,86 @@ export default function App() {
             onChange={(event) => setVolume(Number(event.target.value))} /></div>
       </footer>
 
+      {/* SERIES HUB MODAL */}
+      {selectedSeries && (
+        <div className="modal-backdrop series-hub-backdrop" role="presentation" onMouseDown={(e) => {
+          if (e.target === e.currentTarget) setSelectedSeries(null);
+        }}>
+          <div className="series-hub-modal" role="dialog" aria-modal="true" aria-label={selectedSeries.name}>
+            <div className="series-hub-header">
+              <div className="series-hub-header-content">
+                <span className="modal-tag">TELEDRIVE TV SERIES · {selectedSeries.seasonsCount} SEASON{selectedSeries.seasonsCount > 1 ? 'S' : ''}</span>
+                <h2>{selectedSeries.name}</h2>
+                <p>{selectedSeries.description || `${selectedSeries.seasonsCount} Season${selectedSeries.seasonsCount > 1 ? 's' : ''} · ${selectedSeries.episodesCount} Episodes streamed directly.`}</p>
+              </div>
+              <button className="close-video-btn" onClick={() => setSelectedSeries(null)} aria-label="Close series hub">
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Season Tabs */}
+            <div className="season-tabs">
+              {selectedSeries.seasons.map((season) => (
+                <button
+                  key={season.seasonNumber}
+                  className={`season-tab ${selectedSeason === season.seasonNumber ? 'active' : ''}`}
+                  onClick={() => setSelectedSeason(season.seasonNumber)}>
+                  Season {season.seasonNumber}
+                  <span className="season-ep-count">({season.episodes.length})</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Episode List for Selected Season */}
+            <div className="episode-list">
+              {(() => {
+                const activeSeasonData = selectedSeries.seasons.find((s) => s.seasonNumber === selectedSeason) || selectedSeries.seasons[0];
+                if (!activeSeasonData || activeSeasonData.episodes.length === 0) {
+                  return <div className="no-episodes">No episodes found in this season.</div>;
+                }
+                return activeSeasonData.episodes.map((ep, idx) => {
+                  const isPlayingThis = video?.id === ep.id;
+                  return (
+                    <div key={ep.id} className={`episode-row ${isPlayingThis ? 'playing-now' : ''}`}>
+                      <div className="episode-number">
+                        <span>{String(ep.episodeNumber || idx + 1).padStart(2, '0')}</span>
+                      </div>
+                      <div className="episode-thumb-wrap">
+                        <Artwork item={ep} className="episode-thumb" />
+                        <button className="episode-play-overlay" onClick={() => playEpisode(ep, selectedSeries)}>
+                          <Play size={16} fill="currentColor" />
+                        </button>
+                      </div>
+                      <div className="episode-details" onClick={() => playEpisode(ep, selectedSeries)}>
+                        <div className="episode-title-row">
+                          <strong>{ep.episodeTitle || ep.name}</strong>
+                          {isPlayingThis && <span className="now-playing-pill">NOW PLAYING</span>}
+                        </div>
+                        <div className="episode-subtext">
+                          {ep.duration ? <span>{timeOf(ep.duration)}</span> : null}
+                          {ep.duration && <span className="dot">·</span>}
+                          <span>{sizeOf(ep.size)}</span>
+                          <span className="dot">·</span>
+                          <span>{formatOf(ep)}</span>
+                        </div>
+                      </div>
+                      <div className="episode-actions">
+                        <button className="primary-button play-ep-btn" onClick={() => playEpisode(ep, selectedSeries)}>
+                          <Play size={14} fill="currentColor" /> Play
+                        </button>
+                        <button className="icon-button" onClick={() => copyStreamUrl(ep.id)} title="Copy stream URL">
+                          <Share2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ENHANCED VIDEO MODAL WITH MULTI-AUDIO, EQUALIZER, SUBTITLES & PIP */}
       {video && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
         if (event.target === event.currentTarget) closeVideo();
@@ -735,10 +997,52 @@ export default function App() {
         <div ref={modalRef} className={`video-modal ${isFullscreen ? 'fullscreen' : ''}`} role="dialog" aria-modal="true" aria-label={`Watching ${titleOf(video)}`}>
           <div className="modal-header">
             <div className="modal-title-block">
-              <span className="modal-tag">NOW PLAYING · {formatOf(video)} · {sizeOf(video.size)}</span>
-              <strong title={titleOf(video)}>{titleOf(video)}</strong>
+              {activeEpisode ? (
+                <>
+                  <span className="modal-tag">
+                    SERIES · {activeEpisode.seriesName.toUpperCase()} · S{String(activeEpisode.seasonNumber).padStart(2, '0')}E{String(activeEpisode.episodeNumber).padStart(2, '0')} · {sizeOf(activeEpisode.size)}
+                  </span>
+                  <strong title={activeEpisode.episodeTitle || activeEpisode.name}>
+                    {activeEpisode.episodeTitle || activeEpisode.name}
+                  </strong>
+                </>
+              ) : (
+                <>
+                  <span className="modal-tag">NOW PLAYING · {formatOf(video)} · {sizeOf(video.size)}</span>
+                  <strong title={titleOf(video)}>{titleOf(video)}</strong>
+                </>
+              )}
             </div>
             <div className="modal-actions">
+              {/* If TV series episode: Episode Navigation & Drawer */}
+              {activeEpisode && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <button
+                    className="player-tool-btn"
+                    onClick={playPreviousEpisode}
+                    disabled={!hasPreviousEpisode}
+                    title="Previous Episode">
+                    <SkipBack size={15} />
+                    <span>Prev</span>
+                  </button>
+                  <button
+                    className="player-tool-btn"
+                    onClick={playNextEpisode}
+                    disabled={!hasNextEpisode}
+                    title="Next Episode">
+                    <SkipForward size={15} />
+                    <span>Next</span>
+                  </button>
+                  <button
+                    className={`player-tool-btn ${showEpisodeDrawer ? 'active' : ''}`}
+                    onClick={() => setShowEpisodeDrawer((v) => !v)}
+                    title="Episodes Drawer">
+                    <ListOrdered size={15} />
+                    <span>Episodes</span>
+                  </button>
+                </div>
+              )}
+
               {/* Audio Track & Equalizer Switcher Button */}
               <div className="popover-wrap">
                 <button
@@ -988,9 +1292,15 @@ export default function App() {
                   lastSavedAt.current = now;
                 }
               }}
-              onEnded={() => { savePosition(video.id, null); setPositions(getPositions()); }}
+              onEnded={() => {
+                savePosition(video.id, null);
+                setPositions(getPositions());
+                if (hasNextEpisode) {
+                  setAutoplayCountdown(5);
+                }
+              }}
               onError={() => {
-                setPlaybackError('Playback error: Unable to stream media. Check your connection or external media player.');
+                setPlaybackError('Stream reconnecting. Click below to reconnect or open directly in VLC / PotPlayer.');
               }}>
               <track
                 kind="subtitles"
@@ -1002,6 +1312,61 @@ export default function App() {
                 <track kind="subtitles" src={customSubtitleUrl} label="Custom Subtitles" default />
               )}
             </video>
+
+            {/* In-Player Episode Drawer for Instant Season Episode Switching */}
+            {showEpisodeDrawer && activeEpisode && activeSeasonEpisodes.length > 0 && (
+              <div className="episode-drawer" onMouseDown={(e) => e.stopPropagation()}>
+                <div className="drawer-header">
+                  <div>
+                    <strong>{activeEpisode.seriesName}</strong>
+                    <span>Season {activeEpisode.seasonNumber} Episodes</span>
+                  </div>
+                  <button className="icon-button close-pop" onClick={() => setShowEpisodeDrawer(false)} aria-label="Close drawer">
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="drawer-episode-list">
+                  {activeSeasonEpisodes.map((ep) => {
+                    const isCurrent = ep.id === activeEpisode.id;
+                    return (
+                      <button
+                        key={ep.id}
+                        className={`drawer-episode-item ${isCurrent ? 'current' : ''}`}
+                        onClick={() => {
+                          if (currentSeries) playEpisode(ep, currentSeries);
+                          setShowEpisodeDrawer(false);
+                        }}>
+                        <span className="drawer-ep-num">E{String(ep.episodeNumber).padStart(2, '0')}</span>
+                        <div className="drawer-ep-info">
+                          <strong>{ep.episodeTitle || ep.name}</strong>
+                          <small>{ep.duration ? timeOf(ep.duration) : sizeOf(ep.size)}</small>
+                        </div>
+                        {isCurrent ? <span className="playing-pulse"><AudioLines size={14} /></span> : <Play size={14} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Autoplay Countdown Overlay When Episode Ends */}
+            {autoplayCountdown !== null && nextEpisode && (
+              <div className="autoplay-countdown-overlay" onMouseDown={(e) => e.stopPropagation()}>
+                <div className="countdown-card">
+                  <span className="countdown-kicker">UP NEXT IN {autoplayCountdown}s</span>
+                  <h4>{nextEpisode.episodeTitle}</h4>
+                  <p>{nextEpisode.seriesName} · Season {nextEpisode.seasonNumber} Episode {nextEpisode.episodeNumber}</p>
+                  <div className="countdown-actions">
+                    <button className="primary-button" onClick={() => { setAutoplayCountdown(null); playNextEpisode(); }}>
+                      <Play size={16} fill="currentColor" /> Play Now
+                    </button>
+                    <button className="secondary-button" onClick={() => setAutoplayCountdown(null)}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {playbackError && (
@@ -1009,23 +1374,22 @@ export default function App() {
               <div className="video-error-content">
                 <AlertTriangle size={24} className="error-icon" />
                 <div>
-                  <strong>In-Browser Playback Limited</strong>
+                  <strong>Playback Reconnection</strong>
                   <p>
-                    This movie is encoded in <strong>{formatOf(video)}</strong> with multi-channel audio ({video.name.includes('DDP') ? 'Dolby Digital Plus DDP5.1' : 'surround sound'}).
-                    Standard web browsers lack proprietary Dolby decoders, but you can stream it directly with full surround sound in VLC or PotPlayer with one click.
+                    Stream encountered an interruption. Click Reconnect to resume or open directly in VLC / PotPlayer with one click.
                   </p>
                 </div>
               </div>
               <div className="video-error-actions">
-                <button className="primary-button" onClick={() => copyStreamUrl(video.id)}>
-                  <ExternalLink size={16} /> Open in VLC / PotPlayer (Stream Link)
+                <button className="primary-button" onClick={retryPlayback}>
+                  <RefreshCw size={16} /> Reconnect Stream
+                </button>
+                <button className="secondary-button" onClick={() => copyStreamUrl(video.id)}>
+                  <ExternalLink size={16} /> Open in VLC / PotPlayer
                 </button>
                 <a className="secondary-button" href={`/api/media/${video.id}?download=1`} download={video.name}>
                   <Download size={16} /> Download File ({sizeOf(video.size)})
                 </a>
-                <button className="secondary-button" onClick={retryPlayback}>
-                  <RefreshCw size={16} /> Retry Browser Player
-                </button>
               </div>
             </div>
           )}

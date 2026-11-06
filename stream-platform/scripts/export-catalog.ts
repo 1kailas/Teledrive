@@ -33,15 +33,47 @@ interface CatalogItem {
   parts?: CatalogPart[];
 }
 
+interface EpisodeItem extends CatalogItem {
+  episodeNumber: number;
+  seasonNumber: number;
+  seriesId: string;
+  seriesName: string;
+  episodeTitle: string;
+}
+
+interface SeasonItem {
+  seasonNumber: number;
+  name: string;
+  episodes: EpisodeItem[];
+}
+
+interface SeriesItem {
+  id: string;
+  name: string;
+  folderName: string;
+  description: string;
+  seasonsCount: number;
+  episodesCount: number;
+  seasons: SeasonItem[];
+  genres?: string[];
+  year?: number | string;
+  updatedAt: number;
+  hasThumbnail?: boolean;
+}
+
 const items: CatalogItem[] = [];
+let series: SeriesItem[] = [];
 const seen = new Set<string>();
 
-// Pre-load existing committed catalog items (ensures CI/Cloudflare Pages builds never lose catalog)
+// Pre-load existing committed catalog items & series
 if (fs.existsSync(outPath)) {
   try {
     const raw = fs.readFileSync(outPath, 'utf8');
-    const existing = JSON.parse(raw) as { items?: CatalogItem[] } | CatalogItem[];
+    const existing = JSON.parse(raw) as { items?: CatalogItem[]; series?: SeriesItem[] } | CatalogItem[];
     const list = Array.isArray(existing) ? existing : (existing.items ?? []);
+    if (!Array.isArray(existing) && Array.isArray(existing.series)) {
+      series = existing.series;
+    }
     for (const item of list) {
       if (item && item.id && !seen.has(item.id)) {
         if (item.name.toLowerCase().includes('inception')) {
@@ -55,6 +87,31 @@ if (fs.existsSync(outPath)) {
   } catch {}
 }
 
+function parseEp(filename: string, defaultSeason = 1, defaultEp = 1): {
+  season: number;
+  episode: number;
+  title: string;
+} {
+  const clean = filename.replace(/\.[^.]+$/, '');
+  const sMatch = /(?:s|season\s*)(\d+)/i.exec(clean);
+  const eMatch = /(?:e|ep|episode\s*|\bx\s*)(\d+)/i.exec(clean);
+
+  const season = sMatch ? parseInt(sMatch[1]!, 10) : defaultSeason;
+  const episode = eMatch ? parseInt(eMatch[1]!, 10) : defaultEp;
+
+  let title = clean
+    .replace(/(?:s\d+\s*e\d+|season\s*\d+\s*episode\s*\d+|\b\d+x\d+\b)/gi, '')
+    .replace(/\b(1080p|720p|2160p|4k|uhd|web-dl|webrip|bluray|x264|h264|h\.264|ddp5\.1|ddp|eac3|aac|atmos)\b/gi, '')
+    .replace(/[-_.]+/g, ' ')
+    .trim();
+
+  if (!title || title.length < 2) {
+    title = `Episode ${episode}`;
+  }
+
+  return { season, episode, title };
+}
+
 // Read teledrive.db if available locally
 if (fs.existsSync(sqliteDbPath)) {
   try {
@@ -62,8 +119,138 @@ if (fs.existsSync(sqliteDbPath)) {
     const require = createRequire(import.meta.url);
     const Database = require(path.resolve(rootDir, 'server/node_modules/better-sqlite3'));
     const db = new Database(sqliteDbPath, { readonly: true });
+
+    const allFolders = db.prepare('SELECT id, parent_id, name, updated_at FROM folders WHERE trashed_at IS NULL').all();
+    const streamFolder = allFolders.find((f: any) => f.name.toLowerCase() === 'stream');
+
+    const getPartsForBlob = (blobId: string) => {
+      const parts = db.prepare('SELECT * FROM parts WHERE blob_id = ? ORDER BY idx ASC').all(blobId);
+      return parts.map((p: any) => ({
+        partIndex: p.idx,
+        size: p.size,
+        telegramFileId: p.tg_file_id,
+        botId: p.bot_id,
+      }));
+    };
+
+    if (streamFolder) {
+      // 1. Files directly in stream folder = Standalone Movies / Audio
+      const streamFiles = db.prepare("SELECT * FROM files WHERE folder_id = ? AND category IN ('video', 'audio') AND trashed_at IS NULL AND status = 'ready'").all(streamFolder.id);
+      for (const f of streamFiles) {
+        seen.add(f.id);
+        const existingIdx = items.findIndex((it) => it.id === f.id);
+        const mappedParts = getPartsForBlob(f.blob_id);
+        const entry: CatalogItem = {
+          id: f.id,
+          name: f.name,
+          category: f.category,
+          mimeType: f.mime_type || (f.category === 'video' ? 'video/mp4' : 'audio/mpeg'),
+          size: f.size,
+          duration: f.duration || (f.name.toLowerCase().includes('inception') ? 8884 : 15),
+          hasThumbnail: Boolean(f.has_thumbnail),
+          updatedAt: f.updated_at,
+          artist: '',
+          album: '',
+          description: f.description || 'Movie / Standalone Media',
+          parts: mappedParts.length > 0 ? mappedParts : undefined,
+        };
+        if (existingIdx >= 0) items[existingIdx] = entry;
+        else items.push(entry);
+      }
+
+      // 2. Subfolders inside stream folder = TV Series
+      const seriesFolders = allFolders.filter((f: any) => f.parent_id === streamFolder.id);
+      for (const sFolder of seriesFolders) {
+        const seasonFolders = allFolders.filter((f: any) => f.parent_id === sFolder.id);
+        const seasons: SeasonItem[] = [];
+        let totalEpisodes = 0;
+
+        if (seasonFolders.length > 0) {
+          for (const seFolder of seasonFolders) {
+            const seMatch = /(?:season\s*|s)(\d+)/i.exec(seFolder.name);
+            const seNum = seMatch ? parseInt(seMatch[1]!, 10) : seasons.length + 1;
+            const epFiles = db.prepare("SELECT * FROM files WHERE folder_id = ? AND category = 'video' AND trashed_at IS NULL AND status = 'ready' ORDER BY name ASC").all(seFolder.id);
+            const episodes: EpisodeItem[] = epFiles.map((f: any, epIdx: number) => {
+              seen.add(f.id);
+              const info = parseEp(f.name, seNum, epIdx + 1);
+              return {
+                id: f.id,
+                episodeNumber: info.episode,
+                seasonNumber: seNum,
+                seriesId: sFolder.id,
+                seriesName: sFolder.name,
+                episodeTitle: info.title,
+                name: f.name,
+                category: 'video',
+                mimeType: f.mime_type || 'video/mp4',
+                size: f.size,
+                duration: f.duration || null,
+                hasThumbnail: Boolean(f.has_thumbnail),
+                updatedAt: f.updated_at,
+                artist: '',
+                album: '',
+                description: f.description || '',
+                parts: getPartsForBlob(f.blob_id),
+              };
+            });
+            episodes.sort((a, b) => a.episodeNumber - b.episodeNumber);
+            totalEpisodes += episodes.length;
+            seasons.push({ seasonNumber: seNum, name: seFolder.name, episodes });
+          }
+          seasons.sort((a, b) => a.seasonNumber - b.seasonNumber);
+        } else {
+          const epFiles = db.prepare("SELECT * FROM files WHERE folder_id = ? AND category = 'video' AND trashed_at IS NULL AND status = 'ready' ORDER BY name ASC").all(sFolder.id);
+          if (epFiles.length > 0) {
+            const episodes: EpisodeItem[] = epFiles.map((f: any, epIdx: number) => {
+              seen.add(f.id);
+              const info = parseEp(f.name, 1, epIdx + 1);
+              return {
+                id: f.id,
+                episodeNumber: info.episode,
+                seasonNumber: 1,
+                seriesId: sFolder.id,
+                seriesName: sFolder.name,
+                episodeTitle: info.title,
+                name: f.name,
+                category: 'video',
+                mimeType: f.mime_type || 'video/mp4',
+                size: f.size,
+                duration: f.duration || null,
+                hasThumbnail: Boolean(f.has_thumbnail),
+                updatedAt: f.updated_at,
+                artist: '',
+                album: '',
+                description: f.description || '',
+                parts: getPartsForBlob(f.blob_id),
+              };
+            });
+            episodes.sort((a, b) => a.episodeNumber - b.episodeNumber);
+            totalEpisodes += episodes.length;
+            seasons.push({ seasonNumber: 1, name: 'Season 1', episodes });
+          }
+        }
+
+        const seriesIdx = series.findIndex((s) => s.id === sFolder.id);
+        const sEntry: SeriesItem = {
+          id: sFolder.id,
+          name: sFolder.name,
+          folderName: sFolder.name,
+          description: `TV Series · ${seasons.length} Season${seasons.length > 1 ? 's' : ''} · ${totalEpisodes} Episode${totalEpisodes > 1 ? 's' : ''}`,
+          seasonsCount: seasons.length,
+          episodesCount: totalEpisodes,
+          seasons,
+          updatedAt: sFolder.updated_at,
+          hasThumbnail: seasons[0]?.episodes[0]?.hasThumbnail ?? false,
+        };
+        if (seriesIdx >= 0) series[seriesIdx] = sEntry;
+        else series.push(sEntry);
+      }
+    }
+
+    // Also support root/general files if no stream folder or for standalone movies
     const rows = db.prepare("SELECT * FROM files WHERE category IN ('video', 'audio')").all();
     for (const f of rows) {
+      if (seen.has(f.id)) continue;
       const parts = db.prepare('SELECT * FROM parts WHERE blob_id = ? ORDER BY idx ASC').all(f.blob_id);
       let meta: Record<string, unknown> = {};
       try { meta = JSON.parse(f.metadata || '{}'); } catch {}
@@ -198,5 +385,17 @@ if (fs.existsSync(progressPath)) {
 }
 
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
-fs.writeFileSync(outPath, JSON.stringify({ items }, null, 2));
-console.log(`Exported ${items.length} media items to ${outPath}`);
+
+// Ensure episodes belonging to TV series do not duplicate into standalone items
+const seriesEpisodeIds = new Set<string>();
+for (const s of series) {
+  for (const se of s.seasons) {
+    for (const ep of se.episodes) {
+      seriesEpisodeIds.add(ep.id);
+    }
+  }
+}
+const finalItems = items.filter((it) => !seriesEpisodeIds.has(it.id));
+
+fs.writeFileSync(outPath, JSON.stringify({ items: finalItems, series }, null, 2));
+console.log(`Exported ${finalItems.length} media items and ${series.length} series to ${outPath}`);

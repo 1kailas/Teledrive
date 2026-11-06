@@ -733,3 +733,419 @@ input[type=range]::-moz-range-thumb { width: 11px; height: 11px; background: var
   .modal-backdrop { padding: 10px; }
   .modal-header, .modal-bottom { padding: 12px; }
 }
+
+/* ==========================================================================
+   TV Series & Seasons & Episodes UI Architecture
+   ========================================================================== */
+
+.video-player-container {
+  position: relative;
+  width: 100%;
+  background: #000000;
+  overflow: hidden;
+}
+
+.series-badge {
+  background: rgba(30, 64, 175, 0.85);
+  color: #bfdbfe;
+  border-color: rgba(147, 197, 253, 0.3);
+}
+
+.episodes-badge {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  background: rgba(16, 27, 25, 0.88);
+  color: #f7f9ea;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  backdrop-filter: blur(6px);
+}
+
+/* Series Hub Modal */
+.series-hub-backdrop {
+  z-index: 60;
+}
+
+.series-hub-modal {
+  width: min(880px, 94vw);
+  max-height: 88vh;
+  background: #14211d;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+  animation: rise-in 0.22s ease-out;
+}
+
+.series-hub-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px 28px 18px;
+  background: linear-gradient(180deg, #182a24 0%, #14211d 100%);
+  border-bottom: 1px solid var(--line);
+}
+
+.series-hub-header-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.series-hub-header-content h2 {
+  font-family: var(--serif);
+  font-size: 26px;
+  font-weight: 600;
+  color: #f5f6ed;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.series-hub-header-content p {
+  margin: 0;
+  font-size: 13px;
+  color: #a7baa9;
+  line-height: 1.5;
+  max-width: 620px;
+}
+
+.season-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 28px;
+  background: #111d19;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+
+.season-tab {
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #b7c7ba;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.16s ease;
+}
+
+.season-tab:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: #ffffff;
+}
+
+.season-tab.active {
+  background: var(--accent);
+  color: var(--ink);
+  border-color: var(--accent);
+  font-weight: 700;
+}
+
+.season-ep-count {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.episode-list {
+  padding: 16px 28px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: calc(88vh - 170px);
+}
+
+.no-episodes {
+  padding: 32px 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.episode-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  transition: all 0.16s ease;
+}
+
+.episode-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.episode-row.playing-now {
+  background: rgba(216, 230, 141, 0.08);
+  border-color: rgba(216, 230, 141, 0.3);
+}
+
+.episode-number {
+  font-family: monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: #799480;
+  min-width: 24px;
+  text-align: center;
+}
+
+.episode-thumb-wrap {
+  position: relative;
+  width: 68px;
+  height: 44px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #09120e;
+}
+
+.episode-thumb-wrap .episode-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.episode-play-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+  color: #ffffff;
+  border: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  cursor: pointer;
+}
+
+.episode-row:hover .episode-play-overlay {
+  opacity: 1;
+}
+
+.episode-details {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.episode-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.episode-title-row strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f5f6ed;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.now-playing-pill {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--ink);
+}
+
+.episode-subtext {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #8da394;
+}
+
+.episode-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.play-ep-btn {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 11px;
+  border-radius: 6px;
+}
+
+/* In-Player Episode Drawer */
+.episode-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(340px, 85%);
+  background: rgba(14, 25, 21, 0.96);
+  backdrop-filter: blur(18px);
+  border-left: 1px solid var(--line);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  animation: slide-left 0.22s ease-out;
+}
+
+@keyframes slide-left {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.drawer-header strong {
+  display: block;
+  font-size: 14px;
+  color: #f5f6ed;
+}
+
+.drawer-header span {
+  font-size: 11px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.drawer-episode-list {
+  padding: 10px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.drawer-episode-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+  color: #cad8ce;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.drawer-episode-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.drawer-episode-item.current {
+  background: rgba(216, 230, 141, 0.12);
+  border-color: rgba(216, 230, 141, 0.35);
+  color: #ffffff;
+}
+
+.drawer-ep-num {
+  font-family: monospace;
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--accent);
+  min-width: 28px;
+}
+
+.drawer-ep-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.drawer-ep-info strong {
+  display: block;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drawer-ep-info small {
+  font-size: 10px;
+  color: #8da394;
+}
+
+/* Autoplay Countdown Overlay */
+.autoplay-countdown-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(4, 12, 9, 0.88);
+  backdrop-filter: blur(10px);
+  z-index: 30;
+  animation: fade-in 0.2s ease-out;
+}
+
+.countdown-card {
+  width: min(380px, 90%);
+  background: #14211d;
+  border: 1px solid var(--accent);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(216, 230, 141, 0.15);
+  padding: 24px;
+  border-radius: 14px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.countdown-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+}
+
+.countdown-card h4 {
+  font-family: var(--serif);
+  font-size: 20px;
+  color: #f5f6ed;
+  margin: 0;
+}
+
+.countdown-card p {
+  margin: 0;
+  font-size: 12px;
+  color: #9eb2a0;
+}
+
+.countdown-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
