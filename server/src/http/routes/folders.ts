@@ -48,10 +48,12 @@ export function registerFolderRoutes(app: FastifyInstance, ctx: AppContext): voi
   app.post('/api/folders/templates', async () => {
     const result = generateTemplateFolders(db);
     ctx.bus.emit('storage.changed', {});
-    try {
-      const catPath = path.resolve(REPO_ROOT, 'stream-platform/public/catalog.json');
-      syncTeleDriveToCatalog(db, catPath);
-    } catch {}
+    if (ctx.config.nodeEnv !== 'test') {
+      try {
+        const catPath = path.resolve(REPO_ROOT, 'stream-platform/public/catalog.json');
+        syncTeleDriveToCatalog(db, catPath);
+      } catch {}
+    }
     return { ok: true, ...result };
   });
 

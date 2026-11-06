@@ -1,28 +1,6 @@
 {
   "items": [
     {
-      "id": "b6758689-5d8f-48c7-b9c2-8108e85633cf",
-      "name": "tone.wav",
-      "category": "audio",
-      "mimeType": "audio/wav",
-      "size": 32044,
-      "duration": 2,
-      "hasThumbnail": false,
-      "updatedAt": 1793986850295,
-      "artist": "",
-      "album": "",
-      "description": "",
-      "format": "WAV",
-      "parts": [
-        {
-          "partIndex": 0,
-          "size": 32044,
-          "telegramFileId": "f2222222_056f2f05afe4adffefaa2df3",
-          "botId": "2222222"
-        }
-      ]
-    },
-    {
       "id": "9bd298eb-844b-4062-b216-590c78969698",
       "name": "Inception.2010.1080p.NF.WEB-DL.English.H.264.mp4",
       "category": "video",

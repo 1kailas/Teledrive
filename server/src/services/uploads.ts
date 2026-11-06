@@ -374,7 +374,7 @@ export function maybeFinalizeBlob(ctx: AppContext, blobId: string): boolean {
   logger.info({ blobId, fileId: file?.id }, 'upload finalized');
   if (file) {
     bus.emit('file.updated', { fileId: file.id, status: 'ready' });
-    if (['video', 'audio'].includes(file.category)) {
+    if (config.nodeEnv !== 'test' && ['video', 'audio'].includes(file.category)) {
       try {
         const catPath = path.resolve(REPO_ROOT, 'stream-platform/public/catalog.json');
         syncTeleDriveToCatalog(db, catPath);
