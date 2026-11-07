@@ -34,3 +34,19 @@ export function staleActiveUploads(db: Db, now: number): UploadRow[] {
     .prepare(`SELECT * FROM uploads WHERE status = 'active' AND expires_at < ?`)
     .all(now) as UploadRow[];
 }
+
+/**
+ * Processing uploads past their TTL with no part still in flight are stuck —
+ * normally every part either reaches Telegram or fails permanently by then.
+ */
+export function staleProcessingUploads(db: Db, now: number): UploadRow[] {
+  return db
+    .prepare(
+      `SELECT * FROM uploads u
+       WHERE u.status = 'processing' AND u.expires_at < ?
+         AND NOT EXISTS (
+           SELECT 1 FROM parts p WHERE p.blob_id = u.blob_id AND p.status = 'uploading'
+         )`,
+    )
+    .all(now) as UploadRow[];
+}

@@ -197,6 +197,33 @@ describe('folders', () => {
     expect(nested.name).toBe('nested');
     void drive;
   }, 60_000);
+
+  it('rejects copying a folder into itself or its descendant without partial copies', async () => {
+    const mk = await apiFetch(env.base, env.cookie, 'POST', '/api/folders', { name: 'copy-root' });
+    const root = ((await mk.json()) as { folder: { id: string } }).folder;
+    const mkChild = await apiFetch(env.base, env.cookie, 'POST', '/api/folders', {
+      name: 'copy-child', parentId: root.id,
+    });
+    const child = ((await mkChild.json()) as { folder: { id: string } }).folder;
+    await uploadBytes(env, Buffer.from('copy me'), { name: 'inside-copy-child.txt', folderId: child.id });
+    const before = (env.db.prepare('SELECT COUNT(*) c FROM files').get() as { c: number }).c;
+
+    const self = await apiFetch(env.base, env.cookie, 'POST', '/api/items/copy', {
+      folderIds: [root.id], targetFolderId: root.id,
+    });
+    expect(self.status).toBe(400);
+    const descendant = await apiFetch(env.base, env.cookie, 'POST', '/api/items/copy', {
+      folderIds: [root.id], targetFolderId: child.id,
+    });
+    expect(descendant.status).toBe(400);
+
+    const after = (env.db.prepare('SELECT COUNT(*) c FROM files').get() as { c: number }).c;
+    expect(after).toBe(before);
+    const childCopies = env.db
+      .prepare('SELECT COUNT(*) c FROM folders WHERE parent_id = ?')
+      .get(child.id) as { c: number };
+    expect(childCopies.c).toBe(0);
+  }, 60_000);
 });
 
 describe('blob refcount + deletions', () => {
@@ -259,6 +286,42 @@ describe('trash', () => {
     const fileGone = env.db.prepare('SELECT id FROM files WHERE id = ?').get(fileId);
     expect(fileGone).toBeUndefined();
   }, 60_000);
+
+  it('folds a previously trashed child into the new parent root and restores everything', async () => {
+    const mkParent = await apiFetch(env.base, env.cookie, 'POST', '/api/folders', { name: 'fold-parent' });
+    const parent = ((await mkParent.json()) as { folder: { id: string } }).folder;
+    const mkChild = await apiFetch(env.base, env.cookie, 'POST', '/api/folders', {
+      name: 'fold-child', parentId: parent.id,
+    });
+    const child = ((await mkChild.json()) as { folder: { id: string } }).folder;
+    const { fileId } = await uploadBytes(env, Buffer.from('nested'), {
+      name: 'folded.txt', folderId: child.id,
+    });
+
+    // Trash the child first, then its parent. The parent must become the only
+    // trash root; the child would otherwise appear twice in the Trash view.
+    await apiFetch(env.base, env.cookie, 'POST', '/api/items/trash', { folderIds: [child.id] });
+    await apiFetch(env.base, env.cookie, 'POST', '/api/items/trash', { folderIds: [parent.id] });
+    const rows = env.db.prepare(
+      'SELECT id, trashed_at, trash_root FROM folders WHERE id IN (?, ?) ORDER BY id',
+    ).all(parent.id, child.id) as { id: string; trashed_at: number | null; trash_root: number }[];
+    expect(rows.every((r) => r.trashed_at !== null)).toBe(true);
+    expect(rows.find((r) => r.id === parent.id)?.trash_root).toBe(1);
+    expect(rows.find((r) => r.id === child.id)?.trash_root).toBe(0);
+
+    const trash = await apiFetch(env.base, env.cookie, 'GET', '/api/trash');
+    const trashBody = (await trash.json()) as { folders: { id: string }[] };
+    expect(trashBody.folders.map((f) => f.id)).toContain(parent.id);
+    expect(trashBody.folders.map((f) => f.id)).not.toContain(child.id);
+
+    await apiFetch(env.base, env.cookie, 'POST', '/api/items/restore', { folderIds: [parent.id] });
+    const restored = env.db.prepare(
+      'SELECT trashed_at, trash_root FROM folders WHERE id IN (?, ?)',
+    ).all(parent.id, child.id) as { trashed_at: number | null; trash_root: number }[];
+    expect(restored.every((r) => r.trashed_at === null && r.trash_root === 0)).toBe(true);
+    const fileRow = env.db.prepare('SELECT trashed_at FROM files WHERE id = ?').get(fileId) as { trashed_at: number | null };
+    expect(fileRow.trashed_at).toBeNull();
+  }, 60_000);
 });
 
 describe('shares', () => {
@@ -304,6 +367,59 @@ describe('shares', () => {
       headers: { cookie: shareCookie },
     });
     expect(dl2.status).toBe(410);
+  }, 60_000);
+
+  it('serves public thumbnails and a share-scoped media stream', async () => {
+    const png = await sharp({
+      create: { width: 320, height: 180, channels: 3, background: { r: 10, g: 120, b: 220 } },
+    }).png().toBuffer();
+    const { fileId: imageId } = await uploadBytes(env, png, { name: 'public-pic.png', mimeType: 'image/png' });
+    const imageShare = await apiFetch(env.base, env.cookie, 'POST', '/api/shares', { fileId: imageId });
+    const imageToken = ((await imageShare.json()) as { share: { token: string } }).share.token;
+
+    const meta = await fetch(`${env.base}/api/public/shares/${imageToken}`);
+    const metaBody = (await meta.json()) as {
+      file: { hasThumbnail: boolean; thumbnailUrl: string | null };
+    };
+    expect(metaBody.file.hasThumbnail).toBe(true);
+    expect(metaBody.file.thumbnailUrl).toBe(`/api/public/shares/${imageToken}/files/${imageId}/thumbnail`);
+    const thumb = await fetch(`${env.base}${metaBody.file.thumbnailUrl}`);
+    expect(thumb.status).toBe(200);
+
+    const media = crypto.randomBytes(256 * 1024);
+    const { fileId: mediaId } = await uploadBytes(env, media, { name: 'clip.mp4', mimeType: 'video/mp4' });
+    const mediaShare = await apiFetch(env.base, env.cookie, 'POST', '/api/shares', { fileId: mediaId });
+    const mediaToken = ((await mediaShare.json()) as { share: { token: string } }).share.token;
+
+    const stream = await fetch(`${env.base}/api/public/shares/${mediaToken}/files/${mediaId}/stream`);
+    expect(stream.status).toBe(200);
+    expect(Buffer.from(await stream.arrayBuffer()).equals(media)).toBe(true);
+  }, 60_000);
+
+  it('hides trashed and non-ready files from every public endpoint', async () => {
+    const png = await sharp({
+      create: { width: 80, height: 40, channels: 3, background: { r: 200, g: 30, b: 40 } },
+    }).png().toBuffer();
+    const { fileId } = await uploadBytes(env, png, { name: 'hidden-pic.png', mimeType: 'image/png' });
+    const mk = await apiFetch(env.base, env.cookie, 'POST', '/api/shares', { fileId });
+    const token = ((await mk.json()) as { share: { token: string } }).share.token;
+    const pub = (suffix = '') => fetch(`${env.base}/api/public/shares/${token}${suffix}`);
+
+    expect((await pub()).status).toBe(200);
+
+    await apiFetch(env.base, env.cookie, 'POST', '/api/items/trash', { fileIds: [fileId] });
+    expect((await pub()).status).toBe(410);
+    // A trashed file is no longer part of the share at all.
+    expect((await pub(`/files/${fileId}/content`)).status).toBe(403);
+    expect((await pub(`/files/${fileId}/stream`)).status).toBe(403);
+    expect((await pub(`/files/${fileId}/thumbnail`)).status).toBe(403);
+
+    // A ready file that regressed to processing must not leak either.
+    env.db.prepare(`UPDATE files SET trashed_at = NULL, status = 'processing' WHERE id = ?`).run(fileId);
+    expect((await pub()).status).toBe(410);
+    expect((await pub(`/files/${fileId}/content`)).status).toBe(410);
+    expect((await pub(`/files/${fileId}/stream`)).status).toBe(404);
+    expect((await pub(`/files/${fileId}/thumbnail`)).status).toBe(404);
   }, 60_000);
 
   it('folder share cannot access files outside the subtree', async () => {
@@ -412,8 +528,9 @@ describe('system endpoints', () => {
     const health = await fetch(`${env.base}/api/health`);
     expect((await health.json() as { status: string }).status).toBe('ok');
     const cfg = await fetch(`${env.base}/api/config`);
-    const cfgBody = (await cfg.json()) as { sliceSize: number; partSize: number };
+    const cfgBody = (await cfg.json()) as { sliceSize: number; partSize: number; desktopMode: boolean };
     expect(cfgBody.sliceSize).toBe(env.config.sliceSize);
+    expect(cfgBody.desktopMode).toBe(false);
     const sys = await apiFetch(env.base, env.cookie, 'GET', '/api/system');
     const sysBody = (await sys.json()) as { botApi: { reachable: boolean }; bots: { healthy: boolean }[] };
     expect(sysBody.botApi.reachable).toBe(true);

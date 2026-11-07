@@ -13,7 +13,7 @@ function connect() {
   es.onopen = () => { delay = 1000; };
   es.addEventListener('file.updated', (e) => {
     const d = JSON.parse((e as MessageEvent).data) as { fileId: string; status: string };
-    onFileReady(d.fileId);
+    onFileReady(d.fileId, d.status);
     void queryClient.invalidateQueries({ queryKey: ['drive'] });
     void queryClient.invalidateQueries({ queryKey: ['file', d.fileId] });
     void queryClient.invalidateQueries({ queryKey: ['stats'] });

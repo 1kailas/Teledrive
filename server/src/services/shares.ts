@@ -97,10 +97,10 @@ export function folderInShare(db: import('../db/index.js').Db, share: ShareRow, 
 
 /** Verify a file is inside the share: file share = exact match; folder share = subtree. */
 export function fileInShare(db: import('../db/index.js').Db, share: ShareRow, fileId: string): boolean {
-  if (share.file_id) return share.file_id === fileId;
-  if (!share.folder_id) return false;
   const file = getFile(db, fileId);
   if (!file || file.trashed_at) return false;
+  if (share.file_id) return share.file_id === fileId;
+  if (!share.folder_id) return false;
   if (!file.folder_id) return false;
   return folderInShare(db, share, file.folder_id);
 }

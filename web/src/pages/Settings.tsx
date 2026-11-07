@@ -56,7 +56,7 @@ export function SettingsPage() {
 }
 
 function GeneralTab() {
-  const { theme, setTheme, viewMode, setViewMode, cardSize, setCardSize, nameDisplay, setNameDisplay, uploadConflict, setUploadConflict } = useUi();
+  const { theme, setTheme, viewMode, setViewMode, cardSize, setCardSize, nameDisplay, setNameDisplay, uploadConflict, setUploadConflict, desktopMode } = useUi();
   return (
     <div className="space-y-6">
       <div className="surface border border-app rounded-2xl p-6 space-y-5">
@@ -104,7 +104,7 @@ function GeneralTab() {
         </div>
       </div>
 
-      <MirrorSettingsCard />
+      {desktopMode && <MirrorSettingsCard />}
     </div>
   );
 }
@@ -446,6 +446,7 @@ function SecurityTab() {
 
 function SystemTab() {
   const qc = useQueryClient();
+  const desktopMode = useUi((s) => s.desktopMode);
   const { data: sys, refetch } = useQuery({ queryKey: ['system'], queryFn: () => api.get<SystemInfo>('/api/system'), refetchInterval: 30_000 });
   const { data: stats } = useQuery({ queryKey: ['stats'], queryFn: () => api.get<Stats>('/api/stats') });
   const { data: setRes } = useQuery({
@@ -520,7 +521,7 @@ function SystemTab() {
         uploadConcurrency: client,
         telegramUploadConcurrency: telegram,
         botMaxConcurrentUploads: perBot,
-        downloadConcurrency: Math.max(1, Math.min(8, Math.round(dlConc) || 3)),
+        ...(desktopMode ? { downloadConcurrency: Math.max(1, Math.min(8, Math.round(dlConc) || 3)) } : {}),
       });
       await refreshUploadConfig().catch(() => resetConfigCache());
       void qc.invalidateQueries({ queryKey: ['settings-part-size'] });
@@ -544,13 +545,18 @@ function SystemTab() {
     p.vals.uploadConcurrency === clientConc &&
     p.vals.telegramUploadConcurrency === telegramConc &&
     p.vals.botMaxConcurrentUploads === perBotConc &&
-    p.vals.downloadConcurrency === dlConc
+    (!desktopMode || p.vals.downloadConcurrency === dlConc)
   );
 
   const applyProfile = async (p: (typeof PROFILES)[number]) => {
     setSavingPerf(true);
     try {
-      await api.patch('/api/settings', p.vals);
+      await api.patch('/api/settings', {
+        uploadConcurrency: p.vals.uploadConcurrency,
+        telegramUploadConcurrency: p.vals.telegramUploadConcurrency,
+        botMaxConcurrentUploads: p.vals.botMaxConcurrentUploads,
+        ...(desktopMode ? { downloadConcurrency: p.vals.downloadConcurrency } : {}),
+      });
       await refreshUploadConfig().catch(() => resetConfigCache());
       void qc.invalidateQueries({ queryKey: ['settings-part-size'] });
       void qc.invalidateQueries({ queryKey: ['config'] });
@@ -596,7 +602,9 @@ function SystemTab() {
   const diskFreeText = sys.disk?.total ? `${fmtBytes(sys.disk.free)} free of ${fmtBytes(sys.disk.total)}` : (sys.disk?.free ? fmtBytes(sys.disk.free) : '—');
   const cacheText = `${fmtBytes(sys.cache?.usedBytes ?? 0)} in thumbnails & cache`;
   const queueText = sys.queue ? `${sys.queue.receivedParts ?? 0} received · ${sys.queue.uploadingParts ?? 0} uploading · ${sys.queue.failedParts ?? 0} failed` : 'Idle';
-  const pendingDelText = String(sys.queue?.pendingDeletions ?? 0);
+  const pendingDelText = sys.queue?.failedDeletions
+    ? `${sys.queue.pendingDeletions ?? 0} pending · ${sys.queue.failedDeletions} failed`
+    : String(sys.queue?.pendingDeletions ?? 0);
   const toolsText = sys.tools ? ['ffmpeg', 'ffprobe', 'pdftoppm'].filter((t) => sys.tools?.[t as keyof typeof sys.tools]).join(', ') || 'none' : 'none';
   const uptimeText = `${Math.floor((sys.uptimeSec ?? 60) / 60)}m`;
   const backupText = sys.lastBackup ? `${fmtDate(sys.lastBackup.createdAt)} · ${fmtBytes(sys.lastBackup.size)}` : 'None yet';
@@ -833,15 +841,23 @@ function SystemTab() {
             {sys.cache?.files != null && ` · ${sys.cache.files} file${sys.cache.files === 1 ? '' : 's'}`}
           </div>
           <div className="flex items-center gap-1.5">
-            <input
-              type="number" min={1} max={500}
-              value={cacheGb}
-              onChange={(e) => setCacheGb(Number(e.target.value))}
-              onBlur={(e) => void updateCacheLimit(Number(e.target.value))}
-              onKeyDown={(e) => { if (e.key === 'Enter') void updateCacheLimit(Number((e.target as HTMLInputElement).value)); }}
-              className="input !w-20 !text-center !py-1.5 text-xs font-semibold tabular-nums"
-            />
-            <span className="text-2 text-xs font-medium">GB limit</span>
+            {desktopMode ? (
+              <>
+                <input
+                  type="number" min={1} max={500}
+                  value={cacheGb}
+                  onChange={(e) => setCacheGb(Number(e.target.value))}
+                  onBlur={(e) => void updateCacheLimit(Number(e.target.value))}
+                  onKeyDown={(e) => { if (e.key === 'Enter') void updateCacheLimit(Number((e.target as HTMLInputElement).value)); }}
+                  className="input !w-20 !text-center !py-1.5 text-xs font-semibold tabular-nums"
+                />
+                <span className="text-2 text-xs font-medium">GB limit</span>
+              </>
+            ) : (
+              <span className="text-2 text-xs font-medium">
+                {fmtBytes(sys.cache?.maxBytes ?? 0)} limit (set by CACHE_MAX_BYTES)
+              </span>
+            )}
           </div>
           <button
             type="button"

@@ -164,6 +164,15 @@ export function pendingDeletionCount(db: Db): number {
   ).c;
 }
 
+/** Deletions that exhausted their retries and need manual attention. */
+export function failedDeletionCount(db: Db): number {
+  return (
+    db
+      .prepare('SELECT COUNT(*) c FROM tg_deletions WHERE next_attempt_at >= ?')
+      .get(Number.MAX_SAFE_INTEGER) as { c: number }
+  ).c;
+}
+
 // ---- part_cache ----
 export interface PartCacheRow {
   local_path: string;

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import mime from 'mime-types';
 import type { AppContext } from '../context.js';
-import { partTempFileName, uploadTmpDir } from '../db/index.js';
+import { partTempFileName, uploadTmpDir, thumbnailPath } from '../db/index.js';
 import {
   childFileNames,
   findChildFile,
@@ -402,19 +402,39 @@ export function completeUpload(ctx: AppContext, uploadId: string): { file: FileR
   if (missing.length > 0) {
     throw conflict('upload has missing slices', { missing });
   }
-  db.prepare(`UPDATE uploads SET status = 'processing', updated_at = ? WHERE id = ?`).run(
-    Date.now(),
+  // A failed part can disappear from missingSlices while its temp data is gone.
+  // Refuse to enter 'processing' unless every non-stored part still has a
+  // complete temp file; otherwise the upload would hang forever.
+  const blob = getBlob(db, upload.blob_id);
+  const lostParts: number[] = [];
+  if (blob) {
+    for (const p of partsByBlob(db, upload.blob_id)) {
+      if (p.status === 'stored') continue;
+      const tmp = partTempPath(config.dataDir, upload, blob.part_count, p.idx);
+      try {
+        if (fs.statSync(tmp).size < p.size) lostParts.push(p.idx);
+      } catch {
+        lostParts.push(p.idx);
+      }
+    }
+  }
+  if (lostParts.length > 0) {
+    throw conflict('temp data for some parts is missing; re-upload required', { missingParts: lostParts });
+  }
+  const now = Date.now();
+  db.prepare(`UPDATE uploads SET status = 'processing', updated_at = ?, expires_at = ? WHERE id = ?`).run(
+    now,
+    now + config.uploadSessionTtlMs,
     uploadId,
   );
   db.prepare(`UPDATE files SET status = 'processing', updated_at = ? WHERE id = ?`).run(
-    Date.now(),
+    now,
     upload.file_id,
   );
 
   // All slices are on disk, but some parts may still be waiting to go to
   // Telegram (or failed after all slices arrived). Kick them immediately
   // instead of waiting for the next scheduler tick.
-  const blob = getBlob(db, upload.blob_id);
   if (blob) {
     for (const p of partsByBlob(db, upload.blob_id)) {
       // Only parts that are still waiting for Telegram. Parts already being
@@ -456,6 +476,7 @@ export function cancelUpload(ctx: AppContext, uploadId: string): void {
     db.prepare('DELETE FROM blobs WHERE id = ?').run(upload.blob_id);
     db.prepare('DELETE FROM uploads WHERE id = ?').run(uploadId);
   })();
+  fs.rmSync(thumbnailPath(config.dataDir, upload.file_id), { force: true });
   fs.rmSync(uploadTmpDir(config.dataDir, uploadId), { recursive: true, force: true });
   ctx.bus.emit('storage.changed', {});
 }
@@ -510,7 +531,8 @@ export function retryUpload(ctx: AppContext, uploadId: string): { retried: numbe
   if (!blob) throw notFound('blob not found');
   const parts = partsByBlob(db, upload.blob_id);
   const missing = parts.filter(
-    (p) => p.status !== 'stored' && !fs.existsSync(partTempPath(config.dataDir, upload, blob.part_count, p.idx)),
+    (p) => p.status !== 'stored' && p.status !== 'uploading'
+      && !fs.existsSync(partTempPath(config.dataDir, upload, blob.part_count, p.idx)),
   );
   if (missing.length > 0) {
     throw conflict('temp files for some parts are gone; re-upload required', {
@@ -519,7 +541,8 @@ export function retryUpload(ctx: AppContext, uploadId: string): { retried: numbe
   }
   db.transaction(() => {
     for (const p of parts) {
-      if (p.status !== 'stored') {
+      // Never reset a part mid-send; the queue owns that state.
+      if (p.status !== 'stored' && p.status !== 'uploading') {
         db.prepare(
           `UPDATE parts SET status = 'received', attempts = 0, last_error = NULL, next_attempt_at = NULL
            WHERE blob_id = ? AND idx = ?`,
@@ -534,7 +557,7 @@ export function retryUpload(ctx: AppContext, uploadId: string): { retried: numbe
   })();
   let retried = 0;
   for (const p of parts) {
-    if (p.status !== 'stored') {
+    if (p.status !== 'stored' && p.status !== 'uploading') {
       ctx.queue.enqueue(p.blob_id, p.idx);
       retried++;
     }

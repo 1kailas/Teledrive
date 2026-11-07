@@ -9,8 +9,10 @@ import { stats } from '../../services/stats.js';
 import { retryFailedParts, systemInfo } from '../../services/system.js';
 import { runBackup, markBackupDone } from '../../services/backup.js';
 import {
+  applyUploadSettings,
+  parseUploadSettings,
+  persistUploadSettings,
   uploadSettingsSnapshot,
-  updateUploadSettings,
   UPLOAD_SETTING_KEYS,
 } from '../../services/settings.js';
 import { toFileDTO, toFolderDTO } from '../dto.js';
@@ -92,8 +94,13 @@ export function registerMiscRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.get('/api/system', async () => systemInfo(ctx));
 
   app.post('/api/system/retry-failed', async () => {
-    const retried = retryFailedParts(ctx);
-    return { ok: true, retried };
+    const { uploads, parts } = retryFailedParts(ctx);
+    return { ok: true, retried: uploads, parts };
+  });
+
+  app.post('/api/system/clear-cache', async () => {
+    const freedBytes = ctx.cache.clearAll();
+    return { ok: true, freedBytes };
   });
 
   // ---- settings (UI prefs + upload tuning) ----
@@ -118,6 +125,7 @@ export function registerMiscRoutes(app: FastifyInstance, ctx: AppContext): void 
     const body = z.record(z.string(), z.unknown()).safeParse(req.body);
     if (!body.success) throw badRequest('settings object required');
 
+    const prefs: Record<string, unknown> = {};
     const uploadPatch: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(body.data)) {
       if (UPLOAD_SETTING_SET.has(k)) {
@@ -125,16 +133,27 @@ export function registerMiscRoutes(app: FastifyInstance, ctx: AppContext): void 
         continue;
       }
       if (!SETTINGS_ALLOWLIST.has(k)) throw badRequest(`setting key "${k}" not allowed`);
-      setSetting(db, k, JSON.stringify(v));
+      prefs[k] = v;
     }
 
+    // Validate every upload value before writing anything, then persist all
+    // preference and tuning keys in one transaction so a bad value cannot
+    // leave half of the patch applied.
+    let nextUpload;
+    try {
+      nextUpload = parseUploadSettings(ctx.config, uploadPatch);
+    } catch (e) {
+      throw badRequest((e as Error).message);
+    }
+    db.transaction(() => {
+      for (const [k, v] of Object.entries(prefs)) setSetting(db, k, JSON.stringify(v));
+      persistUploadSettings(db, nextUpload);
+    })();
+
     let upload = uploadSettingsSnapshot(ctx.config);
-    if (Object.keys(uploadPatch).length > 0) {
-      try {
-        upload = updateUploadSettings(ctx.config, db, uploadPatch);
-      } catch (e) {
-        throw badRequest((e as Error).message);
-      }
+    if (Object.keys(nextUpload).length > 0) {
+      applyUploadSettings(ctx.config, nextUpload);
+      upload = uploadSettingsSnapshot(ctx.config);
       ctx.bus.emit('settings.upload', upload);
     }
     return { ok: true, upload };

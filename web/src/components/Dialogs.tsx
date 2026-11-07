@@ -158,7 +158,9 @@ function MoveDialog({ fileIds, folderIds, copy, close, refresh }: { fileIds: str
 
 function ShareDialog({ fileId, folderId, name, close }: { fileId?: string; folderId?: string; name: string; close: () => void }) {
   const { data: shares, refetch } = useQuery({ queryKey: ['shares'], queryFn: () => api.get<{ shares: ShareDTO[] }>('/api/shares') });
-  const existing = shares?.shares.find((s) => (fileId && s.fileId === fileId) || (folderId && s.folderId === folderId));
+  const existing = shares?.shares.find((s) =>
+    s.status === 'active' && ((fileId && s.fileId === fileId) || (folderId && s.folderId === folderId)),
+  );
   const [password, setPassword] = useState('');
   const [expiry, setExpiry] = useState('never');
   const [maxDl, setMaxDl] = useState('');

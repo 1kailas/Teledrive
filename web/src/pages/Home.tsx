@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { api, type Stats, type FileDTO } from '../api';
-import { fmtBytes } from '../utils';
+import { fmtBytes, categoryUsage, CATEGORY_COLORS } from '../utils';
 import { Thumb } from '../components/ui';
 import { usePreview } from '../store';
 import { pickFiles } from '../components/Explorer';
@@ -12,6 +12,7 @@ export function HomePage() {
   const { data: recent } = useQuery({ queryKey: ['recent'], queryFn: () => api.get<{ files: FileDTO[] }>('/api/recent?limit=12') });
   const nav = useNavigate();
   const hasRecent = (recent?.files.length ?? 0) > 0;
+  const usage = categoryUsage(stats?.byCategory ?? []);
 
   return (
     <div className="h-full flex flex-col bg-surface overflow-auto p-8 space-y-8 max-w-6xl">
@@ -83,8 +84,15 @@ export function HomePage() {
           <HardDrive size={18} className="text-accent" />
           <span>Self-hosted Telegram Storage</span>
         </h2>
-        <div className="bar mb-3">
-          <i style={{ width: `${Math.max(4, Math.min(100, Math.round(((stats?.totalSize ?? 0) / (50 * 1024 * 1024 * 1024)) * 100)))}%` }} />
+        <div className="seg-bar mb-3 bg-surface-3 rounded-full">
+          {usage.length > 0 ? usage.map((item) => (
+            <div
+              key={item.category}
+              className="seg"
+              style={{ width: `${item.percent}%`, background: CATEGORY_COLORS[item.category] ?? CATEGORY_COLORS.other }}
+              title={`${item.category}: ${fmtBytes(item.size)}`}
+            />
+          )) : <div className="seg flex-1" />}
         </div>
         <div className="text-xs text-2 space-y-1">
           <div>

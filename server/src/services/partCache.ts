@@ -143,6 +143,31 @@ export class PartCache {
     }
   }
 
+  /** Delete every unused cached part. Returns the number of bytes freed. */
+  clearAll(): number {
+    let freed = 0;
+    const allowedRoot = path.resolve(this.config.telegramBotApiDir) + path.sep;
+    for (const row of cacheRows(this.db)) {
+      const resolved = path.resolve(row.local_path);
+      if (!resolved.startsWith(allowedRoot)) {
+        // never delete files outside the bot-api cache directory
+        deleteCacheRow(this.db, row.local_path);
+        continue;
+      }
+      if (this.isInUse(row.local_path)) continue;
+      try {
+        fs.unlinkSync(row.local_path);
+        freed += row.size;
+        deleteCacheRow(this.db, row.local_path);
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
+          deleteCacheRow(this.db, row.local_path);
+        }
+      }
+    }
+    return freed;
+  }
+
   stats(): { usedBytes: number; maxBytes: number; files: number } {
     const { total, files } = cacheTotalBytes(this.db);
     return { usedBytes: total, maxBytes: this.config.cacheMaxBytes, files };

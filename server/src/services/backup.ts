@@ -78,13 +78,28 @@ export function backupNeeded(ctx: AppContext): boolean {
   return marker !== current;
 }
 
+/**
+ * A stable fingerprint of user data. Counts and sums are included so additions
+ * with older timestamps and pure deletions still trigger a new backup.
+ */
 export function currentChangeMarker(db: import('../db/index.js').Db): string {
   const r = db
     .prepare(
-      `SELECT (SELECT COALESCE(MAX(updated_at),0) FROM files) + (SELECT COALESCE(MAX(updated_at),0) FROM folders) m`,
+      `SELECT
+         (SELECT COUNT(*) FROM files) f_count,
+         (SELECT COALESCE(MAX(updated_at),0) FROM files) f_updated,
+         (SELECT COALESCE(SUM(size),0) FROM files WHERE status = 'ready') f_size,
+         (SELECT COUNT(*) FROM folders) d_count,
+         (SELECT COALESCE(MAX(updated_at),0) FROM folders) d_updated,
+         (SELECT COUNT(*) FROM shares) s_count,
+         (SELECT COALESCE(MAX(created_at),0) FROM shares) s_created`,
     )
-    .get() as { m: number };
-  return String(r.m);
+    .get() as Record<string, number>;
+  return [
+    r.f_count, r.f_updated, r.f_size,
+    r.d_count, r.d_updated,
+    r.s_count, r.s_created,
+  ].join(':');
 }
 
 export function markBackupDone(ctx: AppContext): void {

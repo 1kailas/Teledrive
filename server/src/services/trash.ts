@@ -13,14 +13,22 @@ import { uniqueName } from '../util.js';
 import { deleteFilePermanent, derefBlob } from './blobs.js';
 import { notFound } from '../http/errors.js';
 
-/** Mark a folder's whole non-trashed subtree trashed (root keeps trash_root=1). */
+/**
+ * Mark a folder's whole non-trashed subtree trashed. Exactly one trash root
+ * owns the subtree: previously trashed descendants are folded into this root
+ * so the Trash view never lists nested duplicate roots.
+ */
 function trashFolderSubtree(db: Db, folderId: string, ts: number): void {
   const ids = subtreeFolderIds(db, folderId);
-  db.prepare(`UPDATE folders SET trashed_at = ?, trash_root = 0, updated_at = ? WHERE trashed_at IS NULL AND id IN (SELECT value FROM json_each(?))`)
-    .run(ts, ts, JSON.stringify(ids));
-  db.prepare(`UPDATE folders SET trash_root = 1 WHERE id = ?`).run(folderId);
-  db.prepare(`UPDATE files SET trashed_at = ?, trash_root = 0, updated_at = ? WHERE trashed_at IS NULL AND folder_id IN (SELECT value FROM json_each(?))`)
-    .run(ts, ts, JSON.stringify(ids));
+  db.prepare(
+    `UPDATE folders SET trashed_at = COALESCE(trashed_at, ?), trash_root = 0, updated_at = ?
+     WHERE id IN (SELECT value FROM json_each(?))`,
+  ).run(ts, ts, JSON.stringify(ids));
+  db.prepare(`UPDATE folders SET trashed_at = ?, trash_root = 1 WHERE id = ?`).run(ts, folderId);
+  db.prepare(
+    `UPDATE files SET trashed_at = COALESCE(trashed_at, ?), trash_root = 0, updated_at = ?
+     WHERE folder_id IN (SELECT value FROM json_each(?))`,
+  ).run(ts, ts, JSON.stringify(ids));
 }
 
 export function trashItems(ctx: AppContext, itemIds: { fileIds?: string[]; folderIds?: string[] }): number {
@@ -62,7 +70,6 @@ function restoreFile(db: Db, file: FileRow): void {
 }
 
 function restoreFolderTree(db: Db, folder: FolderRow): number {
-  const ts = folder.trashed_at!;
   const ids = subtreeFolderIds(db, folder.id);
   let count = 0;
 
@@ -81,11 +88,13 @@ function restoreFolderTree(db: Db, folder: FolderRow): number {
     count++;
   };
 
-  // BFS from root so parents exist before children reparent check
+  // BFS from root so parents exist before children reparent check. Trashing a
+  // folder folds already-trashed descendants into its root, so restore the
+  // whole trashed subtree rather than only items carrying this timestamp.
   const byParent = new Map<string | null, FolderRow[]>();
   const all = db
-    .prepare(`SELECT * FROM folders WHERE id IN (SELECT value FROM json_each(?)) AND trashed_at = ?`)
-    .all(JSON.stringify(ids), ts) as FolderRow[];
+    .prepare(`SELECT * FROM folders WHERE id IN (SELECT value FROM json_each(?)) AND trashed_at IS NOT NULL`)
+    .all(JSON.stringify(ids)) as FolderRow[];
   for (const f of all) {
     const k = ids.includes(f.parent_id ?? '') ? f.parent_id : '__root__';
     const arr = byParent.get(k ?? null) ?? [];
@@ -110,10 +119,11 @@ function restoreFolderTree(db: Db, folder: FolderRow): number {
       queue.push(c);
     }
   }
-  // restore files trashed in the same sweep
+  // Restore every trashed file inside the subtree — whether it was trashed
+  // with the folder or separately before it — so nothing is left stranded.
   const files = db
-    .prepare(`SELECT * FROM files WHERE trashed_at = ? AND folder_id IN (SELECT value FROM json_each(?))`)
-    .all(ts, JSON.stringify(ids)) as FileRow[];
+    .prepare(`SELECT * FROM files WHERE trashed_at IS NOT NULL AND folder_id IN (SELECT value FROM json_each(?))`)
+    .all(JSON.stringify(ids)) as FileRow[];
   for (const f of files) restoreFile(db, f);
   return count + files.length;
 }

@@ -47,7 +47,7 @@ export function toFolderDTO(db: Db, f: FolderRow): FolderDTO {
   };
 }
 
-export function toPublicFileDTO(f: FileRow): Record<string, unknown> {
+export function toPublicFileDTO(f: FileRow, publicBase?: string): Record<string, unknown> {
   return {
     id: f.id,
     name: f.name,
@@ -56,6 +56,9 @@ export function toPublicFileDTO(f: FileRow): Record<string, unknown> {
     mimeType: f.mime_type,
     category: f.category,
     hasThumbnail: !!f.has_thumbnail,
+    thumbnailUrl: f.has_thumbnail && publicBase
+      ? `${publicBase}/files/${f.id}/thumbnail`
+      : null,
     width: f.width,
     height: f.height,
     duration: f.duration,

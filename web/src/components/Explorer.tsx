@@ -238,7 +238,7 @@ interface Props {
 }
 
 export function Explorer({ folders, files, folderId = null, currentFolder = null, loading, onRefresh }: Props) {
-  const { viewMode, setViewMode, cardSize, sortBy, sortDir, detailsOpen, nameDisplay, desktopMode } = useUi();
+  const { viewMode, setViewMode, cardSize, sortBy, sortDir, detailsOpen, nameDisplay, desktopMode, uploadConflict } = useUi();
   const [filterCat, setFilterCat] = useState<string>('all');
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [anchor, setAnchor] = useState<string | null>(null);
@@ -310,6 +310,19 @@ export function Explorer({ folders, files, folderId = null, currentFolder = null
   const totalSizeOfFiles = useMemo(() => displayFiles.reduce((acc, f) => acc + (f.size || 0), 0), [displayFiles]);
 
   useEffect(() => { setSel(new Set()); setAnchor(null); setDetailItem(null); }, [folderId]);
+
+  // After a refresh/delete/move, drop selections and details that point at
+  // items which no longer exist so bulk actions never target ghosts.
+  useEffect(() => {
+    const ids = new Set<string>([...folders.map((f) => f.id), ...files.map((f) => f.id)]);
+    setSel((prev) => {
+      const next = new Set<string>();
+      for (const id of prev) if (ids.has(id)) next.add(id);
+      return next.size === prev.size ? prev : next;
+    });
+    setAnchor((a) => (a && !ids.has(a) ? null : a));
+    setDetailItem((d) => (d && !ids.has(d) ? null : d));
+  }, [folders, files]);
 
   const refresh = useCallback(() => { onRefresh(); void qc.invalidateQueries({ queryKey: ['stats'] }); }, [onRefresh, qc]);
 
@@ -537,11 +550,14 @@ export function Explorer({ folders, files, folderId = null, currentFolder = null
       setDragOver(false);
       const dt = e.dataTransfer!;
       if (dt.files.length === 0) return;
-      const entries: Promise<void>[] = [];
+      // Collect first, then upload: directory drops must not bypass the
+      // conflict dialog for files that land directly in this folder.
+      const dropped: { file: File; relativePath?: string }[] = [];
+      const reads: Promise<void>[] = [];
       const readEntry = async (entry: FileSystemEntry, prefix: string): Promise<void> => {
         if (entry.isFile) {
           const file = await new Promise<File>((res, rej) => (entry as FileSystemFileEntry).file(res, rej));
-          startUpload(file, { folderId, relativePath: prefix ? `${prefix}/${file.name}` : undefined });
+          dropped.push({ file, relativePath: prefix ? `${prefix}/${file.name}` : undefined });
         } else if (entry.isDirectory) {
           const reader = (entry as FileSystemDirectoryEntry).createReader();
           const readAll = async () => {
@@ -554,14 +570,19 @@ export function Explorer({ folders, files, folderId = null, currentFolder = null
       };
       for (const item of Array.from(dt.items)) {
         const entry = item.webkitGetAsEntry?.();
-        if (entry) entries.push(readEntry(entry, ''));
+        if (entry) reads.push(readEntry(entry, ''));
       }
-      await Promise.all(entries);
-      if (!entries.length) {
+      if (reads.length === 0) {
         const dropFiles = Array.from(dt.files);
-        if (dropFiles.length) {
-          void startUploadsWithConflictCheck(dropFiles, { folderId, existingFiles: files });
-        }
+        if (dropFiles.length) await startUploadsWithConflictCheck(dropFiles, { folderId, existingFiles: files });
+        return;
+      }
+      await Promise.all(reads);
+      const topLevel = dropped.filter((d) => !d.relativePath).map((d) => d.file);
+      if (topLevel.length) await startUploadsWithConflictCheck(topLevel, { folderId, existingFiles: files });
+      for (const d of dropped) {
+        if (!d.relativePath) continue;
+        startUpload(d.file, { folderId, relativePath: d.relativePath, onConflict: uploadConflict });
       }
     };
     const onDrag = (e: DragEvent) => { e.preventDefault(); if (e.dataTransfer?.types.includes('Files')) setDragOver(true); };
@@ -570,7 +591,7 @@ export function Explorer({ folders, files, folderId = null, currentFolder = null
     window.addEventListener('dragover', onDrag);
     window.addEventListener('dragleave', onLeave);
     return () => { window.removeEventListener('drop', onDrop); window.removeEventListener('dragover', onDrag); window.removeEventListener('dragleave', onLeave); };
-  }, [folderId]);
+  }, [folderId, files, uploadConflict]);
 
   const moveTo = (targetFolderId: string | null) => {
     if (!sel.size) return;
@@ -669,7 +690,7 @@ export function Explorer({ folders, files, folderId = null, currentFolder = null
     ro.observe(el);
     setScrollW(el.clientWidth);
     return () => ro.disconnect();
-  }, [viewMode]);
+  }, [viewMode, loading]);
   const gridCols = Math.max(1, Math.floor(Math.max(0, scrollW - 48) / ((CARD_SPECS[cardSize]?.minWidth || 220) + 16)));
 
   // Virtual rows: section headings count as rows; card grids are chunked by

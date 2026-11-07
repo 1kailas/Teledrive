@@ -50,19 +50,40 @@ export function hashPasswordSync(password: string): string {
   return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${salt.toString('base64')}$${hash.toString('base64')}`;
 }
 
+const SCRYPT_MAX_N = 2 ** 20;
+const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
+
 export async function verifyPassword(password: string, encoded: string): Promise<boolean> {
-  const parts = encoded.split('$');
-  if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
-  const [, N, r, p, saltB64, hashB64] = parts;
-  const salt = Buffer.from(saltB64!, 'base64');
-  const expected = Buffer.from(hashB64!, 'base64');
-  const actual = await scryptP(password, salt, expected.length, {
-    N: Number(N),
-    r: Number(r),
-    p: Number(p),
-    maxmem: SCRYPT_MAXMEM,
-  });
-  return crypto.timingSafeEqual(actual, expected);
+  // A corrupted or hand-edited hash must fail closed, not crash the login
+  // handler with a 500 (or allocate an absurd amount of memory).
+  try {
+    const parts = encoded.split('$');
+    if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
+    const [, nRaw, rRaw, pRaw, saltB64, hashB64] = parts;
+    const N = Number(nRaw);
+    const r = Number(rRaw);
+    const p = Number(pRaw);
+    if (
+      !Number.isSafeInteger(N) || N < 2 || N > SCRYPT_MAX_N || (N & (N - 1)) !== 0 ||
+      !Number.isSafeInteger(r) || r < 1 || r > 16 ||
+      !Number.isSafeInteger(p) || p < 1 || p > 16 ||
+      !B64.test(saltB64!) || !B64.test(hashB64!)
+    ) {
+      return false;
+    }
+    const salt = Buffer.from(saltB64!, 'base64');
+    const expected = Buffer.from(hashB64!, 'base64');
+    if (salt.length < 8 || expected.length < 16 || expected.length > 128) return false;
+    const actual = await scryptP(password, salt, expected.length, {
+      N,
+      r,
+      p,
+      maxmem: SCRYPT_MAXMEM,
+    });
+    return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+  } catch {
+    return false;
+  }
 }
 
 /** Verify a login/change attempt against settings hash -> env hash -> env plain. */

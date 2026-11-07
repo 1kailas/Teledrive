@@ -8,7 +8,9 @@ import { Thumb, FolderIcon } from './ui';
 
 export function DetailsPanel({ item, sheet }: { item: FileDTO | FolderDTO; sheet?: boolean }) {
   const isFile = 'size' in item;
-  return isFile ? <FileDetails f={item as FileDTO} sheet={sheet} /> : <FolderDetails f={item as FolderDTO} sheet={sheet} />;
+  return isFile
+    ? <FileDetails key={item.id} f={item as FileDTO} sheet={sheet} />
+    : <FolderDetails key={item.id} f={item as FolderDTO} sheet={sheet} />;
 }
 
 function PanelShell({ children, sheet }: { children: React.ReactNode; sheet?: boolean }) {

@@ -39,6 +39,7 @@ export function registerItemRoutes(app: FastifyInstance, ctx: AppContext): void 
         if (id === targetFolderId || (targetFolderId && subtreeFolderIds(db, id).includes(targetFolderId))) {
           continue; // can't move into itself/descendant
         }
+        if (folder.parent_id === targetFolderId) continue; // no-op move must not rename
         const name = folderNames.has(folder.name.toLowerCase())
           ? uniqueName(folder.name, folderNames)
           : folder.name;
@@ -51,6 +52,7 @@ export function registerItemRoutes(app: FastifyInstance, ctx: AppContext): void 
       for (const id of fileIds) {
         const file = getFile(db, id);
         if (!file || file.trashed_at) continue;
+        if (file.folder_id === targetFolderId) continue; // no-op move must not rename
         const name = fileNames.has(file.name.toLowerCase()) ? uniqueName(file.name, fileNames) : file.name;
         fileNames.add(name.toLowerCase());
         db.prepare('UPDATE files SET folder_id = ?, name = ?, updated_at = ? WHERE id = ?').run(
@@ -83,6 +85,9 @@ export function registerItemRoutes(app: FastifyInstance, ctx: AppContext): void 
       for (const id of folderIds) {
         const src = getFolder(db, id);
         if (!src || src.trashed_at) continue;
+        if (id === targetFolderId || (targetFolderId && subtreeFolderIds(db, id).includes(targetFolderId))) {
+          throw badRequest('cannot copy a folder into itself or a descendant');
+        }
         copyFolderRecursive(ctx, src, targetFolderId);
         affected++;
       }

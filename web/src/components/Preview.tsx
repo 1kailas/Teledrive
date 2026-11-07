@@ -7,11 +7,14 @@ import {
 import { usePreview, useDialog, useUi, toast } from '../store';
 import { startDownload } from '../download';
 import type { FileDTO } from '../api';
-import { fmtBytes, isTextEditable, cmLanguageExt, CATEGORY_COLORS, categoryIcon } from '../utils';
+import { fmtBytes, isTextEditable, cmLanguageExt, CATEGORY_COLORS, categoryIcon, isTypingTarget } from '../utils';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { Thumb, Spinner } from './ui';
 import { CinemaPlayer } from './CinemaPlayer';
+
+type ZoomAction = 'in' | 'out' | 'fit';
+interface ZoomCommand { action: ZoomAction; seq: number }
 
 const CodeMirror = lazy(() => import('@uiw/react-codemirror'));
 const langs = {
@@ -20,25 +23,39 @@ const langs = {
   markdown: () => import('@codemirror/lang-markdown').then((m) => m.markdown()),
 };
 
-export function PreviewOverlay({ publicBase }: { publicBase?: string }) {
+export function PreviewOverlay({ publicBase, allowDownload = true }: { publicBase?: string; allowDownload?: boolean }) {
   const { files, index, open, close, nav } = usePreview();
   const desktopMode = useUi((s) => s.desktopMode);
-  const [zoomCtl, setZoomCtl] = useState<{ z: number } | null>(null);
+  const [zoomCtl, setZoomCtl] = useState<ZoomCommand | null>(null);
+  const zoomSeq = useRef(0);
+  const zoom = (action: ZoomAction) => setZoomCtl({ action, seq: ++zoomSeq.current });
   const file = files[index];
   useEffect(() => {
     if (!open) return;
+    const media = file?.category === 'video' || file?.category === 'audio';
     const h = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
-      if (e.key === 'ArrowLeft') nav(-1);
-      if (e.key === 'ArrowRight') nav(1);
+      // A modal (share/move/rename) owns the keyboard while it is open.
+      if (useDialog.getState().dialog) return;
+      if (isTypingTarget(e.target)) return;
+      if (e.key === 'Escape') {
+        // The browser handles Escape for fullscreen; don't also close the preview.
+        if (!document.fullscreenElement) close();
+        return;
+      }
+      // Media players own arrow keys for seeking.
+      if (media) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); nav(-1); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); nav(1); }
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [open, close, nav]);
+  }, [open, close, nav, file?.category]);
   if (!open || !file) return null;
   const contentUrl = publicBase
     ? `${publicBase}/files/${file.id}/content`
     : `/api/files/${file.id}/content`;
+  const canDownload = !publicBase || allowDownload;
+  const publicDownloadUrl = publicBase ? `${contentUrl}?download=1` : null;
 
   const hasPrev = index > 0;
   const hasNext = index < files.length - 1;
@@ -48,9 +65,9 @@ export function PreviewOverlay({ publicBase }: { publicBase?: string }) {
       {/* ── Toolbar ── */}
       <div className="pv-toolbar">
         {/* Google Drive style Back button */}
-        <button className="pv-back-btn" onClick={close} aria-label="Back to Drive">
+        <button className="pv-back-btn" onClick={close} aria-label={publicBase ? 'Back to share' : 'Back to Drive'}>
           <ArrowLeft size={16} />
-          <span>Back to Drive</span>
+          <span>{publicBase ? 'Back to share' : 'Back to Drive'}</span>
         </button>
 
         <div className="w-[1px] h-5 bg-white/20 mx-2" />
@@ -64,9 +81,9 @@ export function PreviewOverlay({ publicBase }: { publicBase?: string }) {
         {/* Zoom controls for images */}
         {file.category === 'image' && (
           <span className="flex items-center gap-0.5 mr-1">
-            <button className="pv-btn" title="Zoom out" onClick={() => setZoomCtl({ z: Math.random() * -1 - 1 })}><ZoomOut size={16} /></button>
-            <button className="pv-btn" title="Fit to screen" onClick={() => setZoomCtl({ z: 0.5 + Math.random() })}><Maximize size={15} /></button>
-            <button className="pv-btn" title="Zoom in" onClick={() => setZoomCtl({ z: Math.random() * 1 + 1 })}><ZoomIn size={16} /></button>
+            <button className="pv-btn" title="Zoom out" onClick={() => zoom('out')}><ZoomOut size={16} /></button>
+            <button className="pv-btn" title="Fit to screen" onClick={() => zoom('fit')}><Maximize size={15} /></button>
+            <button className="pv-btn" title="Zoom in" onClick={() => zoom('in')}><ZoomIn size={16} /></button>
           </span>
         )}
 
@@ -79,9 +96,17 @@ export function PreviewOverlay({ publicBase }: { publicBase?: string }) {
         <div className="w-[1px] h-5 bg-white/20 mx-1" />
 
         {/* Download */}
-        <button className="btn btn-primary !py-1 !px-2.5 !text-xs !text-white flex items-center gap-1.5" onClick={() => void startDownload(file)}>
-          <Download size={14} /> <span>Download</span>
-        </button>
+        {canDownload && (
+          publicDownloadUrl ? (
+            <a className="btn btn-primary !py-1 !px-2.5 !text-xs !text-white flex items-center gap-1.5" href={publicDownloadUrl} download={file.name}>
+              <Download size={14} /> <span>Download</span>
+            </a>
+          ) : (
+            <button className="btn btn-primary !py-1 !px-2.5 !text-xs !text-white flex items-center gap-1.5" onClick={() => void startDownload(file)}>
+              <Download size={14} /> <span>Download</span>
+            </button>
+          )
+        )}
 
         {/* Share */}
         {!publicBase && !desktopMode && (
@@ -109,15 +134,15 @@ export function PreviewOverlay({ publicBase }: { publicBase?: string }) {
             <span><ChevronRight size={22} /></span>
           </div>
         )}
-        <PreviewBody file={file} contentUrl={contentUrl} publicMode={!!publicBase} zoomCtl={zoomCtl} />
+        <PreviewBody file={file} contentUrl={contentUrl} publicMode={!!publicBase} allowDownload={canDownload} zoomCtl={zoomCtl} />
       </div>
     </div>,
     document.body,
   );
 }
 
-function PreviewBody({ file, contentUrl, publicMode, zoomCtl }: {
-  file: FileDTO; contentUrl: string; publicMode: boolean; zoomCtl: { z: number } | null;
+function PreviewBody({ file, contentUrl, publicMode, allowDownload, zoomCtl }: {
+  file: FileDTO; contentUrl: string; publicMode: boolean; allowDownload: boolean; zoomCtl: ZoomCommand | null;
 }) {
   const qc = useQueryClient();
   if (file.status === 'processing' || file.status === 'uploading') {
@@ -137,7 +162,7 @@ function PreviewBody({ file, contentUrl, publicMode, zoomCtl }: {
       return (
         <div className="h-full w-full flex items-center justify-center p-2 sm:p-4">
           <div className="w-full h-full max-w-6xl max-h-[85vh] rounded-2xl overflow-hidden shadow-2xl border border-white/10">
-            <CinemaPlayer file={file} contentUrl={contentUrl} poster={file.thumbnailUrl ?? undefined} />
+            <CinemaPlayer file={file} contentUrl={contentUrl} poster={file.thumbnailUrl ?? undefined} allowDownload={allowDownload} />
           </div>
         </div>
       );
@@ -171,17 +196,17 @@ function PreviewBody({ file, contentUrl, publicMode, zoomCtl }: {
       }
       if (isTextEditable(file) && file.size <= 10 * 1024 * 1024)
         return <TextView file={file} contentUrl={contentUrl} publicMode={publicMode} qc={qc} />;
-      return <NoPreview file={file} />;
+      return <NoPreview file={file} contentUrl={contentUrl} publicMode={publicMode} allowDownload={allowDownload} />;
     case 'code':
       return <TextView file={file} contentUrl={contentUrl} publicMode={publicMode} qc={qc} />;
     default:
       if (isTextEditable(file) && file.size <= 10 * 1024 * 1024)
         return <TextView file={file} contentUrl={contentUrl} publicMode={publicMode} qc={qc} />;
-      return <NoPreview file={file} />;
+      return <NoPreview file={file} contentUrl={contentUrl} publicMode={publicMode} allowDownload={allowDownload} />;
   }
 }
 
-function ImageView({ file, contentUrl, zoomCtl }: { file: FileDTO; contentUrl: string; zoomCtl: { z: number } | null }) {
+function ImageView({ file, contentUrl, zoomCtl }: { file: FileDTO; contentUrl: string; zoomCtl: ZoomCommand | null }) {
   const ref = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -189,9 +214,16 @@ function ImageView({ file, contentUrl, zoomCtl }: { file: FileDTO; contentUrl: s
   useEffect(() => { setZoom(1); setPan({ x: 0, y: 0 }); }, [file.id]);
   useEffect(() => {
     if (!zoomCtl) return;
-    const v = zoomCtl.z;
-    if (Math.abs(v) < 1) { setZoom(1); setPan({ x: 0, y: 0 }); }
-    else setZoom((z) => Math.min(8, Math.max(1, z * (v > 0 ? 1.25 : 0.8))));
+    if (zoomCtl.action === 'fit') {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+    setZoom((z) => {
+      const next = Math.min(8, Math.max(1, z * (zoomCtl.action === 'in' ? 1.25 : 0.8)));
+      if (next === 1) setPan({ x: 0, y: 0 });
+      return next;
+    });
   }, [zoomCtl]);
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault();
@@ -221,7 +253,9 @@ function ImageView({ file, contentUrl, zoomCtl }: { file: FileDTO; contentUrl: s
   );
 }
 
-function NoPreview({ file }: { file: FileDTO }) {
+function NoPreview({ file, contentUrl, publicMode, allowDownload }: {
+  file: FileDTO; contentUrl: string; publicMode: boolean; allowDownload: boolean;
+}) {
   const Icon = categoryIcon(file.category);
   return (
     <div className="h-full flex items-center justify-center p-6">
@@ -235,9 +269,17 @@ function NoPreview({ file }: { file: FileDTO }) {
           <div className="text-sm" style={{ color: 'rgba(255,255,255,.45)' }}>{fmtBytes(file.size)}</div>
           <div className="text-sm mt-1" style={{ color: 'rgba(255,255,255,.35)' }}>No preview available for this file type</div>
         </div>
-        <button className="btn btn-primary inline-flex mx-auto" onClick={() => void startDownload(file)}>
-          <Download size={15} /> Download file
-        </button>
+        {(!publicMode || allowDownload) && (
+          publicMode ? (
+            <a className="btn btn-primary inline-flex mx-auto" href={`${contentUrl}?download=1`} download={file.name}>
+              <Download size={15} /> Download file
+            </a>
+          ) : (
+            <button className="btn btn-primary inline-flex mx-auto" onClick={() => void startDownload(file)}>
+              <Download size={15} /> Download file
+            </button>
+          )
+        )}
       </div>
     </div>
   );

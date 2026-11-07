@@ -31,7 +31,7 @@ export function PublicSharePage() {
         {data && !data.unlocked && data.requiresPassword && <PasswordGate token={token!} onUnlock={() => void qc.invalidateQueries({ queryKey: ['publicShare', token] })} />}
         {data && (data.unlocked || !data.requiresPassword) && <ShareBody token={token!} info={data} />}
       </div>
-      <PreviewOverlay publicBase={`/api/public/shares/${token}`} />
+      <PreviewOverlay publicBase={`/api/public/shares/${token}`} allowDownload={data?.allowDownload !== false} />
       <Toasts />
     </div>
   );
@@ -73,7 +73,7 @@ function ShareBody({ token, info }: { token: string; info: PublicShareInfo }) {
     return (
       <div className="surface border border-app rounded-2xl p-8 text-center fadein">
         {f.hasThumbnail ? (
-          <img src={`${base}/files/${f.id}/thumbnail`} alt="" className="mx-auto max-h-64 rounded-xl mb-5" />
+          <img src={f.thumbnailUrl ?? `${base}/files/${f.id}/thumbnail`} alt="" className="mx-auto max-h-64 rounded-xl mb-5" />
         ) : (
           <div className="mx-auto h-24 w-24 surface-2 rounded-2xl flex items-center justify-center mb-5"><Icon size={44} style={{ color: CATEGORY_COLORS[f.category] }} /></div>
         )}
@@ -93,11 +93,13 @@ function ShareBody({ token, info }: { token: string; info: PublicShareInfo }) {
 function FolderShare({ token, info }: { token: string; info: PublicShareInfo }) {
   const [folderId, setFolderId] = useState<string | null>(info.folder?.id ?? null);
   const base = `/api/public/shares/${token}`;
-  const { data } = useQuery({
+  const { data, error, isLoading, refetch } = useQuery({
     queryKey: ['publicFolder', token, folderId],
     queryFn: () => api.get<PublicFolderListing>(`${base}/folders/${folderId}`),
     enabled: info.type === 'folder',
+    retry: false,
   });
+  const err = error as { status?: number; message?: string } | null;
   return (
     <div className="fadein">
       <nav className="flex items-center gap-1 text-sm mb-4">
@@ -108,6 +110,17 @@ function FolderShare({ token, info }: { token: string; info: PublicShareInfo }) 
           </span>
         ))}
       </nav>
+      {isLoading && <div className="flex justify-center py-16"><Spinner size={24} /></div>}
+      {err && (
+        <EmptyState
+          icon={FileX2}
+          title="Folder unavailable"
+          body={err.message ?? 'This folder could not be loaded. The share may have expired or been revoked.'}
+          action={<button className="btn" onClick={() => void refetch()}>Try again</button>}
+        />
+      )}
+      {!isLoading && !err && (
+        <>
       {data?.allowDownload && (
         <div className="mb-4"><a className="btn" href={`${base}/zip`}><Download size={14} />Download all (.zip)</a></div>
       )}
@@ -124,7 +137,7 @@ function FolderShare({ token, info }: { token: string; info: PublicShareInfo }) 
             <div key={f!.id} className="surface border border-app rounded-xl p-3 cursor-pointer card-hover group relative"
               onClick={() => usePreview.getState().start((data?.files ?? []) as FileDTO[], i)}>
               {f!.hasThumbnail
-                ? <img src={`${base}/files/${f!.id}/thumbnail`} className="h-20 w-full object-cover rounded-md mb-2" alt="" />
+                ? <img src={f!.thumbnailUrl ?? `${base}/files/${f!.id}/thumbnail`} className="h-20 w-full object-cover rounded-md mb-2" alt="" />
                 : <div className="h-20 flex items-center justify-center mb-2"><Icon size={40} style={{ color: CATEGORY_COLORS[f!.category] }} /></div>}
               <div className="text-[13px] font-medium truncate">{f!.name}</div>
               <div className="text-3 text-[11px]">{fmtBytes(f!.size)}</div>
@@ -136,7 +149,8 @@ function FolderShare({ token, info }: { token: string; info: PublicShareInfo }) 
         })}
       </div>
       {data && data.files.length === 0 && data.folders.length === 0 && <EmptyState icon={FolderIcon} title="Empty folder" />}
-
+        </>
+      )}
     </div>
   );
 }

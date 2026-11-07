@@ -120,8 +120,8 @@ export function WindowsPreview({ file, big, className }: WindowsPreviewProps) {
   const ext = (file.extension || '').toUpperCase() || 'FILE';
   const group = getFileGroup(file.extension, file.category);
   const meta = META[group];
-  const thumbUrl = file.thumbnailUrl || (file.category === 'image' ? `/api/thumbnails/${file.id}` : null);
-  const showImg = (file.hasThumbnail || file.category === 'image') && !!thumbUrl && !err;
+  const thumbUrl = file.thumbnailUrl;
+  const showImg = !!thumbUrl && !err;
 
   // ── Small Icon for List View ──
   if (!big) {

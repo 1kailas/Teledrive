@@ -170,11 +170,16 @@ export class BotPool {
       const nextCool = Math.min(...healthy.map((b) => (b.cooldownUntil > now ? b.cooldownUntil : Infinity)));
       const wait = Number.isFinite(nextCool) ? Math.min(Math.max(nextCool - now, 50), 1000) : 1000;
       await new Promise<void>((resolve) => {
-        const t = setTimeout(resolve, wait);
-        this.emitter.once('released', () => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
           clearTimeout(t);
+          this.emitter.off('released', finish);
           resolve();
-        });
+        };
+        const t = setTimeout(finish, wait);
+        this.emitter.once('released', finish);
       });
     }
   }

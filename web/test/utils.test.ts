@@ -8,6 +8,8 @@ import {
   sortItems,
   isTextEditable,
   cmLanguageExt,
+  categoryUsage,
+  shiftVttTimings,
 } from '../src/utils';
 import type { FileDTO } from '../src/api';
 
@@ -155,6 +157,59 @@ describe('Web Utility Functions', () => {
       expect(cmLanguageExt('py')).toEqual(['python']);
       expect(cmLanguageExt('md')).toEqual(['markdown']);
       expect(cmLanguageExt('unknown')).toEqual([]);
+    });
+  });
+
+  describe('categoryUsage', () => {
+    it('returns relative, sorted storage segments', () => {
+      const usage = categoryUsage([
+        { category: 'document', size: 100 },
+        { category: 'video', size: 300 },
+        { category: 'image', size: 0 },
+      ]);
+      expect(usage.map((u) => u.category)).toEqual(['video', 'document']);
+      expect(usage[0]!.percent).toBeCloseTo(75);
+      expect(usage[1]!.percent).toBeCloseTo(25);
+    });
+
+    it('returns no segments when the drive is empty', () => {
+      expect(categoryUsage([])).toEqual([]);
+      expect(categoryUsage([{ category: 'video', size: 0 }])).toEqual([]);
+    });
+  });
+
+  describe('shiftVttTimings', () => {
+    const vtt = [
+      'WEBVTT',
+      '',
+      '00:00:01.000 --> 00:00:03.500 align:start position:10%',
+      'Hello',
+      '',
+      '01:02.500 --> 01:04.000',
+      'Short timestamps',
+      '',
+    ].join('\n');
+
+    it('returns the file untouched for a zero offset', () => {
+      expect(shiftVttTimings(vtt, 0)).toBe(vtt);
+    });
+
+    it('moves every cue window and preserves cue settings', () => {
+      const shifted = shiftVttTimings(vtt, 1.5);
+      expect(shifted).toContain('00:00:02.500 --> 00:00:05.000 align:start position:10%');
+      expect(shifted).toContain('00:01:04.000 --> 00:01:05.500');
+      expect(shifted).toContain('Hello');
+      expect(shifted).toContain('Short timestamps');
+    });
+
+    it('clamps cues at the start of the media for negative offsets', () => {
+      const shifted = shiftVttTimings('WEBVTT\n\n00:00:00.500 --> 00:00:01.500\nHi\n', -2);
+      expect(shifted).toContain('00:00:00.000 --> 00:00:00.000');
+    });
+
+    it('leaves malformed timestamp lines untouched', () => {
+      const broken = 'WEBVTT\n\nnot a timestamp --> also not\n';
+      expect(shiftVttTimings(broken, 3)).toBe(broken);
     });
   });
 });

@@ -122,6 +122,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
       botMaxConcurrentUploads: ctx.config.botMaxConcurrentUploads,
       maxFileSize: ctx.config.maxFileSize,
       trashRetentionDays: ctx.config.trashRetentionDays,
+      desktopMode: false,
       features: { ffmpeg: !!ctx.tools.ffmpeg, pdf: !!ctx.tools.pdftoppm },
     };
   });

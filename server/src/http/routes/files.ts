@@ -124,6 +124,60 @@ export async function sendFileContent(
   return reply.send(stream);
 }
 
+/**
+ * Stream a video/audio file, transmuxing formats browsers cannot decode
+ * (MKV and friends) to fragmented MP4 when ffmpeg is available.
+ */
+export async function sendMediaStream(
+  ctx: AppContext,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  file: FileRow,
+): Promise<FastifyReply> {
+  if (file.status !== 'ready' || !file.blob_id) {
+    throw conflict(`file is not ready (status: ${file.status})`);
+  }
+  if (!['video', 'audio'].includes(file.category)) throw badRequest('media streaming only supports video and audio');
+
+  const query = (req.query ?? {}) as { direct?: string; ss?: string };
+  const parts = partsByBlob(ctx.db, file.blob_id);
+  if (parts.some((p) => p.status !== 'stored')) throw conflict('media not ready');
+
+  const ext = (fileExtension(file.name) || '').toLowerCase();
+  const isDirectNative = query.direct === '1' || (!['mkv', 'avi', 'flv', 'ts', 'vob'].includes(ext) && file.mime_type === 'video/mp4');
+
+  // Transmuxing reads part 0 only. Serving that for a multi-part file would
+  // silently truncate the video, so fall back to the full original bytes and
+  // let the client report the unsupported codec instead.
+  if (isDirectNative || !ctx.tools.ffmpeg || parts.length !== 1) {
+    return sendFileContent(ctx, req, reply, file, { download: false });
+  }
+
+  try {
+    const part0 = parts[0]!;
+    const localPath = await ctx.cache.ensureLocal(part0);
+    const startTime = parseFloat(query.ss ?? '0') || 0;
+    const transmux = createTransmuxStream(localPath, startTime, ctx.tools);
+
+    if (!transmux) {
+      return sendFileContent(ctx, req, reply, file, { download: false });
+    }
+
+    reply.header('Content-Type', 'video/mp4');
+    reply.header('Cache-Control', 'no-cache');
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('Access-Control-Allow-Origin', '*');
+
+    reply.raw.on('close', () => {
+      try { transmux.proc.kill('SIGKILL'); } catch {}
+    });
+
+    return reply.send(transmux.stream);
+  } catch {
+    return sendFileContent(ctx, req, reply, file, { download: false });
+  }
+}
+
 const patchSchema = z.object({
   name: z.string().min(1).optional(),
   folderId: z.string().nullable().optional(),
@@ -153,40 +207,53 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
     if (file.status !== 'ready' && (p.name !== undefined || p.folderId !== undefined)) {
       throw conflict('only starred, description and tags can be changed on a non-ready file');
     }
+    const targetFolderId = p.folderId !== undefined ? p.folderId : file.folder_id;
+    if (targetFolderId) {
+      const folder = getFolder(db, targetFolderId);
+      if (!folder || folder.trashed_at) throw notFound('target folder not found');
+    }
+    const moving = p.folderId !== undefined && p.folderId !== file.folder_id;
+    let nextName = file.name;
     if (p.name && p.name !== file.name) {
       const names = childFileNames(db, file.folder_id);
       names.delete(file.name.toLowerCase());
-      if (names.has(p.name.toLowerCase())) throw conflict(`a file named "${p.name}" already exists`);
-      const ext = fileExtension(p.name);
-      const mimeWasGeneric = file.mime_type === 'application/octet-stream';
-      const newMime = mimeWasGeneric ? mime.lookup(p.name) || file.mime_type : file.mime_type;
-      db.prepare(
-        'UPDATE files SET name = ?, extension = ?, mime_type = ?, category = ?, updated_at = ? WHERE id = ?',
-      ).run(p.name, ext, newMime, mimeWasGeneric ? categorize(newMime, ext) : file.category, now, id);
-    }
-    if (p.folderId !== undefined && p.folderId !== file.folder_id) {
-      if (p.folderId) {
-        const folder = getFolder(db, p.folderId);
-        if (!folder || folder.trashed_at) throw notFound('target folder not found');
+      if (!moving && names.has(p.name.toLowerCase())) {
+        throw conflict(`a file named "${p.name}" already exists`);
       }
-      const names = childFileNames(db, p.folderId);
-      const name = names.has(file.name.toLowerCase()) ? uniqueName(file.name, names) : file.name;
-      db.prepare('UPDATE files SET folder_id = ?, name = ?, updated_at = ? WHERE id = ?').run(
-        p.folderId,
-        name,
-        now,
-        id,
-      );
+      nextName = p.name;
     }
-    if (p.description !== undefined) {
-      db.prepare('UPDATE files SET description = ?, updated_at = ? WHERE id = ?').run(p.description, now, id);
+    if (moving) {
+      const names = childFileNames(db, targetFolderId);
+      if (names.has(nextName.toLowerCase())) nextName = uniqueName(nextName, names);
     }
-    if (p.tags !== undefined) {
-      db.prepare('UPDATE files SET tags = ?, updated_at = ? WHERE id = ?').run(p.tags.join(','), now, id);
-    }
-    if (p.starred !== undefined) {
-      db.prepare('UPDATE files SET starred = ?, updated_at = ? WHERE id = ?').run(p.starred ? 1 : 0, now, id);
-    }
+    const renamed = nextName !== file.name;
+    const ext = fileExtension(nextName);
+    const mimeWasGeneric = file.mime_type === 'application/octet-stream';
+    const newMime = mimeWasGeneric ? mime.lookup(nextName) || file.mime_type : file.mime_type;
+    db.transaction(() => {
+      if (renamed || moving) {
+        db.prepare(
+          'UPDATE files SET name = ?, folder_id = ?, extension = ?, mime_type = ?, category = ?, updated_at = ? WHERE id = ?',
+        ).run(
+          nextName,
+          targetFolderId,
+          ext,
+          newMime,
+          mimeWasGeneric ? categorize(newMime, ext) : file.category,
+          now,
+          id,
+        );
+      }
+      if (p.description !== undefined) {
+        db.prepare('UPDATE files SET description = ?, updated_at = ? WHERE id = ?').run(p.description, now, id);
+      }
+      if (p.tags !== undefined) {
+        db.prepare('UPDATE files SET tags = ?, updated_at = ? WHERE id = ?').run(p.tags.join(','), now, id);
+      }
+      if (p.starred !== undefined) {
+        db.prepare('UPDATE files SET starred = ?, updated_at = ? WHERE id = ?').run(p.starred ? 1 : 0, now, id);
+      }
+    })();
     ctx.bus.emit('file.updated', { fileId: id, status: getFile(db, id)!.status });
     return { file: toFileDTO(db, getFile(db, id)!) };
   });
@@ -237,44 +304,9 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
 
   app.get('/api/files/:id/stream', async (req, reply) => {
     const { id } = req.params as { id: string };
-    const query = (req.query ?? {}) as { direct?: string; ss?: string };
     const file = getFile(db, id);
     if (!file || file.trashed_at) throw notFound('file not found');
-    if (!['video', 'audio'].includes(file.category)) throw badRequest('media streaming only supports video and audio');
-
-    const parts = partsByBlob(db, file.blob_id!);
-    if (parts.some((p) => p.status !== 'stored')) throw conflict('media not ready');
-
-    const ext = (fileExtension(file.name) || '').toLowerCase();
-    const isDirectNative = query.direct === '1' || (!['mkv', 'avi', 'flv', 'ts', 'vob'].includes(ext) && file.mime_type === 'video/mp4');
-
-    if (isDirectNative || !ctx.tools.ffmpeg || parts.length === 0) {
-      return sendFileContent(ctx, req, reply, file, { download: false });
-    }
-
-    try {
-      const part0 = parts[0]!;
-      const localPath = await ctx.cache.ensureLocal(part0);
-      const startTime = parseFloat(query.ss ?? '0') || 0;
-      const transmux = createTransmuxStream(localPath, startTime, ctx.tools);
-
-      if (!transmux) {
-        return sendFileContent(ctx, req, reply, file, { download: false });
-      }
-
-      reply.header('Content-Type', 'video/mp4');
-      reply.header('Cache-Control', 'no-cache');
-      reply.header('X-Content-Type-Options', 'nosniff');
-      reply.header('Access-Control-Allow-Origin', '*');
-
-      reply.raw.on('close', () => {
-        try { transmux.proc.kill('SIGKILL'); } catch {}
-      });
-
-      return reply.send(transmux.stream);
-    } catch {
-      return sendFileContent(ctx, req, reply, file, { download: false });
-    }
+    return sendMediaStream(ctx, req, reply, file);
   });
 
   app.get('/api/files/:id/thumbnail', async (req, reply) => {
@@ -405,6 +437,18 @@ async function replaceTextContent(ctx: AppContext, file: FileRow, text: string):
     ctx.bus.emit('file.updated', { fileId: file.id, status: 'ready' });
     ctx.bus.emit('storage.changed', {});
     return { file: toFileDTO(db, getFile(db, file.id)!) };
+  } catch (err) {
+    // Never leave an orphan blob/part (or a ghost "uploading" file created by
+    // POST /api/files/text) behind when Telegram or the database fails.
+    db.transaction(() => {
+      db.prepare('DELETE FROM parts WHERE blob_id = ?').run(blobId);
+      db.prepare('DELETE FROM blobs WHERE id = ?').run(blobId);
+      const current = getFile(db, file.id);
+      if (current && current.status === 'uploading' && current.blob_id === null) {
+        db.prepare('DELETE FROM files WHERE id = ?').run(file.id);
+      }
+    })();
+    throw err;
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

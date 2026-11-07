@@ -17,7 +17,7 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
     return () => window.removeEventListener('keydown', onKey, true);
   }, [onClose]);
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={ref} role="dialog" aria-modal="true" aria-label={title}
         className={clsx('surface shadow-overlay rounded-xl border border-app w-full fadein', wide ? 'max-w-2xl' : 'max-w-md')}>
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-app">

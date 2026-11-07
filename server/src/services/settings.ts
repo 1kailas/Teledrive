@@ -92,18 +92,11 @@ function readNumeric(value: unknown): number | null {
   return null;
 }
 
-/**
- * Validate + persist upload tuning values, then apply them immediately.
- * Invalid values are rejected; out-of-range values are clamped so the UI can
- * always show the value that is actually in effect.
- */
-export function updateUploadSettings(
-  config: AppConfig,
-  db: Db,
-  patch: Record<string, unknown>,
-): UploadSettingsSnapshot {
-  const next: Partial<Record<UploadSettingKey, number>> = {};
+export type UploadSettingsPatch = Partial<Record<UploadSettingKey, number>>;
 
+/** Validate a patch without touching the database or the live config. */
+export function parseUploadSettings(config: AppConfig, patch: Record<string, unknown>): UploadSettingsPatch {
+  const next: UploadSettingsPatch = {};
   for (const key of UPLOAD_SETTING_KEYS) {
     if (!(key in patch)) continue;
     const raw = readNumeric(patch[key]);
@@ -123,23 +116,41 @@ export function updateUploadSettings(
         break;
     }
   }
+  return next;
+}
 
-  if (next.partSizeMb !== undefined) {
-    config.partSize = next.partSizeMb * 1024 * 1024;
-    setSetting(db, 'partSizeMb', JSON.stringify(next.partSizeMb));
+/** Persist validated upload tuning values (call inside a transaction). */
+export function persistUploadSettings(db: Db, next: UploadSettingsPatch): void {
+  for (const key of UPLOAD_SETTING_KEYS) {
+    const value = next[key];
+    if (value !== undefined) setSetting(db, key, JSON.stringify(value));
   }
-  if (next.uploadConcurrency !== undefined) {
-    config.clientUploadConcurrency = next.uploadConcurrency;
-    setSetting(db, 'uploadConcurrency', JSON.stringify(next.uploadConcurrency));
-  }
+}
+
+/** Apply validated values to the live config. */
+export function applyUploadSettings(config: AppConfig, next: UploadSettingsPatch): void {
+  if (next.partSizeMb !== undefined) config.partSize = next.partSizeMb * 1024 * 1024;
+  if (next.uploadConcurrency !== undefined) config.clientUploadConcurrency = next.uploadConcurrency;
   if (next.telegramUploadConcurrency !== undefined) {
     config.telegramUploadConcurrency = next.telegramUploadConcurrency;
-    setSetting(db, 'telegramUploadConcurrency', JSON.stringify(next.telegramUploadConcurrency));
   }
   if (next.botMaxConcurrentUploads !== undefined) {
     config.botMaxConcurrentUploads = next.botMaxConcurrentUploads;
-    setSetting(db, 'botMaxConcurrentUploads', JSON.stringify(next.botMaxConcurrentUploads));
   }
+}
 
+/**
+ * Validate + persist upload tuning values, then apply them immediately.
+ * Invalid values are rejected; out-of-range values are clamped so the UI can
+ * always show the value that is actually in effect.
+ */
+export function updateUploadSettings(
+  config: AppConfig,
+  db: Db,
+  patch: Record<string, unknown>,
+): UploadSettingsSnapshot {
+  const next = parseUploadSettings(config, patch);
+  db.transaction(() => persistUploadSettings(db, next))();
+  applyUploadSettings(config, next);
   return uploadSettingsSnapshot(config);
 }

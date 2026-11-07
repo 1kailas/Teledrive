@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import type { AppContext } from '../context.js';
-import { listBackups, listBots, pendingDeletionCount } from '../db/repos/misc.js';
+import { failedDeletionCount, listBackups, listBots, pendingDeletionCount } from '../db/repos/misc.js';
 import { partStatusCounts } from '../db/repos/files.js';
 import { retryUpload } from './uploads.js';
 
@@ -72,23 +72,25 @@ export async function systemInfo(ctx: AppContext): Promise<Record<string, unknow
       uploadingParts: partCounts['uploading'] ?? 0,
       failedParts: partCounts['failed'] ?? 0,
       pendingDeletions: pendingDeletionCount(db),
+      failedDeletions: failedDeletionCount(db),
     },
     lastBackup,
   };
 }
 
 /** Retry every failed upload whose temp files still exist. */
-export function retryFailedParts(ctx: AppContext): number {
+export function retryFailedParts(ctx: AppContext): { uploads: number; parts: number } {
   const { db } = ctx;
   const failed = db.prepare(`SELECT id FROM uploads WHERE status = 'failed'`).all() as { id: string }[];
-  let retried = 0;
+  let uploads = 0;
+  let parts = 0;
   for (const u of failed) {
     try {
-      retryUpload(ctx, u.id);
-      retried++;
+      parts += retryUpload(ctx, u.id).retried;
+      uploads++;
     } catch {
       /* temp files gone — left for the failedUploads sweeper */
     }
   }
-  return retried;
+  return { uploads, parts };
 }

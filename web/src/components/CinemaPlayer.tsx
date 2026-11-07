@@ -5,11 +5,14 @@ import {
   ExternalLink, Sparkles
 } from 'lucide-react';
 import type { FileDTO } from '../store';
+import { useDialog } from '../store';
+import { shiftVttTimings, isTypingTarget } from '../utils';
 
 interface CinemaPlayerProps {
   file: FileDTO;
   contentUrl: string;
   poster?: string;
+  allowDownload?: boolean;
   onClose?: () => void;
 }
 
@@ -28,7 +31,7 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-export function CinemaPlayer({ file, contentUrl, poster }: CinemaPlayerProps) {
+export function CinemaPlayer({ file, contentUrl, poster, allowDownload = true }: CinemaPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -57,13 +60,18 @@ export function CinemaPlayer({ file, contentUrl, poster }: CinemaPlayerProps) {
   const [showHelp, setShowHelp] = useState(false);
   const [audioProfile, setAudioProfile] = useState<AudioProfile>('flat');
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('fit');
+  const [subVtt, setSubVtt] = useState<string | null>(null);
   const [customSubUrl, setCustomSubUrl] = useState<string | null>(null);
   const [subOffset, setSubOffset] = useState(0);
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(true);
 
-  // Codec streaming state
+  // Codec streaming state. Public shares use their own stream route, never
+  // the authenticated /api/files endpoint.
   const isMkv = (file.name || '').toLowerCase().endsWith('.mkv') || file.mimeType === 'video/x-matroska';
-  const [streamUrl, setStreamUrl] = useState(() => (isMkv ? `/api/files/${file.id}/stream` : contentUrl));
+  const fallbackStreamUrl = contentUrl.endsWith('/content')
+    ? `${contentUrl.slice(0, -'/content'.length)}/stream`
+    : contentUrl;
+  const [streamUrl, setStreamUrl] = useState(() => (isMkv ? fallbackStreamUrl : contentUrl));
   const [hasCodecError, setHasCodecError] = useState(false);
 
   // Resume position storage key
@@ -72,6 +80,19 @@ export function CinemaPlayer({ file, contentUrl, poster }: CinemaPlayerProps) {
     const saved = localStorage.getItem(resumeKey);
     return saved ? parseFloat(saved) > 10 : false;
   });
+
+  // Reset player-local state when the preview navigates to another item.
+  useEffect(() => {
+    setStreamUrl(isMkv ? fallbackStreamUrl : contentUrl);
+    setHasCodecError(false);
+    setCurrentTime(0);
+    setBufferedEnd(0);
+    setSubVtt(null);
+    setSubOffset(0);
+    const saved = localStorage.getItem(resumeKey);
+    setShowResumeBanner(saved ? parseFloat(saved) > 10 : false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file.id, contentUrl]);
 
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -121,6 +142,19 @@ export function CinemaPlayer({ file, contentUrl, poster }: CinemaPlayerProps) {
     }
   }, []);
 
+  // Release the Web Audio graph when the player unmounts. Without this the
+  // AudioContext and its media-element source stay alive for the whole tab.
+  useEffect(() => () => {
+    const ctx = audioCtxRef.current;
+    audioCtxRef.current = null;
+    gainNodeRef.current = null;
+    bassFilterRef.current = null;
+    voiceFilterRef.current = null;
+    compressorRef.current = null;
+    if (ctx && ctx.state !== 'closed') void ctx.close().catch(() => {});
+    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+  }, []);
+
   const applyAudioProfile = useCallback((profile: AudioProfile) => {
     initAudioGraph();
     setAudioProfile(profile);
@@ -130,10 +164,13 @@ export function CinemaPlayer({ file, contentUrl, poster }: CinemaPlayerProps) {
     const comp = compressorRef.current;
     if (!gain || !bass || !voice || !comp) return;
 
-    // Reset defaults
+    // Reset defaults, including the compressor, so profiles never leak into
+    // each other when the user switches back to Flat/Dialogue.
     bass.gain.value = 0;
     voice.gain.value = 0;
     gain.gain.value = 1;
+    comp.threshold.value = -24;
+    comp.ratio.value = 6;
 
     switch (profile) {
       case 'dialogue':
@@ -185,9 +222,9 @@ export function CinemaPlayer({ file, contentUrl, poster }: CinemaPlayerProps) {
   const toggleFullscreen = useCallback(() => {
     if (!containerRef.current) return;
     if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+      void containerRef.current.requestFullscreen().catch(() => {});
     } else {
-      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+      void document.exitFullscreen().catch(() => {});
     }
   }, []);
 
@@ -202,11 +239,31 @@ export function CinemaPlayer({ file, contentUrl, poster }: CinemaPlayerProps) {
     } catch {}
   }, []);
 
+  // Keep fullscreen state in sync when the user exits with Esc / F11.
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement === containerRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  // Rebuild the subtitle track whenever the sync offset changes so the cues
+  // themselves move (the <track> element has no offset API).
+  useEffect(() => {
+    if (!subVtt) {
+      setCustomSubUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([shiftVttTimings(subVtt, subOffset)], { type: 'text/vtt' }));
+    setCustomSubUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [subVtt, subOffset]);
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if user is in an input
-      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
+      // Dialogs and text editors own the keyboard.
+      if (useDialog.getState().dialog) return;
+      if (isTypingTarget(e.target)) return;
 
       switch (e.key) {
         case ' ':
@@ -299,9 +356,8 @@ export function CinemaPlayer({ file, contentUrl, poster }: CinemaPlayerProps) {
         // Simple client-side SRT to VTT converter
         content = 'WEBVTT\n\n' + content.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
       }
-      const blob = new Blob([content], { type: 'text/vtt' });
-      const url = URL.createObjectURL(blob);
-      setCustomSubUrl(url);
+      setSubVtt(content);
+      setSubOffset(0);
       setSubtitlesEnabled(true);
       setShowSubMenu(false);
     };
@@ -356,9 +412,9 @@ export function CinemaPlayer({ file, contentUrl, poster }: CinemaPlayerProps) {
           if (d && !Number.isNaN(d)) setDuration(d);
         }}
         onError={() => {
-          // If direct native playback failed on an MKV or high-profile file, auto-fallback to transmux stream
-          if (streamUrl !== `/api/files/${file.id}/stream`) {
-            setStreamUrl(`/api/files/${file.id}/stream`);
+          // If direct native playback failed on an MKV or high-profile file, auto-fallback to transmux stream.
+          if (streamUrl !== fallbackStreamUrl) {
+            setStreamUrl(fallbackStreamUrl);
           } else {
             setHasCodecError(true);
           }
@@ -404,13 +460,15 @@ export function CinemaPlayer({ file, contentUrl, poster }: CinemaPlayerProps) {
               This media is encoded in a proprietary codec not supported by browser hardware. You can stream it directly with full fidelity in external players:
             </p>
             <div className="flex justify-center gap-3">
-              <a
-                href={contentUrl}
-                download={file.name}
-                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-medium flex items-center gap-2"
-              >
-                Download Original
-              </a>
+              {allowDownload && (
+                <a
+                  href={`${contentUrl}${contentUrl.includes('?') ? '&' : '?'}download=1`}
+                  download={file.name}
+                  className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-medium flex items-center gap-2"
+                >
+                  Download Original
+                </a>
+              )}
               <button
                 onClick={() => {
                   const url = `${window.location.origin}${contentUrl}`;

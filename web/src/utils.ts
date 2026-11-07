@@ -25,6 +25,52 @@ export const CATEGORY_COLORS: Record<string, string> = {
   image: '#10b981', video: '#f59e0b', audio: '#8b5cf6', document: '#3b82f6',
   archive: '#a16207', code: '#0ea5e9', other: '#6b7280',
 };
+
+/** Relative storage usage per category (Telegram storage has no quota). */
+export function categoryUsage(byCategory: { category: string; size: number }[]): { category: string; size: number; percent: number }[] {
+  const total = byCategory.reduce((sum, item) => sum + Math.max(0, item.size), 0);
+  if (total <= 0) return [];
+  return byCategory
+    .filter((item) => item.size > 0)
+    .map((item) => ({ category: item.category, size: item.size, percent: (item.size / total) * 100 }))
+    .sort((a, b) => b.size - a.size);
+}
+function parseVttTimestamp(value: string): number | null {
+  const match = /^(?:(\d+):)?(\d{1,2}):(\d{2})\.(\d{3})$/.exec(value.trim());
+  if (!match) return null;
+  const hours = match[1] ? Number(match[1]) : 0;
+  return hours * 3600 + Number(match[2]) * 60 + Number(match[3]) + Number(match[4]) / 1000;
+}
+
+function vttTimestamp(seconds: number): string {
+  const total = Math.max(0, seconds);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toFixed(3).padStart(6, '0')}`;
+}
+
+/** Shift every cue window in a WebVTT file, keeping cue settings intact. */
+export function shiftVttTimings(vtt: string, offsetSeconds: number): string {
+  if (!offsetSeconds) return vtt;
+  return vtt.replace(
+    /^((?:\d+:)?\d{1,2}:\d{2}\.\d{3})\s*-->\s*((?:\d+:)?\d{1,2}:\d{2}\.\d{3})/gm,
+    (match, start: string, end: string) => {
+      const startTime = parseVttTimestamp(start);
+      const endTime = parseVttTimestamp(end);
+      if (startTime === null || endTime === null) return match;
+      return `${vttTimestamp(startTime + offsetSeconds)} --> ${vttTimestamp(endTime + offsetSeconds)}`;
+    },
+  );
+}
+
+/** True when a keystroke belongs to a form field or rich-text editor. */
+export function isTypingTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.closest !== 'function') return false;
+  return !!el.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]');
+}
+
 export const CATEGORY_LABELS: Record<string, string> = {
   image: 'Images', video: 'Videos', audio: 'Audio', document: 'Documents',
   archive: 'Archives', code: 'Code', other: 'Other',

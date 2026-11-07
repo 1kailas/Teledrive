@@ -174,6 +174,24 @@ describe('scrypt password', () => {
     expect(await verifyPassword('correct horse', h)).toBe(true);
     expect(await verifyPassword('wrong', h)).toBe(false);
   });
+
+  it('fails closed on malformed, out-of-range, or absurd hashes', async () => {
+    const cases = [
+      '',
+      'plaintext',
+      'scrypt$32768$8$1$c2FsdA==', // missing field
+      'bcrypt$32768$8$1$c2FsdA==$aGFzaA==', // wrong algorithm
+      'scrypt$3$8$1$c2FsdA==$aGFzaA==', // N is not a power of two
+      'scrypt$1073741824$8$1$c2FsdA==$aGFzaA==', // N above the cap
+      'scrypt$32768$0$1$c2FsdA==$aGFzaA==', // r out of range
+      'scrypt$32768$8$0$c2FsdA==$aGFzaA==', // p out of range
+      'scrypt$32768$8$1$***$aGFzaA==', // invalid base64 salt
+      'scrypt$32768$8$1$c2FsdA==$aA==', // hash too short
+    ];
+    for (const encoded of cases) {
+      await expect(verifyPassword('whatever', encoded)).resolves.toBe(false);
+    }
+  });
 });
 
 describe('zip token HMAC', () => {

@@ -282,7 +282,7 @@ function DownloadRow({ d }: { d: DownloadTask }) {
             <X size={11} />
           </button>
         )}
-        {d.status === 'done' && (
+        {d.status === 'done' && d.isNative && (
           <div className="flex items-center gap-1 shrink-0">
             <button
               className="btn btn-primary !py-0.5 !px-2 !text-[10.5px] flex items-center gap-1 font-medium shadow-sm"
@@ -410,7 +410,7 @@ function TaskRow({ t }: { t: UploadTask }) {
       case 'creating':     return 'Preparing upload…';
       case 'uploading': {
         const speedText = t.speed > 0 ? `${fmtBytes(t.speed)}/s` : 'Buffering slices…';
-        const partsText = t.partsTotal > 1 ? ` (Part ${Math.min(t.slicesDone + 1, t.partsTotal)}/${t.partsTotal})` : '';
+        const partsText = t.partsTotal > 1 ? ` (Part ${Math.min(t.partsStored + 1, t.partsTotal)}/${t.partsTotal})` : '';
         return [`${fmtBytes(t.uploaded)} of ${fmtBytes(t.size)}${partsText}`, speedText, fmtEta(t.eta)].filter(Boolean).join(' · ');
       }
       case 'processing': {

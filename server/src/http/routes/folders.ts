@@ -126,37 +126,47 @@ export function registerFolderRoutes(app: FastifyInstance, ctx: AppContext): voi
     if (!body.success) throw badRequest('invalid patch body');
     const p = body.data;
     const now = Date.now();
-
-    if (p.parentId !== undefined && p.parentId !== folder.parent_id) {
-      if (p.parentId) {
-        if (p.parentId === id) throw badRequest('cannot move a folder into itself');
-        const target = getFolder(db, p.parentId);
-        if (!target || target.trashed_at) throw notFound('target folder not found');
-        if (isDescendant(db, id, p.parentId)) {
-          throw badRequest('cannot move a folder into its own descendant');
-        }
+    const targetParentId = p.parentId !== undefined ? p.parentId : folder.parent_id;
+    const moving = targetParentId !== folder.parent_id;
+    if (moving && targetParentId) {
+      if (targetParentId === id) throw badRequest('cannot move a folder into itself');
+      const target = getFolder(db, targetParentId);
+      if (!target || target.trashed_at) throw notFound('target folder not found');
+      if (isDescendant(db, id, targetParentId)) {
+        throw badRequest('cannot move a folder into its own descendant');
       }
-      const names = childFolderNames(db, p.parentId);
-      const name = names.has(folder.name.toLowerCase()) ? uniqueName(folder.name, names) : folder.name;
-      db.prepare('UPDATE folders SET parent_id = ?, name = ?, updated_at = ? WHERE id = ?').run(
-        p.parentId,
-        name,
-        now,
-        id,
-      );
     }
-    if (p.name && p.name !== folder.name) {
-      const names = childFolderNames(db, getFolder(db, id)!.parent_id);
-      names.delete(folder.name.toLowerCase());
-      if (names.has(p.name.toLowerCase())) throw conflict(`a folder named "${p.name}" already exists`);
-      db.prepare('UPDATE folders SET name = ?, updated_at = ? WHERE id = ?').run(p.name, now, id);
-    }
-    if (p.color !== undefined) {
-      db.prepare('UPDATE folders SET color = ?, updated_at = ? WHERE id = ?').run(p.color, now, id);
-    }
-    if (p.starred !== undefined) {
-      db.prepare('UPDATE folders SET starred = ?, updated_at = ? WHERE id = ?').run(p.starred ? 1 : 0, now, id);
-    }
+    const renaming = p.name !== undefined && p.name !== folder.name;
+    db.transaction(() => {
+      let nextName = folder.name;
+      if (renaming) {
+        const names = childFolderNames(db, targetParentId);
+        names.delete(folder.name.toLowerCase());
+        if (names.has(p.name!.toLowerCase())) {
+          throw conflict(`a folder named "${p.name}" already exists`);
+        }
+        nextName = p.name!;
+      } else if (moving) {
+        const names = childFolderNames(db, targetParentId);
+        if (names.has(nextName.toLowerCase())) nextName = uniqueName(nextName, names);
+      }
+      // Apply move and rename together so a failed rename never leaves the
+      // folder in the wrong parent.
+      if (moving || renaming) {
+        db.prepare('UPDATE folders SET parent_id = ?, name = ?, updated_at = ? WHERE id = ?').run(
+          targetParentId,
+          nextName,
+          now,
+          id,
+        );
+      }
+      if (p.color !== undefined) {
+        db.prepare('UPDATE folders SET color = ?, updated_at = ? WHERE id = ?').run(p.color, now, id);
+      }
+      if (p.starred !== undefined) {
+        db.prepare('UPDATE folders SET starred = ?, updated_at = ? WHERE id = ?').run(p.starred ? 1 : 0, now, id);
+      }
+    })();
     ctx.bus.emit('storage.changed', {});
     return { folder: toFolderDTO(db, getFolder(db, id)!) };
   });

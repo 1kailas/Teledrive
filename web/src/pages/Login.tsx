@@ -28,7 +28,7 @@ export function LoginPage() {
         <div className="hidden md:flex flex-col justify-center p-10 accent-bg">
           <CloudUpload size={44} className="accent mb-5" />
           <h1 className="text-2xl font-bold leading-tight">TeleDrive</h1>
-          <p className="text-2 mt-2 max-w-xs text-[15px]">Your private drive — everything is stored on this device with resumable transfers.</p>
+          <p className="text-2 mt-2 max-w-xs text-[15px]">Your private drive — files are stored in your own Telegram channel with resumable transfers.</p>
           <ul className="mt-6 space-y-2 text-sm text-2">
             <li>• Unlimited storage, powered by your bots</li>
             <li>• Photos, videos, documents — all searchable</li>

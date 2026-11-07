@@ -16,7 +16,7 @@ import {
 } from '../../services/shares.js';
 import { badRequest, forbidden, gone, notFound, unauthorized } from '../errors.js';
 import { toPublicFileDTO } from '../dto.js';
-import { sendFileContent } from './files.js';
+import { sendFileContent, sendMediaStream } from './files.js';
 import { thumbnailPath } from '../../db/index.js';
 import { buildZipStream, collectZipEntries } from '../../services/zip.js';
 import type { ShareRow } from '../../types.js';
@@ -47,6 +47,20 @@ function shareBreadcrumbs(ctx: AppContext, share: ShareRow, folderId: string): {
   return out;
 }
 
+/** Full folder path from the drive root, or null for a dangling folder chain. */
+function folderPath(ctx: AppContext, folderId: string): string | null {
+  const parts: string[] = [];
+  let cur: string | null = folderId;
+  let guard = 0;
+  while (cur && guard++ < 1000) {
+    const f = getFolder(ctx.db, cur);
+    if (!f) return null;
+    parts.unshift(f.name);
+    cur = f.parent_id;
+  }
+  return parts.join('/');
+}
+
 export function registerPublicRoutes(app: FastifyInstance, ctx: AppContext): void {
   const { db } = ctx;
 
@@ -66,7 +80,7 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: AppContext): voi
     if (share.file_id) {
       const file = getFile(db, share.file_id);
       if (!file || file.trashed_at || file.status !== 'ready') throw gone('file unavailable');
-      return { ...base, name: file.name, file: toPublicFileDTO(file) };
+      return { ...base, name: file.name, file: toPublicFileDTO(file, `/api/public/shares/${token}`) };
     }
     const folder = getFolder(db, share.folder_id!);
     if (!folder || folder.trashed_at) throw gone('folder unavailable');
@@ -109,7 +123,7 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: AppContext): voi
       folder: { id: folder.id, name: folder.name },
       breadcrumbs: shareBreadcrumbs(ctx, share, targetId),
       folders,
-      files: files.map((f) => toPublicFileDTO(f)),
+      files: files.map((f) => toPublicFileDTO(f, `/api/public/shares/${token}`)),
       allowDownload: !!share.allow_download,
     };
   });
@@ -120,7 +134,8 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: AppContext): voi
     requireUnlocked(ctx, req, share);
     if (!fileInShare(db, share, fileId)) throw forbidden('outside share');
     const file = getFile(db, fileId);
-    if (!file) throw notFound('file not found');
+    if (!file || file.trashed_at) throw notFound('file not found');
+    if (file.status !== 'ready') throw gone('file unavailable');
     const q = req.query as Record<string, string>;
     const download = q['download'] === '1';
     if (download) {
@@ -132,13 +147,23 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: AppContext): voi
     return sendFileContent(ctx, req, reply, file, { download, countAccess: false });
   });
 
+  app.get('/api/public/shares/:token/files/:fileId/stream', { config: RL }, async (req, reply) => {
+    const { token, fileId } = req.params as { token: string; fileId: string };
+    const share = requireActiveShare(ctx, token);
+    requireUnlocked(ctx, req, share);
+    if (!fileInShare(db, share, fileId)) throw forbidden('outside share');
+    const file = getFile(db, fileId);
+    if (!file || file.trashed_at || file.status !== 'ready') throw notFound('file not found');
+    return sendMediaStream(ctx, req, reply, file);
+  });
+
   app.get('/api/public/shares/:token/files/:fileId/thumbnail', { config: RL }, async (req, reply) => {
     const { token, fileId } = req.params as { token: string; fileId: string };
     const share = requireActiveShare(ctx, token);
     requireUnlocked(ctx, req, share);
     if (!fileInShare(db, share, fileId)) throw forbidden('outside share');
     const file = getFile(db, fileId);
-    if (!file || !file.has_thumbnail) throw notFound('no thumbnail');
+    if (!file || file.trashed_at || file.status !== 'ready' || !file.has_thumbnail) throw notFound('no thumbnail');
     const p = thumbnailPath(ctx.config.dataDir, file.id);
     if (!fs.existsSync(p)) throw notFound('no thumbnail');
     reply.header('Content-Type', 'image/webp');
@@ -153,15 +178,18 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: AppContext): voi
     requireUnlocked(ctx, req, share);
     if (!share.allow_download) throw forbidden('downloads disabled for this share');
     if (!tryCountDownload(db, share.id)) throw gone('download limit reached');
-    const entries = collectZipEntries(db, [], [share.folder_id]);
-    // strip the path prefix above the share root so archive starts at the shared folder
     const root = getFolder(db, share.folder_id);
-    for (const e of entries) {
-      const idx = e.name.indexOf(root!.name);
-      if (idx >= 0) e.name = e.name.slice(idx);
-    }
+    if (!root || root.trashed_at) throw gone('folder unavailable');
+    const prefix = folderPath(ctx, root.id);
+    if (!prefix) throw gone('folder unavailable');
+    const entries = collectZipEntries(db, [], [share.folder_id]);
+    // Strip the shared folder's own path so the archive starts at its contents.
+    const strip = `${prefix}/`;
+    const rootEntries = entries
+      .map((e) => e.name.startsWith(strip) ? { ...e, name: e.name.slice(strip.length) } : e)
+      .filter((e) => e.name.length > 0);
     reply.header('Content-Type', 'application/zip');
-    reply.header('Content-Disposition', `attachment; filename="${(root?.name ?? 'share').replace(/"/g, '_')}.zip"`);
-    return reply.send(buildZipStream(ctx, entries));
+    reply.header('Content-Disposition', `attachment; filename="${root.name.replace(/"/g, '_')}.zip"`);
+    return reply.send(buildZipStream(ctx, rootEntries));
   });
 }

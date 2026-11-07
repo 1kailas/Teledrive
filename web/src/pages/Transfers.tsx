@@ -17,6 +17,7 @@ import {
 import { fmtBytes, categoryIcon, CATEGORY_COLORS } from '../utils';
 import { fmtEta } from '../components/progress';
 import { pickFiles } from '../components/Explorer';
+import { toast, useUi } from '../store';
 
 type TabKey = 'all' | 'downloads' | 'uploads' | 'active' | 'completed';
 
@@ -36,6 +37,7 @@ export function TransfersPage() {
   const [search, setSearch] = useState('');
   const { downloads, downloadDir, clearDone: clearDownloads } = useDownloads();
   const { tasks: uploads } = useUploads();
+  const desktopMode = useUi((s) => s.desktopMode);
 
   useEffect(() => {
     void syncNativeDownloads();
@@ -152,7 +154,13 @@ export function TransfersPage() {
                 title="Resume all paused transfers"
                 onClick={() => {
                   for (const d of downloads.filter((x) => x.status === 'paused')) resumeDownload(d.id);
-                  for (const u of uploads.filter((x) => x.status === 'paused')) resumeUpload(u.key);
+                  const pausedUploads = uploads.filter((x) => x.status === 'paused');
+                  const resumable = pausedUploads.filter((x) => !x.noLocalFile);
+                  const needsFile = pausedUploads.length - resumable.length;
+                  for (const u of resumable) resumeUpload(u.key);
+                  if (needsFile > 0) {
+                    toast.info(`${needsFile} upload${needsFile === 1 ? '' : 's'} need the original file re-selected`);
+                  }
                 }}
               >
                 <Play size={13} /> Resume all
@@ -185,21 +193,25 @@ export function TransfersPage() {
         {/* ── Location & Controls bar ── */}
         <div className="flex items-center justify-between pt-1 text-xs">
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-2 border border-app/60 text-2">
-              <Folder size={13} className="text-amber-400 shrink-0" />
-              <span className="text-3">Downloads folder:</span>
-              <span className="font-mono text-text max-w-[320px] truncate" title={downloadDir || 'Default (Downloads)'}>
-                {downloadDir || 'Windows Downloads'}
-              </span>
-            </div>
-            <button
-              className="btn btn-secondary !py-1 !px-2 text-xs flex items-center gap-1 font-medium"
-              onClick={() => void pickDownloadDir()}
-              title="Change default download location"
-            >
-              <FolderOpen size={13} />
-              <span>Change Folder…</span>
-            </button>
+            {desktopMode && (
+              <>
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-2 border border-app/60 text-2">
+                  <Folder size={13} className="text-amber-400 shrink-0" />
+                  <span className="text-3">Downloads folder:</span>
+                  <span className="font-mono text-text max-w-[320px] truncate" title={downloadDir || 'Default (Downloads)'}>
+                    {downloadDir || 'Windows Downloads'}
+                  </span>
+                </div>
+                <button
+                  className="btn btn-secondary !py-1 !px-2 text-xs flex items-center gap-1 font-medium"
+                  onClick={() => void pickDownloadDir()}
+                  title="Change default download location"
+                >
+                  <FolderOpen size={13} />
+                  <span>Change Folder…</span>
+                </button>
+              </>
+            )}
             <button
               className="btn btn-primary !py-1 !px-2.5 text-xs flex items-center gap-1 font-medium shadow-sm ml-1"
               onClick={() => pickFiles(null)}
@@ -409,8 +421,8 @@ function DownloadCard({ d }: { d: DownloadTask }) {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-1.5 shrink-0 self-center">
-          {/* Completed actions: Open file, Reveal in Folder */}
-          {isDone && (
+          {/* Completed actions: Open file, Reveal in Folder (native downloads only) */}
+          {isDone && d.isNative && (
             <>
               <button
                 className="btn btn-primary !py-1 !px-2.5 text-xs flex items-center gap-1.5 font-medium shadow-sm"
@@ -579,7 +591,7 @@ function UploadCard({ u }: { u: UploadTask }) {
             {u.partsTotal > 1 && (
               <>
                 <span>•</span>
-                <span className="tabular-nums text-sky-400 font-medium">Part {Math.min(u.slicesDone + 1, u.partsTotal)}/{u.partsTotal}</span>
+                <span className="tabular-nums text-sky-400 font-medium">Part {Math.min(u.partsStored + 1, u.partsTotal)}/{u.partsTotal}</span>
               </>
             )}
           </div>

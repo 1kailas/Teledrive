@@ -60,6 +60,14 @@ const MAX_429_RETRIES = 8;
 const MAX_5XX_RETRIES = 5;
 
 /**
+ * Control calls must never hang the request handler that awaits them. Uploads
+ * opt out (timeoutMs: 0) because a 2 GB document can legitimately take many
+ * minutes to reach Telegram.
+ */
+const CONTROL_TIMEOUT_MS = 30_000;
+const CONTROL_BODY_TIMEOUT_MS = 60_000;
+
+/**
  * Client for a self-hosted telegram-bot-api server running in --local mode.
  * Uploads use file:// paths (no multipart) and may take many minutes for
  * 2 GB documents, hence the disabled header/body timeouts.
@@ -91,8 +99,15 @@ export class BotApiClient {
   /**
    * @param opts.retry429 when false, a 429 is thrown immediately (with retryAfter)
    *   so the caller can move the work to another bot instead of sleeping.
+   * @param opts.timeoutMs request timeout for control calls; 0 disables it for
+   *   long-running uploads.
    */
-  async call<T = unknown>(method: string, params: Record<string, unknown> = {}, opts: { retry429?: boolean } = {}): Promise<T> {
+  async call<T = unknown>(
+    method: string,
+    params: Record<string, unknown> = {},
+    opts: { retry429?: boolean; timeoutMs?: number } = {},
+  ): Promise<T> {
+    const control = opts.timeoutMs !== 0;
     let attempt429 = 0;
     let attempt5xx = 0;
     for (;;) {
@@ -104,8 +119,8 @@ export class BotApiClient {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(params),
           dispatcher: this.agent,
-          headersTimeout: 0,
-          bodyTimeout: 0,
+          headersTimeout: control ? CONTROL_TIMEOUT_MS : 0,
+          bodyTimeout: control ? CONTROL_BODY_TIMEOUT_MS : 0,
         });
         status = res.statusCode;
         text = await res.body.text();
@@ -172,7 +187,7 @@ export class BotApiClient {
       caption: p.caption,
       disable_notification: true,
       disable_content_type_detection: true,
-    }, { retry429: p.retry429 });
+    }, { retry429: p.retry429, timeoutMs: 0 });
   }
 
   getFile(fileId: string): Promise<TgFile> {

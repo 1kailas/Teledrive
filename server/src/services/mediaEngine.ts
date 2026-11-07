@@ -129,6 +129,13 @@ export function createTransmuxStream(
 
   const proc = spawn(tools.ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
+  // A spawn failure (missing binary, permissions) otherwise emits an unhandled
+  // 'error' event and takes the whole server down.
+  proc.on('error', (err) => {
+    console.warn('[transmuxStream spawn error]', err.message);
+    proc.stdout?.destroy(err);
+  });
+
   proc.stderr?.on('data', (chunk: Buffer) => {
     // Keep internal log of ffmpeg errors if needed
     const msg = chunk.toString();
@@ -286,6 +293,20 @@ function hasPlayableParts(parts: CatalogPart[] | undefined): boolean {
   );
 }
 
+/** Preserve any hand-authored series entries when the server rewrites items. */
+function readExistingSeries(catalogPath: string): unknown[] {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(catalogPath, 'utf8')) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const series = (parsed as { series?: unknown }).series;
+      if (Array.isArray(series)) return series;
+    }
+  } catch {
+    /* missing or invalid catalog */
+  }
+  return [];
+}
+
 function readExistingCatalog(catalogPath: string): CatalogItem[] {
   if (!fs.existsSync(catalogPath)) return [];
 
@@ -420,8 +441,17 @@ export function syncTeleDriveToCatalog(db: Db, catalogPath: string): number {
 
     items.sort((a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name));
 
+    // Write to a sibling temp file and rename so readers never observe a
+    // half-written catalog if the process dies mid-sync.
     fs.mkdirSync(path.dirname(catalogPath), { recursive: true });
-    fs.writeFileSync(catalogPath, `${JSON.stringify({ items, series: [] }, null, 2)}\n`);
+    const payload = `${JSON.stringify({ items, series: readExistingSeries(catalogPath) }, null, 2)}\n`;
+    const tmpPath = `${catalogPath}.${process.pid}.tmp`;
+    try {
+      fs.writeFileSync(tmpPath, payload);
+      fs.renameSync(tmpPath, catalogPath);
+    } finally {
+      fs.rmSync(tmpPath, { force: true });
+    }
     return items.length;
   } catch (err) {
     console.warn('[syncTeleDriveToCatalog error]', (err as Error).message);

@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { AppContext } from '../context.js';
 import { dueFailedParts } from '../db/repos/files.js';
 import { dueDeletions, markDeletionDone, markDeletionFailed, deleteExpiredSessions, pruneActivity } from '../db/repos/misc.js';
-import { staleActiveUploads } from '../db/repos/uploads.js';
+import { staleActiveUploads, staleProcessingUploads } from '../db/repos/uploads.js';
 import { cancelUpload, cancelFailedUploads, partTempPath } from './uploads.js';
 import { purgeExpiredTrash } from './trash.js';
 import { runBackup, backupNeeded, markBackupDone } from './backup.js';
@@ -26,6 +26,8 @@ interface Job {
 export class Scheduler {
   private jobs: Job[] = [];
   private timer: NodeJS.Timeout | null = null;
+  /** One tick at a time: a slow job must not stack ticks on top of each other. */
+  private tickInProgress = false;
 
   constructor(private readonly ctx: AppContext) {
     const min = 60_000;
@@ -71,10 +73,16 @@ export class Scheduler {
   }
 
   async tick(): Promise<void> {
-    const now = Date.now();
-    for (const job of this.jobs) {
-      if (job.running || now - job.lastRun < job.intervalMs) continue;
-      await this.runJob(job.name);
+    if (this.tickInProgress) return;
+    this.tickInProgress = true;
+    try {
+      const now = Date.now();
+      for (const job of this.jobs) {
+        if (job.running || now - job.lastRun < job.intervalMs) continue;
+        await this.runJob(job.name);
+      }
+    } finally {
+      this.tickInProgress = false;
     }
   }
 
@@ -98,11 +106,12 @@ export class Scheduler {
   }
 
   private expireUploads(): void {
-    const stale = staleActiveUploads(this.ctx.db, Date.now());
+    const now = Date.now();
+    const stale = [...staleActiveUploads(this.ctx.db, now), ...staleProcessingUploads(this.ctx.db, now)];
     for (const u of stale) {
       try {
         cancelUpload(this.ctx, u.id);
-        this.ctx.logger.info({ uploadId: u.id }, 'expired stale upload cancelled');
+        this.ctx.logger.info({ uploadId: u.id, status: u.status }, 'expired stale upload cancelled');
       } catch (e) {
         this.ctx.logger.warn({ uploadId: u.id, err: (e as Error).message }, 'failed to cancel stale upload');
       }

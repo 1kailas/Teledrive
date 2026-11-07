@@ -23,15 +23,28 @@ import { RouteErrorBoundary } from './components/RouteErrorBoundary';
 
 applyTheme(useUi.getState().theme);
 
-// Prevent browser context menu (Back, Refresh, Save as, Print) globally across the desktop app
-window.addEventListener('contextmenu', (e) => {
+// The WinUI shell owns the window chrome; suppress the WebView2 browser menu
+// there. Keep the native context menu in a regular browser.
+const suppressContextMenu = (e: MouseEvent) => {
   const target = e.target as HTMLElement | null;
   if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
     return;
   }
   e.preventDefault();
   e.stopPropagation();
-}, true);
+};
+let contextMenuBound = false;
+const syncContextMenu = (desktopMode: boolean) => {
+  if (desktopMode && !contextMenuBound) {
+    window.addEventListener('contextmenu', suppressContextMenu, true);
+    contextMenuBound = true;
+  } else if (!desktopMode && contextMenuBound) {
+    window.removeEventListener('contextmenu', suppressContextMenu, true);
+    contextMenuBound = false;
+  }
+};
+syncContextMenu(useUi.getState().desktopMode);
+useUi.subscribe((s) => syncContextMenu(s.desktopMode));
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginPage />, errorElement: <RouteErrorBoundary /> },

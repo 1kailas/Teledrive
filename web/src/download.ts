@@ -336,8 +336,16 @@ function parseContentRange(value: string | null): { start: number; end: number; 
   };
 }
 
-function saveBlob(id: string, name: string, chunks: Uint8Array[], _size?: number): void {
+function bufferedBytes(chunks: Uint8Array[]): number {
+  return chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+}
+
+/** Build and save a blob, then release the in-memory chunks. */
+function saveBlob(id: string, name: string, chunks: Uint8Array[], size?: number): boolean {
+  const buffered = bufferedBytes(chunks);
+  if (size && size > 0 && buffered !== size) return false;
   const blob = new Blob(chunks as BlobPart[], { type: contentTypes.get(id) ?? 'application/octet-stream' });
+  dropBuffers(id);
   const blobUrl = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = blobUrl;
@@ -346,11 +354,12 @@ function saveBlob(id: string, name: string, chunks: Uint8Array[], _size?: number
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(blobUrl), 30_000);
+  return true;
 }
 
 function handOffToDownloadManager(id: string, task: DownloadTask, size: number): void {
   const a = document.createElement('a');
-  a.href = `/api/files/${task.fileId}/download`;
+  a.href = `/api/files/${task.fileId}/content?download=1`;
   a.download = task.name;
   document.body.appendChild(a);
   a.click();
@@ -358,6 +367,42 @@ function handOffToDownloadManager(id: string, task: DownloadTask, size: number):
   receivedBytes.set(id, size);
   patch(id, { status: 'done', downloaded: size, size, speed: 0, eta: 0, error: undefined });
   toast.success(`Downloading ${task.name}`);
+}
+
+/** True only when every expected byte arrived (or the size is unknown). */
+export function isDownloadComplete(received: number, expected: number): boolean {
+  const total = expected > 0 ? expected : received;
+  return total <= 0 || received >= total;
+}
+
+/**
+ * Finish a download only when every expected byte has arrived. A truncated
+ * response must fail and stay resumable instead of being saved as a corrupt
+ * file and reported as complete.
+ */
+async function finalizeDownload(
+  id: string,
+  task: DownloadTask,
+  expected: number,
+  stream: WritableSink | null,
+): Promise<boolean> {
+  const received = receivedBytes.get(id) ?? 0;
+  const total = expected > 0 ? expected : received;
+  if (!isDownloadComplete(received, expected)) return false;
+
+  if (stream) {
+    sinks.delete(id);
+    await stream.close();
+  } else {
+    const chunks = buffers.get(id) ?? [];
+    if (!saveBlob(id, task.name, chunks, total)) return false;
+  }
+  receivedBytes.set(id, total);
+  patch(id, {
+    status: 'done', speed: 0, eta: 0, downloaded: total, size: total, error: undefined,
+  });
+  toast.success(`Downloaded ${task.name}`);
+  return true;
 }
 
 async function run(id: string): Promise<void> {
@@ -422,22 +467,14 @@ async function run(id: string): Promise<void> {
 
     const held = buffers.get(id) ?? [];
     if (size > 0 && offset >= size && (stream || held.length > 0)) {
-      if (stream) {
-        sinks.delete(id);
-        await stream.close();
-      } else {
-        saveBlob(id, task.name, held, size);
-      }
-      receivedBytes.set(id, size);
-      patch(id, { status: 'done', speed: 0, eta: 0, downloaded: size, error: undefined });
-      toast.success(`Downloaded ${task.name}`);
-      return;
+      if (await finalizeDownload(id, task, size, stream)) return;
+      throw new Error(`Download incomplete (${receivedBytes.get(id) ?? 0}/${size} bytes)`);
     }
 
     for (;;) {
       const headers: Record<string, string> = {};
       if (offset > 0) headers.Range = `bytes=${offset}-`;
-      const res = await fetch(`/api/files/${task.fileId}/download`, {
+      const res = await fetch(`/api/files/${task.fileId}/content?download=1`, {
         signal: controller.signal,
         headers,
         cache: 'no-store',
@@ -525,39 +562,20 @@ async function run(id: string): Promise<void> {
         const actualSize = size > 0 ? size : received;
         receivedBytes.set(id, received);
         patch(id, { downloaded: received, size: actualSize });
-        if (stream) {
-          sinks.delete(id);
-          await stream.close();
-        } else if (chunks.length > 0) {
-          saveBlob(id, task.name, chunks, actualSize);
-        }
-        patch(id, { status: 'done', speed: 0, eta: 0, downloaded: actualSize });
-        toast.success(`Downloaded ${task.name}`);
-        return;
+        if (await finalizeDownload(id, task, actualSize, stream)) return;
+        throw new Error(`Download incomplete (${received}/${actualSize} bytes)`);
       }
 
       const chunks = buffers.get(id) ?? [];
       if (offset > 0 && (stream || chunks.length > 0)) {
-        if (stream) {
-          sinks.delete(id);
-          await stream.close();
-        } else {
-          saveBlob(id, task.name, chunks, size);
-        }
-        patch(id, { status: 'done', speed: 0, eta: 0, downloaded: size });
-        return;
+        if (await finalizeDownload(id, task, size, stream)) return;
+        throw new Error(`Download incomplete (${receivedBytes.get(id) ?? 0}/${size} bytes)`);
       }
       throw new Error(`Server returned HTTP ${res.status}`);
     }
   } catch (err) {
     const current = useDownloads.getState().downloads.find((d) => d.id === id);
     if ((err as Error).name === 'AbortError' || current?.status === 'paused' || current?.status === 'cancelled') {
-      return;
-    }
-    const chunks = buffers.get(id) ?? [];
-    if (chunks.length > 0 && (receivedBytes.get(id) ?? 0) > 0) {
-      saveBlob(id, task.name, chunks, receivedBytes.get(id)!);
-      patch(id, { status: 'done', speed: 0, eta: 0, downloaded: receivedBytes.get(id)! });
       return;
     }
     const message = (err as Error).message || 'Download failed';

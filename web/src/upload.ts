@@ -714,10 +714,21 @@ export function onPartEvent(uploadId: string, _idx: number, status: string) {
   st.update(t.key, { partsStored: Math.min((t.partsStored || 0) + 1, t.partsTotal || 1) });
 }
 
-export function onFileReady(fileId: string) {
+export function onFileReady(fileId: string, status: string = 'ready') {
   const st = useUploads.getState();
   for (const t of st.tasks) {
     if (t.fileId === fileId && t.status === 'processing') {
+      if (status === 'failed') {
+        st.update(t.key, {
+          status: 'failed',
+          error: 'Telegram could not store this file. Retry the upload.',
+          speed: 0,
+          eta: 0,
+        });
+        toast.error(`Upload failed: ${t.name}`);
+        continue;
+      }
+      if (status !== 'ready') continue;
       st.update(t.key, { status: 'done' });
       // A finished video may still lack a server-side thumbnail — the
       // desktop shell can capture a frame straight from the stream.

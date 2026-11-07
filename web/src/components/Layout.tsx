@@ -6,13 +6,13 @@ import {
   HardDrive, Clock, Star, Trash2, Settings, LogOut,
   Search, LayoutGrid, List, Moon, Sun, Monitor, Plus, Info,
   ArrowUpDown, ArrowDownUp, SlidersHorizontal, Sliders, Cloud,
-  Image, Video, FileText, Music,
+  Image, Video, FileText, Music, Link2,
 } from 'lucide-react';
 import { api, type Config, type Stats } from '../api';
 import { useUi, useDialog, type SortBy } from '../store';
 import { useDownloads, syncNativeDownloads, startNativePolling } from '../download';
 import { useUploads } from '../upload';
-import { fmtBytes } from '../utils';
+import { fmtBytes, categoryUsage, CATEGORY_COLORS } from '../utils';
 import { Dropdown } from './Menu';
 import { pickFiles, pickFolder } from './Explorer';
 import { UploadPanel } from './UploadPanel';
@@ -50,6 +50,7 @@ const MAIN_NAV = [
   { to: '/transfers', label: 'Transfers', icon: ArrowDownUp },
   { to: '/recent', label: 'Recent', icon: Clock },
   { to: '/starred', label: 'Starred', icon: Star },
+  { to: '/shared', label: 'Shared', icon: Link2 },
 ];
 
 const MEDIA_NAV = [
@@ -68,13 +69,14 @@ function Sidebar() {
   const { data: stats } = useQuery({ queryKey: ['stats'], queryFn: () => api.get<Stats>('/api/stats'), refetchInterval: 60_000 });
   const { data: config } = useQuery({ queryKey: ['config'], queryFn: () => api.get<Config>('/api/config'), refetchInterval: 60_000 });
   const usedBytes = stats?.totalSize ?? 0;
+  const usage = categoryUsage(stats?.byCategory ?? []);
 
   const activeDownloadsCount = useDownloads((s) => s.downloads.filter((d) => d.status === 'downloading' || d.status === 'finalizing').length);
   const activeUploadsCount = useUploads((s) => s.tasks.filter((t) => ['uploading', 'creating', 'processing'].includes(t.status)).length);
   const activeTransfersCount = activeDownloadsCount + activeUploadsCount;
 
   useEffect(() => {
-    if (config && !useUi.getState().desktopMode) useUi.getState().setDesktopMode(true);
+    if (config) useUi.getState().setDesktopMode(!!config.desktopMode);
   }, [config]);
 
   return (
@@ -159,11 +161,15 @@ function Sidebar() {
             Unlimited
           </span>
         </div>
-        <div className="h-1.5 w-full bg-surface-2 rounded-full overflow-hidden mb-1.5 border border-app">
-          <div
-            className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-sky-500 to-indigo-500"
-            style={{ width: `${Math.max(4, Math.min(100, Math.round((usedBytes / (50 * 1024 * 1024 * 1024)) * 100)))}%` }}
-          />
+        <div className="h-1.5 w-full bg-surface-2 rounded-full overflow-hidden mb-1.5 border border-app flex">
+          {usage.length > 0 ? usage.map((item) => (
+            <div
+              key={item.category}
+              className="h-full transition-all duration-500 first:rounded-l-full last:rounded-r-full"
+              style={{ width: `${item.percent}%`, background: CATEGORY_COLORS[item.category] ?? CATEGORY_COLORS.other }}
+              title={`${item.category}: ${fmtBytes(item.size)}`}
+            />
+          )) : <div className="h-full w-full rounded-full bg-surface-3" />}
         </div>
         <div className="flex items-center justify-between text-[11px] text-3 tabular-nums font-medium">
           <span>{fmtBytes(usedBytes)} in drive</span>
@@ -222,11 +228,18 @@ function TopBar() {
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: () => api.get<{ username: string }>('/api/auth/me'), staleTime: 300_000 });
 
   useEffect(() => {
-    if (!q.trim()) return setSug([]);
+    const term = q.trim();
+    if (!term) {
+      setSug([]);
+      return;
+    }
+    let cancelled = false;
     const t = setTimeout(() => {
-      void api.get<{ suggestions: string[] }>(`/api/search/suggest?q=${encodeURIComponent(q)}`).then((r) => setSug(r.suggestions)).catch(() => {});
+      void api.get<{ suggestions: string[] }>(`/api/search/suggest?q=${encodeURIComponent(term)}`)
+        .then((r) => { if (!cancelled) setSug(r.suggestions); })
+        .catch(() => { if (!cancelled) setSug([]); });
     }, 250);
-    return () => clearTimeout(t);
+    return () => { cancelled = true; clearTimeout(t); };
   }, [q]);
 
   useEffect(() => {

@@ -61,7 +61,7 @@ export function RecentPage() {
   const allItems = useMemo(() => {
     type TimelineItem =
       | { type: 'file'; id: string; name: string; size: number; timestamp: number; data: FileDTO }
-      | { type: 'download'; id: string; name: string; size: number; timestamp: number; status: string; destPath?: string }
+      | { type: 'download'; id: string; name: string; size: number; timestamp: number; status: string; destPath?: string; isNative?: boolean }
       | { type: 'upload'; id: string; name: string; size: number; timestamp: number; status: string };
 
     const list: TimelineItem[] = [];
@@ -86,6 +86,7 @@ export function RecentPage() {
         timestamp: d.startedAt,
         status: d.status,
         destPath: d.destPath,
+        isNative: d.isNative,
       });
     }
 
@@ -407,7 +408,7 @@ export function RecentPage() {
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
-                      {item.type === 'download' && item.status === 'done' && (
+                      {item.type === 'download' && item.status === 'done' && item.isNative && (
                         <>
                           <button
                             className="btn btn-ghost !h-7 !px-2.5 !text-xs flex items-center gap-1 text-accent"
